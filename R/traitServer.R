@@ -51,7 +51,7 @@ traitOutput <- function(id) {
 #' @export
 #' @rdname traitServer
 traitApp <- function() {
-    source("qtlSetup.R")
+    source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
     ui <- bslib::page_sidebar(
         title = "Test Trait List",
         sidebar = bslib::sidebar("side_panel",

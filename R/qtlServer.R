@@ -39,11 +39,7 @@ qtlOutput <- function(id) {
 #' @export
 #' @rdname qtlServer
 qtlApp <- function() {
-  source("qtlSetup.R")
-  source("mainParServer.R")
-  source("traitServer.R")
-  source("scanServer.R")
-  source("peakServer.R")
+  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
   ui <- bslib::page_sidebar(
     title = "Pre-scanned QTL visualizer, implemented for Diet DO study",
     shinyjs::useShinyjs(),

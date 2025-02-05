@@ -70,9 +70,7 @@ scanOutput <- function(id) {
     )
 }
 scanApp <- function() {
-  source("qtlSetup.R")
-  source("mainParServer.R")
-  source("traitServer.R")
+  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",

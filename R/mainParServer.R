@@ -70,8 +70,7 @@ mainParOutput <- function(id) {
 #' @export
 #' @rdname mainParServer
 mainParApp <- function(id) {
-    source("qtlSetup.R")
-    source("traitServer.R")
+    source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
     ui <- bslib::page(
         title = "Test Main Par",
         mainParInput("main_par"),

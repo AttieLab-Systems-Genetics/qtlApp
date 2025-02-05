@@ -1,8 +1,4 @@
 source("qtlSetup.R")
-source("qtlServer.R")
-source("mainParServer.R")
-source("traitServer.R")
-source("scanServer.R")
-source("peakServer.R")
+devtools::install_github("AttieLab-Systems-Genetics/qtlApp")
 
-qtlApp()
+qtlApp::qtlApp()
