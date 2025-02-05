@@ -68,8 +68,3 @@ file_directory$group <- paste0(
     file_directory$trait_compartment, " ",
     file_directory$trait_type, ", ",
     file_directory$scan_type)
-
-# source functions
-source("trait_scan.R")
-source("peak_finder.R")
-source("QTL_plot_visualizer.R")
