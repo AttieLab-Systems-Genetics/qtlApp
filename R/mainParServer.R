@@ -1,3 +1,14 @@
+#' Main parameter module
+#' 
+#' @param id shiny identifier
+#' @param file_directory data frame with file directory information
+#' @param annotation_list list with annotation information
+#' @param set_type reactive object
+#'
+#' @importFrom shiny moduleServer reactive renderPrint req selectizeInput shinyApp
+#'             updateSelectizeInput verbatimTextOutput
+#' @importFrom bslib page
+#' @export
 mainParServer <- function(id, file_directory, annotation_list) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -56,6 +67,8 @@ mainParOutput <- function(id) {
   ns <- shiny::NS(id)
   shiny::verbatimTextOutput(ns("returns"))
 }
+#' @export
+#' @rdname mainParServer
 mainParApp <- function(id) {
     source("qtlSetup.R")
     source("traitServer.R")

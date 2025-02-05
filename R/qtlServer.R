@@ -1,20 +1,12 @@
 #' QTL Server
 #' 
 #' @param id shiny identifier
-#' @param file_directory file directory list object
-#' @param markers genome markers
-#' @param annotation_list annotation list object
+#' @param file_directory data frame with file directory information
+#' @param annotation_list list with annotation information
+#' @param markers list object with marker information
 #' 
-#' @importFrom shiny actionButton helpText moduleserver nearPoints NS observeEvent plotOutput
-#'             reactive reactiveValues renderPlot renderPrint renderText req selectizeInput
-#'             shinyApp sliderInput tagList updateSelectizeInput verbatimTextOutput
-#' @importFrom stringr str_split
-#' @importFrom DT datatable DTOutput renderDT
-#' @importFrom reshape2 melt
-#' @importFrom ggplot2 aes element_blank element_text element_line geom_hline geom_point ggplot
-#'             labs scale_color_manual theme theme_bw
-#' @importFrom bslib card card_header page_sidebar sidebar
-#' @importFrom shinycssloaders withSpinner
+#' @importFrom shiny helpText moduleServer NS shinyApp
+#' @importFrom bslib page_sidebar sidebar
 #' @importFrom shinyjs useShinyjs
 #' @export
 qtlServer <- function(id, file_directory, annotation_list, markers) {
@@ -39,7 +31,7 @@ qtlInput <- function(id) {
 #' @rdname qtlServer
 qtlOutput <- function(id) {
   ns <- shiny::NS(id)
-  shiny::tagList(
+  list(
     scanOutput(ns("scan")),
     peakOutput(ns("peak"))
   )

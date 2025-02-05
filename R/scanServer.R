@@ -1,3 +1,18 @@
+#' Scan module
+#'
+#' @param id shiny identifier
+#' @param file_directory data frame with file directory information
+#' @param annotation_list list with annotation information
+#' @param markers list object with marker information
+#'
+#' @importFrom DT DTOutput renderDT
+#' @importFrom shiny actionButton moduleServer nearPoints NS plotOutput reactive renderPlot
+#'             req setProgress shinyApp withProgress
+#' @importFrom bslib card card_header page_sidebar sidebar
+#' @importFrom shinycssloaders withSpinner
+#' @importFrom dplyr across mutate where
+#' @importFrom stringr str_split
+#' @export
 scanServer <- function(id, main_par, file_directory, annotation_list, markers) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns

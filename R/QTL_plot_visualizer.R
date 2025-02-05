@@ -1,4 +1,15 @@
-# plot the QTL if doing a new scan
+#' Plot the QTL if doing a new scan
+#' 
+#' @param qtl.temp data frame of QTL scans
+#' @param phenotype character string
+#' @param LOD_thr value of LOD threshold
+#' @param mrkrs list of markers
+#' 
+#' @importFrom dplyr arrange group_by left_join mutate select summarise
+#' @importFrom ggplot2 aes element_blank element_line element_text expansion
+#'             geom_hline geom_line ggplot margin scale_color_manual
+#'             scale_x_continuous theme theme_bw xlab ylab ylim
+#' @export
 QTL_plot_visualizer <- function(qtl.temp, phenotype, LOD_thr, mrkrs) {
   # The LOD values are already in the "LOD" column
   qtl.temp <- qtl.temp[, c("marker", "LOD")]

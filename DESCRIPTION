@@ -9,9 +9,8 @@ Authors@R: c(person("Brian S Yandell",
 Depends:
     R (>= 4.2.0)
 Imports:
-    broom, cowplot, dplyr, DT, foundr, ggdendro, ggplot2, ggrepel, grDevices,
-    grid, ordr, plotly, purrr, RColorBrewer, readr, readxl, rlang,
-    shiny, stats, stringr, tibble, tidyr, tools, utils, zoo
+    bslib, data.table, dplyr, DT, ggplot2, reshape2, shiny, shinycssloaders,
+    shinyjs, stringr
 License: GPL-3
 Encoding: UTF-8
 RoxygenNote: 7.3.2

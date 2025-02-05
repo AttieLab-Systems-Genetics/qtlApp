@@ -1,3 +1,18 @@
+#' Peak module
+#'
+#' @param id shiny identifier
+#' @param file_directory data frame with file directory information
+#'
+#' @importFrom DT datatable DTOutput renderDT
+#' @importFrom shiny moduleServer NS observeEvent plotOutput reactive renderPlot renderText
+#'             req selectizeInput setProgress shinyApp textOutput updateSelectizeInput withProgress
+#' @importFrom bslib card card_header page_sidebar sidebar
+#' @importFrom shinycssloaders withSpinner
+#' @importFrom stringr str_split
+#' @importFrom reshape2 melt
+#' @importFrom ggplot2 aes element_blank element_line element_text geom_hline geom_point ggplot
+#'             labs scale_color_manual theme theme_bw
+#' @export
 peakServer <- function(id, main_par, file_directory) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -123,6 +138,8 @@ peakOutput <- function(id) {
         shinycssloaders::withSpinner(color="#0dc5c1"))
   )
 }
+#' @export 
+#' @rdname peakServer
 peakApp <- function() {
   source("qtlSetup.R")
   source("mainParServer.R")

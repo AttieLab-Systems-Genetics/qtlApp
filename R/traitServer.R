@@ -1,3 +1,14 @@
+#' Trait module
+#'
+#' @param id shiny identifier
+#' @param file_directory data frame with file directory information
+#' @param annotation_list list with annotation information
+#' @param set_type character string as reactive object
+#'
+#' @importFrom DT DTOutput renderDT
+#' @importFrom shiny moduleServer NS reactive req selectInput shinyApp
+#' @importFrom bslib card card_header page_sidebar sidebar
+#' @export
 traitServer <- function(id, file_directory, annotation_list, set_type) {
     shiny::moduleServer(id, function(input, output, session) {
         ns <- session$ns
@@ -37,6 +48,8 @@ traitOutput <- function(id) {
         DT::DTOutput(ns('trait_list'))
     )
 }
+#' @export
+#' @rdname traitServer
 traitApp <- function() {
     source("qtlSetup.R")
     ui <- bslib::page_sidebar(

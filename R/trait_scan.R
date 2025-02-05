@@ -1,4 +1,11 @@
-# find the trait
+#' Find trait scan
+#' 
+#' @param file_dir data frame with file directory information
+#' @param selected_dataset character string
+#' @param selected_trait character string
+#' 
+#' @importFrom data.table fread
+#' @export
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   # Subset the data
   file_dir <- subset(file_dir, group == selected_dataset)
