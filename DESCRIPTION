@@ -1,11 +1,17 @@
 Package: qtlApp
-Version: 0.1.0
-Date: 2025-02-05
+Version: 0.1.1
+Date: 2025-02-06
 Title: Shiny app for QTL visualization
 Description: Tools to build Shiny Apps for QTL analysis and visualization.
 Authors@R: c(person("Brian S Yandell",
                 role = c("aut", "cre"),
-                email = "brian.yandell@wisc.edu"))
+                email = "brian.yandell@wisc.edu"),
+             person("Chris Emfinger",
+                role = "aut",
+                email = "emfinger@wisc.edu),
+             person("Kalynn Willis",
+                role = "aut",
+                email = "khwillis@wisc.edu))
 Depends:
     R (>= 4.2.0)
 Imports:
