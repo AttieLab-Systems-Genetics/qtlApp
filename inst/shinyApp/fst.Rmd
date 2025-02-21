@@ -1,0 +1,92 @@
+---
+title: "FST vs data.table::fread Study"
+author: "Brian Yandell"
+format: html
+---
+
+## Read CSV and write FST
+
+```{r}
+csv_name <- "/data/dev/miniViewer_3.0/scan1_output_20241216_161824.additive.csv"
+fst_name <- stringr::str_replace(csv_name, "csv$", "fst")
+row_name <- stringr::str_replace(csv_name, ".csv$", "_row.csv")
+if(file.exists(csv_name) & !file.exists(fst_name)) {
+    fst::write_fst(
+        data.table::fread(csv_name, drop = "Which_mice") |> dplyr::arrange(Phenotype),
+        path = fst_name, compress = 100)
+    # Database of first and last entries by phenotype
+    rows <- fst::read_fst(fst_name) |>
+        dplyr::select(Phenotype) |>
+        dplyr::mutate(rown = dplyr::row_number()) |>
+        dplyr::group_by(Phenotype) |>
+        dplyr::slice(c(1, dplyr::n())) |>
+        dplyr::mutate(set = c("from", "to")) |>
+        tidyr::pivot_wider(names_from = "set", values_from = "rown")
+    write.csv(rows, row_name, row.names = FALSE)
+}
+```
+
+Compare Read Times.
+See <https://waterdata.usgs.gov/blog/formats/>
+
+## Timings
+
+All data.
+
+```{r}
+system.time(data.table::fread(csv_name, drop = "Which_mice"))
+system.time(fst::read_fst(fst_name))
+```
+
+```
+|--------------------------------------------------|
+|==================================================|
+   user  system elapsed 
+406.575  10.657  16.238 
+
+   user  system elapsed 
+ 12.401   0.502   4.463 
+```
+
+Selected data by trait.
+
+```{r}
+selected_trait <- "BW_6wk"
+system.time(data.table::fread(csv_name, drop = "Which_mice") |> dplyr::filter(Phenotype == selected_trait))
+system.time(fst::read_fst(fst_name) |> dplyr::filter(Phenotype == selected_trait))
+```
+
+```
+|--------------------------------------------------|
+|==================================================|
+   user  system elapsed 
+387.347  10.069  15.023 
+
+   user  system elapsed 
+ 12.789   0.624   4.634 
+```
+
+Filter rows within FST call.
+
+```{r}
+rows <- range(which(fst::read_fst(fst_name)$Phenotype == selected_trait))
+system.time(fst::read_fst(fst_name, from = rows[1], to = rows[2]))
+```
+
+```
+   user  system elapsed 
+  0.203   0.016   0.048 
+```
+
+## Set up database of rows by phenotype
+
+```{r}
+rows <- read.csv(row_name) |>
+  dplyr::filter(Phenotype == selected_trait)
+system.time(fst::read_fst(fst_name, from = rows$from, to = rows$to))
+```
+
+```
+   user  system elapsed 
+  0.177   0.006   0.046 
+```
