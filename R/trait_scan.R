@@ -4,11 +4,8 @@
 #' @param selected_dataset character string
 #' @param selected_trait character string
 #' 
-#' @importFrom data.table fread
-#' @importFrom dplyr filter group_by mutate n row_number select slice
-#' @importFrom tidyr pivot_wider
-#' @importFrom stringr str_detect str_replace
-#' @importFrom fst read_fst write_fst
+#' @importFrom fst read_fst
+#' @importFrom dplyr filter
 #' @export
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   # Subset the data
@@ -30,7 +27,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
 
     # Read FST data.
     # Filter for rows where Phenotype matches selected_trait
-    rows <- dplyr::filter(read.csv(row_path), Phenotype == selected_trait)
+    rows <- dplyr::filter(fst::read_fst(row_path), Phenotype == selected_trait)
     data <- fst::read_fst(fst_path, from = rows$from, to = rows$to)
     
     if (nrow(data) == 0) {

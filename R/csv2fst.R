@@ -31,10 +31,10 @@ csv2fst <- function(csv_path) {
 #' @importFrom dplyr filter group_by mutate n row_number select slice
 #' @importFrom tidyr pivot_wider
 #' @importFrom stringr str_replace
-#' @importFrom fst read_fst
+#' @importFrom fst read_fst write_fst
 #' @export
 fst_rows <- function(fst_path) {
-  row_path <- stringr::str_replace(fst_path, ".fst$", "_row.csv")
+  row_path <- stringr::str_replace(fst_path, ".fst$", "_row.fst")
   if(!file.exists(row_path)) {
     # Database of first and last entries by phenotype
     rows <- fst::read_fst(fst_path) |>
@@ -44,7 +44,7 @@ fst_rows <- function(fst_path) {
       dplyr::slice(c(1, dplyr::n())) |>
       dplyr::mutate(set = c("from", "to")) |>
       tidyr::pivot_wider(names_from = "set", values_from = "rown")
-    write.csv(rows, row_path, row.names = FALSE)
+    fst::write_fst(rows, row_path)
   }
   return(row_path)
 }
