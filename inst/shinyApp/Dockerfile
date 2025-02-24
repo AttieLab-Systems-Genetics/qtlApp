@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y \
 RUN R -e "install.packages(c( \
     'rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', 'cowplot', 'grid', 'ggrepel', \
     'gridGraphics', 'ggpubr', 'shiny', 'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', \
-    'shinycssloaders', 'data.table', 'reshape2', 'ggpubr', 'R.utils' \
+    'shinycssloaders', 'data.table', 'reshape2', 'ggpubr', 'R.utils', \
     'fst', 'stringr' \
 ), repos = 'https://cloud.r-project.org/')"
 
