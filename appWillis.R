@@ -1,4 +1,4 @@
-#' This is the viewer script to view previously made qtl2 scans for various traits
+##' This is the viewer script to view previously made qtl2 scans for various traits
 #' it's designed to look at additive, interactive, and difference (interactive-additive) plots
 #' all the scan traces are pre-computed, so this just reads the table of relevant values
 #' and plots them
@@ -159,6 +159,41 @@ QTL_plot_visualizer <- function(qtl.temp, phenotype, LOD_thr, mrkrs) {
   plots <- list(plot_QTL, qtl_plot_obj)
   return(plots)
 }
+
+csv2fst <- function(csv_path) {
+  if(stringr::str_detect(csv_path, "csv$")) {
+    fst_path <- stringr::str_replace(csv_path, "csv$", "fst")
+    if(!file.exists(fst_path)) {
+      # Write FST file.
+      warning("Writing FST file: ", fst_path)
+      fst::write_fst(
+        data.table::fread(csv_path, drop = "Which_mice") |> dplyr::arrange(Phenotype),
+        path = fst_path, compress = 100)
+    }
+  } else {
+    if(!stringr::str_detect(csv_path, "fst$"))
+      stop("No CSV or FST name provided: ", csv_path)
+    fst_path <- csv_path
+  }
+  return(fst_path)
+}
+
+fst_rows <- function(fst_path) {
+  row_path <- stringr::str_replace(fst_path, ".fst$", "_row.fst")
+  if(!file.exists(row_path)) {
+    # Database of first and last entries by phenotype
+    rows <- fst::read_fst(fst_path) |>
+      dplyr::select(Phenotype) |>
+      dplyr::mutate(rown = dplyr::row_number()) |>
+      dplyr::group_by(Phenotype) |>
+      dplyr::slice(c(1, dplyr::n())) |>
+      dplyr::mutate(set = c("from", "to")) |>
+      tidyr::pivot_wider(names_from = "set", values_from = "rown")
+    fst::write_fst(rows, row_path)
+  }
+  return(row_path)
+}
+
 # find the trait
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   # Subset the data
@@ -174,11 +209,14 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   }
   
   scan_data <- tryCatch({
-    # Read all data first
-    data <- fread(file_dir$File_path[1], drop = "Which_mice")
-    
+    # Convert CSV to FST (or retrieve FST name)
+    fst_path <- csv2fst(file_dir$File_path[1])
+    row_path <- fst_rows(fst_path)
+
+    # Read FST data.
     # Filter for rows where Phenotype matches selected_trait
-    data <- data[data$Phenotype == selected_trait, ]
+    rows <- dplyr::filter(fst::read_fst(row_path), Phenotype == selected_trait)
+    data <- fst::read_fst(fst_path, from = rows$from, to = rows$to)
     
     if (nrow(data) == 0) {
       stop("No data found for phenotype: ", selected_trait)
