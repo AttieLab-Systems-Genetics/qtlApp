@@ -71,6 +71,7 @@ RUN chmod -R 777 /data
 #COPY ./chris_qtlviz.R /srv/shiny-server/
 # Ensure the necessary permissions
 COPY app.R /srv/shiny-server/app.R
+COPY qtlSetup.R /srv/shiny-server/qtlSetup.R
 RUN chown -R shiny:shiny /srv/shiny-server
 
 # Expose the port

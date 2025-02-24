@@ -2,9 +2,12 @@
 % Please edit documentation in R/scanServer.R
 \name{scanServer}
 \alias{scanServer}
+\alias{scanApp}
 \title{Scan module}
 \usage{
 scanServer(id, main_par, file_directory, annotation_list, markers)
+
+scanApp()
 }
 \arguments{
 \item{id}{shiny identifier}

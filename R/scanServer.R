@@ -69,6 +69,8 @@ scanOutput <- function(id) {
       DT::DTOutput(ns("scan_points"))
     )
 }
+#' @export
+#' @rdname scanServer
 scanApp <- function() {
   source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
   ui <- bslib::page_sidebar(
