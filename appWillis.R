@@ -1,22 +1,3 @@
-##' This is the viewer script to view previously made qtl2 scans for various traits
-#' it's designed to look at additive, interactive, and difference (interactive-additive) plots
-#' all the scan traces are pre-computed, so this just reads the table of relevant values
-#' and plots them
-#'
-#' @author Chris Emfinger, PhD. Couldn't really view anything well
-#'
-#' In addition to the relevant package citations, parts of the datatable code
-#' followed formats shown on
-#' https://clarewest.github.io/blog/post/making-tables-shiny/x
-#'
-#' some help with shiny
-#' https://shiny.rstudio.com/gallery
-#' https://shiny.posit.co/r/gallery
-#' posit.cloud/spaces/298214/join
-
-
-
-
 # load libraries=============================================================
 require("rstudioapi")
 require("dplyr")
@@ -40,515 +21,567 @@ require("data.table")
 require("reshape2")
 
 
-# set shiny options==========================================================================
+# set shiny options===========================================================
 options(shiny.maxRequestSize = 20000*1024^2)  # Increase to 20GB needed for Genoprobs, etc
 
 
-# load data==================================================================================
-# load the file directory
-#setwd(selectDirectory())
-
-
-# load data==================================================================================
-# load the file directory
-#setwd(selectDirectory())
+# load data===================================================================
 file_directory <- read.csv("/data/dev/miniViewer_3.0/file_index.csv")
-
-
-# load the chromosomal breaks
 chr_breaks <- read.csv("/data/dev/miniViewer_3.0/chromosomal_sep_mm11.csv")
-
-
-# load the annotation data for the different traits
-# for making the object
-# annotation_list <- list()
-# annotation_list$isoforms <- mediation_isoforms$RNA_info$Liver[c(1,3,ncol(mediation_isoforms$RNA_info$Liver))]
-# annotation_list$genes <- mediation_genes$RNA_info$Liver[c(1,6)]
-# saveRDS(annotation_list, file="annotation_list.rds")
 annotation_list <- readRDS("/data/dev/miniViewer_3.0/annotation_list.rds")
-
-
-# load the markers
 markers <- readRDS(file.path("/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"))
 
 
-file_directory$group <- paste0(file_directory$diet," ",file_directory$trait_compartment, " ", file_directory$trait_type, ", ", file_directory$scan_type)
+file_directory$group <- paste0(file_directory$diet, " ", file_directory$trait_compartment, " ",
+                              file_directory$trait_type, ", ", file_directory$scan_type)
 
 
-# set microfunctions============================================================================
-# plot the QTL if doing a new scan
-QTL_plot_visualizer <- function(qtl.temp, phenotype, LOD_thr, mrkrs) {
-  # The LOD values are already in the "LOD" column
-  qtl.temp <- qtl.temp[, c("marker", "LOD")]
-  colnames(qtl.temp) <- c("markers", "LOD")
-  
-  mrkrs2 <- mrkrs[c("marker", "chr", "bp_grcm39")]
-  colnames(mrkrs2) <- c("markers", "chr", "position")
-  mrkrs2$position <- as.numeric(mrkrs2$position)/(10^6)
-  
-  # Join the data
-  qtl.temp <- merge(qtl.temp, mrkrs2, by.x="markers", by.y="markers", all.x=FALSE)
-  qtl.temp <- na.omit(qtl.temp)
-  
-  # Convert chr to numeric
-  qtl.temp$chr <- as.character(qtl.temp$chr)
-  qtl.temp$order <- sapply(qtl.temp$chr, function(x) {
-    if (x == "X") return(20)
-    else if (x == "Y") return(21)
-    else if (x == "M") return(22)
-    else return(as.numeric(x))
-  })
-  
-  # Remove any rows where chromosome conversion failed
-  qtl.temp <- qtl.temp[!is.na(qtl.temp$order), ]
-  qtl.temp$chr <- qtl.temp$order
-  
-  # Create plot object
-  qtl_plot_obj <- qtl.temp %>%
-    group_by(chr) %>%
-    summarise(chr_len = max(position)) %>%
-    mutate(tot = cumsum(as.numeric(chr_len)) - as.numeric(chr_len)) %>%
-    select(-chr_len) %>%
-    left_join(qtl.temp, ., by = c("chr" = "chr")) %>%
-    arrange(order, position) %>%
-    mutate(BPcum = position + tot)
-  
-  # Create axis labels
-  axisdf = qtl_plot_obj %>%
-    group_by(order) %>%
-    summarize(center = (max(BPcum) + min(BPcum))/2)
-  
-  # Convert chromosome labels
-  axisdf$order[axisdf$order == 20] <- "X"
-  axisdf$order[axisdf$order == 21] <- "Y"
-  axisdf$order[axisdf$order == 22] <- "M"
-  axisdf$order <- factor(axisdf$order, levels=c(as.character(1:19),"X","Y","M"))
-  
-  # Create plot with x-axis
-  plot_QTL <- ggplot(qtl_plot_obj, aes(x=BPcum, y=LOD)) +
-    geom_line(aes(color=as.factor(chr)), alpha=0.8, size=.5) +
-    scale_color_manual(values = rep(c("black", "darkgrey"), 22)) +
-    scale_x_continuous(
-      label = axisdf$order, 
-      breaks = axisdf$center,
-      expand = expansion(mult = 0.15)  # Increased padding
-    ) +
-    ylim(0, max(qtl_plot_obj$LOD, na.rm=TRUE) * 1.25) +
-    theme_bw() +
-    theme(
-      legend.position = "none",
-      panel.border = element_blank(),
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor.x = element_blank(),
-      axis.line = element_line(colour = "black"),
-      axis.text = element_text(size = 18),
-      axis.title = element_text(size = 20),
-      axis.text.x = element_text(
-        angle = 45,           # Rotate labels 45 degrees
-        hjust = 1,           # Adjust horizontal position
-        vjust = 1,           # Adjust vertical position
-        margin = margin(t = 10)  # Add margin at top of labels
-      ),
-      # Add more bottom margin to accommodate rotated labels
-      plot.margin = margin(b = 40, l = 20, r = 20, t = 20, unit = "pt")
-    ) +
-    xlab("Chromosome") +
-    ylab("LOD") +
-    geom_hline(aes(yintercept=LOD_thr), color="black", linetype="dashed")
-  
-  plots <- list(plot_QTL, qtl_plot_obj)
-  return(plots)
-}
+# Add this at the start of your script with other global variables
+file_path_cache <- new.env(parent = emptyenv())
 
-csv2fst <- function(csv_path) {
-  if(stringr::str_detect(csv_path, "csv$")) {
-    fst_path <- stringr::str_replace(csv_path, "csv$", "fst")
-    if(!file.exists(fst_path)) {
-      # Write FST file.
-      warning("Writing FST file: ", fst_path)
-      fst::write_fst(
-        data.table::fread(csv_path, drop = "Which_mice") |> dplyr::arrange(Phenotype),
-        path = fst_path, compress = 100)
-    }
-  } else {
-    if(!stringr::str_detect(csv_path, "fst$"))
-      stop("No CSV or FST name provided: ", csv_path)
-    fst_path <- csv_path
-  }
-  return(fst_path)
-}
 
-fst_rows <- function(fst_path) {
-  row_path <- stringr::str_replace(fst_path, ".fst$", "_row.fst")
-  if(!file.exists(row_path)) {
-    # Database of first and last entries by phenotype
-    rows <- fst::read_fst(fst_path) |>
-      dplyr::select(Phenotype) |>
-      dplyr::mutate(rown = dplyr::row_number()) |>
-      dplyr::group_by(Phenotype) |>
-      dplyr::slice(c(1, dplyr::n())) |>
-      dplyr::mutate(set = c("from", "to")) |>
-      tidyr::pivot_wider(names_from = "set", values_from = "rown")
-    fst::write_fst(rows, row_path)
-  }
-  return(row_path)
-}
-
-# find the trait
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
-  # Subset the data
-  file_dir <- subset(file_dir, group == selected_dataset)
-  file_dir <- subset(file_dir, file_type == "scans")
+ # Create cache key
+ cache_key <- paste(selected_dataset, "path")
+  # Get file path from cache or compute it
+ if (is.null(file_path_cache[[cache_key]])) {
+   file_dir <- subset(file_dir, group == selected_dataset)
+   file_dir <- subset(file_dir, file_type == "scans")
   
-  if (nrow(file_dir) == 0) {
-    stop("No matching files found for the selected dataset")
-  }
+   if (nrow(file_dir) == 0) {
+     stop("No matching files found for the selected dataset")
+   }
   
-  if (!file.exists(file_dir$File_path[1])) {
-    stop("File does not exist: ", file_dir$File_path[1])
-  }
+   if (!file.exists(file_dir$File_path[1])) {
+     stop("File does not exist: ", file_dir$File_path[1])
+   }
   
-  scan_data <- tryCatch({
-    # Convert CSV to FST (or retrieve FST name)
-    fst_path <- csv2fst(file_dir$File_path[1])
-    row_path <- fst_rows(fst_path)
-
-    # Read FST data.
-    # Filter for rows where Phenotype matches selected_trait
-    rows <- dplyr::filter(fst::read_fst(row_path), Phenotype == selected_trait)
-    data <- fst::read_fst(fst_path, from = rows$from, to = rows$to)
-    
-    if (nrow(data) == 0) {
-      stop("No data found for phenotype: ", selected_trait)
-    }
-    
-    data
-  }, error = function(e) {
-    stop("Error reading file: ", e$message)
-  })
+   # Cache the FST path
+   fst_path <- csv2fst(file_dir$File_path[1])
+   row_path <- fst_rows(fst_path)
+   file_path_cache[[cache_key]] <- list(
+     fst_path = fst_path,
+     row_path = row_path
+   )
+ }
+  # Use cached paths
+ paths <- file_path_cache[[cache_key]]
+ scan_data <- tryCatch({
+   all_rows <- fst::read_fst(paths$row_path)
+   rows <- dplyr::filter(all_rows, Phenotype == selected_trait)
   
+   if (nrow(rows) == 0) {
+     similar_traits <- all_rows$Phenotype[grep(selected_trait, all_rows$Phenotype, ignore.case = TRUE)]
+     if (length(similar_traits) > 0) {
+       stop("Trait '", selected_trait, "' not found exactly as written. Did you mean one of these? ",
+            paste(head(unique(similar_traits), 5), collapse = ", "))
+     } else {
+       stop("Trait '", selected_trait, "' not found in the dataset")
+     }
+   }
+  
+   data <- fst::read_fst(paths$fst_path, from = rows$from, to = rows$to)
+   if (nrow(data) == 0) {
+     stop("No data found for phenotype: ", selected_trait)
+   }
+   data
+ }, error = function(e) {
+   stop("Error reading file: ", e$message)
+ })
   return(scan_data)
 }
 
 
-# find the peaks
-peak_finder <- function(file_dir, selected_dataset){
-  file_dir <- subset(file_dir, group == selected_dataset)
-  file_dir <- subset(file_dir, file_type == "peaks")
-  peaks <- read.csv(file_dir$File_path)
-  peaks <- peaks %>% relocate("marker","lodcolumn","chr","pos","lod")
-  #peaks <- peaks %>% relocate("lodcolumn","chr","pos","lod")
-  colnames(peaks)[which(colnames(peaks)=="lodcolumn")]<-"trait"
-  return(peaks)
+# Also add caching for peak_finder
+peaks_cache <- new.env(parent = emptyenv())
+
+
+peak_finder <- function(file_dir, selected_dataset) {
+ cache_key <- selected_dataset
+  if (is.null(peaks_cache[[cache_key]])) {
+   file_dir <- subset(file_dir, group == selected_dataset)
+   file_dir <- subset(file_dir, file_type == "peaks")
+   peaks <- read.csv(file_dir$File_path)
+   peaks <- peaks %>% relocate("marker", "lodcolumn", "chr", "pos", "lod")
+   colnames(peaks)[which(colnames(peaks) == "lodcolumn")] <- "trait"
+   peaks_cache[[cache_key]] <- peaks
+ }
+ return(peaks_cache[[cache_key]])
+}
+# set microfunctions==========================================================
+QTL_plot_visualizer <- function(qtl.temp, phenotype, LOD_thr, mrkrs) {
+ # The LOD values are already in the "LOD" column
+ qtl.temp <- qtl.temp[, c("marker", "LOD")]
+ colnames(qtl.temp) <- c("markers", "LOD")
+  mrkrs2 <- mrkrs[c("marker", "chr", "bp_grcm39")]
+ colnames(mrkrs2) <- c("markers", "chr", "position")
+ mrkrs2$position <- as.numeric(mrkrs2$position) / (10^6)
+  # Join the data
+ qtl.temp <- merge(qtl.temp, mrkrs2, by = "markers", all.x = FALSE)
+ qtl.temp <- na.omit(qtl.temp)
+  # Convert chr to numeric
+ qtl.temp$chr <- as.character(qtl.temp$chr)
+ qtl.temp$order <- sapply(qtl.temp$chr, function(x) {
+   if (x == "X") return(20)
+   else if (x == "Y") return(21)
+   else if (x == "M") return(22)
+   else return(as.numeric(x))
+ })
+  qtl.temp <- qtl.temp[!is.na(qtl.temp$order), ]
+ qtl.temp$chr <- qtl.temp$order
+  # Create plot object
+ qtl_plot_obj <- qtl.temp %>%
+   group_by(chr) %>%
+   summarise(chr_len = max(position)) %>%
+   mutate(tot = cumsum(as.numeric(chr_len)) - as.numeric(chr_len)) %>%
+   select(-chr_len) %>%
+   left_join(qtl.temp, ., by = c("chr" = "chr")) %>%
+   arrange(order, position) %>%
+   mutate(BPcum = position + tot)
+  # Create axis labels
+ axisdf <- qtl_plot_obj %>%
+   group_by(order) %>%
+   summarize(center = (max(BPcum) + min(BPcum)) / 2)
+  axisdf$order[axisdf$order == 20] <- "X"
+ axisdf$order[axisdf$order == 21] <- "Y"
+ axisdf$order[axisdf$order == 22] <- "M"
+ axisdf$order <- factor(axisdf$order, levels = c(as.character(1:19), "X", "Y", "M"))
+  # Create plot with x-axis
+ plot_QTL <- ggplot(qtl_plot_obj, aes(x = BPcum, y = LOD)) +
+   geom_line(aes(color = as.factor(chr)), alpha = 0.8, size = 0.5) +
+   scale_color_manual(values = rep(c("black", "darkgrey"), 22)) +
+   scale_x_continuous(
+     label = axisdf$order,
+     breaks = axisdf$center,
+     expand = expansion(mult = 0.15)
+   ) +
+   ylim(0, max(qtl_plot_obj$LOD, na.rm = TRUE) * 1.25) +
+   theme_bw() +
+   theme(
+     legend.position = "none",
+     panel.border = element_blank(),
+     panel.grid.major.x = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line = element_line(colour = "black"),
+     axis.text = element_text(size = 18),
+     axis.title = element_text(size = 20),
+     axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, margin = margin(t = 10)),
+     plot.margin = margin(b = 40, l = 20, r = 20, t = 20, unit = "pt")
+   ) +
+   xlab("Chromosome") +
+   ylab("LOD") +
+   geom_hline(aes(yintercept = LOD_thr), color = "black", linetype = "dashed")
+  plots <- list(plot_QTL, qtl_plot_obj)
+ return(plots)
 }
 
 
-# set UI======================================================================================================
-ui <- page_sidebar(
-  # sets the page
-  # sets the title
-  titlePanel("Pre-scanned QTL visualizer, implemented for Diet DO study"),
-  #start shinyjs
-  useShinyjs(),
-  # sets sidebar
-  sidebar = sidebar(
-    id = "side_panel",
-    helpText(
-      "Select your dataset, trait to show, and other options"
-    ),
-    
-    selectizeInput(
-      inputId = "selected_dataset",
-      label = "Choose a dataset to display",
-      choices = unique(file_directory$group),
-      multiple = FALSE,
-      options = list(
-        placeholder = 'Search...'
-      )
-    ),
-    sliderInput(
-      "LOD_thr",
-      label = "LOD threshold for evaluation",
-      min = 4,
-      max = 20,
-      value = 7.5,
-      round = TRUE
-    ),
-    #helpText("Display table of trait ID information (e.g. gene symbols)? "),
-    #actionButton("search_ID", "Show IDs"),
-    selectizeInput(
-      inputId = "which_trait",
-      label = "Choose the trait",
-      choices = NULL,
-      multiple = FALSE,
-      options = list(
-        placeholder = 'Search...'
-      )
-    ),
-    actionButton("scan", "Show the LOD scan"),
-    helpText("Choose a peak to see the strain effects. This only applies to the additive scans."),
-    selectizeInput(
-      inputId = "which_peak",
-      label = "Choose peak",
-      choices = NULL,
-      multiple = TRUE,
-      options = list(
-        placeholder = 'Search...'
-      )),
-    actionButton("alleles", "Show Effects")
-  ),
-  # sets main panel
-  mainPanel(
-    # set scrollbar
-    div(style = "overflow-y: scroll;"),
-    position = "right",
-    #set starting layout
-    #card(
-    #  card_header("Trait info"),
-    #  DT::dataTableOutput('search_results')
-    #),
-    card(
-      card_header("Datasets available"),
-      DT::dataTableOutput('available_data')
-    ),
-    card(
-      card_header("LOD profile"),
-      plotOutput("scan_plot", click = "plot_click") %>% withSpinner(color="#0dc5c1"),
-      verbatimTextOutput("scan_points")
-    ),
-    card(
-      card_header("Peaks"),
-      DT::dataTableOutput("peaks")
-    ),
-    card(
-      card_header("Strain effects"),
-      plotOutput("allele_effects") %>% withSpinner(color="#0dc5c1")
-    ),
-  ))
+csv2fst <- function(csv_path, chunk_size = 50000) {
+ if (stringr::str_detect(csv_path, "csv$")) {
+   fst_path <- stringr::str_replace(csv_path, "csv$", "fst")
+   if (!file.exists(fst_path)) {
+     warning("Writing FST file in chunks: ", fst_path)
+     all_chunks <- list()
+     skip <- 0
+     repeat {
+       chunk <- data.table::fread(csv_path, skip = skip, nrows = chunk_size, showProgress = TRUE)
+       if (nrow(chunk) == 0) break
+       all_chunks[[length(all_chunks) + 1]] <- chunk
+       skip <- skip + chunk_size
+     }
+     full_data <- data.table::rbindlist(all_chunks)
+     if ("Phenotype" %in% colnames(full_data)) {
+       data.table::setorder(full_data, Phenotype)
+     } else {
+       warning("Column 'Phenotype' not found. Data will not be sorted.")
+     }
+     fst::write_fst(full_data, path = fst_path, compress = 50)
+   }
+ } else {
+   if (!stringr::str_detect(csv_path, "fst$"))
+     stop("No CSV or FST name provided: ", csv_path)
+   fst_path <- csv_path
+ }
+ return(fst_path)
+}
 
 
-# set server==================================================================================================
+fst_rows <- function(fst_path) {
+ row_path <- stringr::str_replace(fst_path, ".fst$", "_row.fst")
+ if (!file.exists(row_path)) {
+   rows <- fst::read_fst(fst_path) |>
+     dplyr::select(Phenotype) |>
+     dplyr::mutate(rown = dplyr::row_number()) |>
+     dplyr::group_by(Phenotype) |>
+     dplyr::slice(c(1, dplyr::n())) |>
+     dplyr::mutate(set = c("from", "to")) |>
+     tidyr::pivot_wider(names_from = "set", values_from = "rown")
+   fst::write_fst(rows, row_path)
+ }
+ return(row_path)
+}
+
+
+
+
+# set UI=======================================================================
+ui <- fluidPage(
+ useShinyjs(),
+ titlePanel("Pre-scanned QTL Visualizer for Diet DO Study"),  # Fixed quotation marks
+ sidebarLayout(
+
+
+ sidebarPanel(
+   selectizeInput("selected_dataset", "Choose a dataset",
+                  choices = unique(file_directory$group), multiple = FALSE),
+   sliderInput("LOD_thr", "LOD Threshold", min = 4, max = 20, value = 7.5, round = TRUE),
+   selectizeInput("which_trait", "Choose a trait",
+                 choices = NULL,
+                 multiple = FALSE,
+                 options = list(
+                   placeholder = 'Type to search traits...',
+                   persist = TRUE,
+                   createOnBlur = FALSE
+                 )),
+     helpText("Select a peak to see strain effects (Only for additive scans)."),
+     selectizeInput("which_peak", "Choose peak", choices = NULL, multiple = FALSE)
+   ),
+   mainPanel(
+     # 1. Datasets available table
+     DTOutput("available_data"),
+     br(),
+     # 2. LOD profile plot with click output
+     plotOutput("scan_plot", click = "plot_click"),
+     verbatimTextOutput("scan_points"),
+     br(),
+     # 3. Peaks datatable
+     DTOutput("peaks"),
+     br(),
+     # 4. Strain effects graph
+     plotOutput("allele_effects"),
+     br(),
+     # Error message display
+     verbatimTextOutput("error_message")
+   )
+ )
+)
+
+
+# Server=======================================================================
 server <- function(input, output, session) {
-  # set the display data for all of the options--------------------------------------------------------
-  output$available_data <- DT::renderDT({DT::datatable(
-    file_directory,
-    options = list(paging = TRUE,    ## paginate the output
-                   pageLength = 5,  ## number of rows to output for each page
-                   scrollX = TRUE,   ## enable scrolling on X axis
-                   scrollY = TRUE,   ## enable scrolling on Y axis
-                   autoWidth = TRUE, ## use smart column width handling
-                   server = TRUE,   ## use client-side processing
-                   dom = 'Bfrtip',
-                   buttons = c('csv', 'excel'),
-                   columnDefs = list(list(targets = '_all', className = 'dt-center'),
-                                     list(targets = c(0, 8, 9), visible = FALSE))
-    ),
-    extensions = 'Buttons',
-    selection = 'single', ## enable selection of a single row
-    filter = 'bottom',              ## include column filters at the bottom
-    rownames = TRUE                ##  show row numbers/names
-  )
-  })
-  # create the reactive objects---------------------------------------------------------------------
-  # covariate reactive values
-  annot_reactive <- reactiveValues(
-    annot_obj = NULL,
-    trait_list = NULL
-  )
-  # scan reactive
-  scan_reactive <- reactiveValues(
-    scan_data = NULL
-  )
-  # create the trait list---------------------------------------------------------------------
-  observeEvent(input$selected_dataset,{
-    # update expression
-    req(input$selected_dataset)
-    file_directory <- subset(file_directory, group==input$selected_dataset)
-    set_type <- file_directory$trait_type[1]
-    assign("set_test",set_type, envir = .GlobalEnv)
-    if (set_type == "Genes"){
-      updateSelectizeInput(session,
-                           "which_trait",
-                           choices = paste0(annotation_list$genes$symbol, " (",annotation_list$genes$gene.id,")"),
-                           options = list(maxItems = 1,
-                                          maxOptions = 5),
-                           server = TRUE
-      )
-      annot_reactive$trait_list <- data.frame(annotation_list$genes)
-    }
-    if (set_type == "Isoforms"){
-      updateSelectizeInput(session,
-                           "which_trait",
-                           choices = paste0(annotation_list$genes$symbol, " (",annotation_list$isoforms$transcript.id,")"),
-                           options = list(maxItems = 1,
-                                          maxOptions = 5),
-                           server = TRUE
-      )
-      annot_reactive$trait_list <- data.frame(annotation_list$isoforms)
-    }
-    if (set_type == "Clinical"){
-      updateSelectizeInput(session,
-                           "which_trait",
-                           choices = paste0(annotation_list$clinical$ID, " (", annotation_list$clinical$data_name,")"),
-                           options = list(maxItems = 1,
-                                          maxOptions = 5),
-                           server = TRUE
-      )
-      annot_reactive$trait_list <- data.frame(annotation_list$clinical)
-    }
-    assign("test_annot",annot_reactive$trait_list, envir = .GlobalEnv)
-  })
-  #observeEvent(input$search_ID, {
-  #  req(input$selected_dataset)
-  #  test_annot <- annot_reactive$trait_list
-  ##  output$search_results <- DT::renderDT({DT::datatable(
-  #    data.frame(annot_reactive$trait_list),
-  #    options = list(paging = TRUE,    ## paginate the output
-  #                   pageLength = 5,  ## number of rows to output for each page
-  #                   scrollX = TRUE,   ## enable scrolling on X axis
-  #                   scrollY = TRUE,   ## enable scrolling on Y axis
-  #                   autoWidth = TRUE, ## use smart column width handling
-  #                   server = TRUE,   ## use client-side processing
-  #                   dom = 'Bfrtip',
-  #                   buttons = c('csv', 'excel'),
-  #                   columnDefs = list(list(targets = '_all', className = 'dt-center'),
-  #                                     list(targets = c(0, 8, 9), visible = FALSE))
-  #    ),
-  #    extensions = 'Buttons',
-  #    selection = 'single', ## enable selection of a single row
-  #    filter = 'bottom',              ## include column filters at the bottom
-  #    rownames = TRUE                ##  show row numbers/names
-  #  )
-  #  })
-  #})
+  # Show available datasets (file_directory) for reference
+ output$available_data <- renderDT(
+   DT::datatable(file_directory, options = list(pageLength = 5, scrollX = TRUE))
+ )
+  # Reactive expression to load scan data based on dataset and trait
+ scan_data_reactive <- reactive({
+   req(input$selected_dataset, input$which_trait)
+   tryCatch({
+     trait_scan(file_directory, input$selected_dataset, input$which_trait)
+   }, error = function(e) {
+     # Check if the error is related to trait not found
+     if (grepl("Trait.*not found", e$message)) {
+       # Get available traits for suggestions
+       dataset_files <- file_directory %>%
+         filter(group == input$selected_dataset, file_type == "scans")
+       fst_path <- csv2fst(dataset_files$File_path[1])
+       scan_data_sample <- fst::read_fst(fst_path, columns = "Phenotype")
+       available_traits <- unique(na.omit(scan_data_sample$Phenotype))
+      
+       # Find similar traits
+       similar_traits <- available_traits[grep(input$which_trait, available_traits, ignore.case = TRUE)]
+       if (length(similar_traits) > 0) {
+         output$error_message <- renderText({
+           paste("Did you mean one of these traits? ",
+                 paste(head(similar_traits, 5), collapse = ", "))
+         })
+       } else {
+         output$error_message <- renderText({
+           paste("No matching traits found for:", input$which_trait)
+         })
+       }
+     } else {
+       output$error_message <- renderText({ paste("Error: ", e$message) })
+     }
+     NULL
+   })
+ })
+
+
+   plot_obj <- reactive({
+  req(scan_data_reactive())
+  QTL_plot_visualizer(scan_data_reactive(), input$which_trait, input$LOD_thr, markers)
+})
+
+
+  # Reactive expression for QTL plot and underlying data
+ plot_base <- reactive({
+   req(plot_obj())
+   plot_data <- plot_obj()[[2]]
   
-  # create the scan list---------------------------------------------------------------------
-  observeEvent(input$scan, {
-    # update expression
-    req(input$selected_dataset)
-    req(input$which_trait)
-    chosen_trait <- str_split(input$which_trait, pattern=" [(]")[[1]][2]
-    chosen_trait <- str_split(chosen_trait, pattern="[)]")[[1]][1]
-    scans <- trait_scan(file_directory, input$selected_dataset, chosen_trait)
-    scan_reactive$scan_data <- scans
-    scan_plot <- QTL_plot_visualizer(scans, input$which_trait, input$LOD_thr, markers)
-    output$scan_plot <- renderPlot({scan_plot[[1]]})
-    output$scan_points <-  renderPrint({
-      nearPoints(scan_plot[[2]], input$plot_click, xvar = "BPcum", yvar = "LOD", threshold = 10, maxpoints = 1,
-                 addDist = TRUE) })
-  })
+   ggplot(plot_data, aes(x = BPcum, y = LOD)) +
+     geom_line(aes(color = as.factor(chr)), alpha = 0.8, size = 0.5) +
+     scale_color_manual(values = rep(c("black", "darkgrey"), 22)) +
+     scale_x_continuous(
+       label = plot_data %>%
+         group_by(chr) %>%
+         summarise(center = mean(BPcum)) %>%
+         pull(chr),
+       breaks = plot_data %>%
+         group_by(chr) %>%
+         summarise(center = mean(BPcum)) %>%
+         pull(center),
+       expand = expansion(mult = 0.15)
+     ) +
+     ylim(0, max(plot_data$LOD, na.rm = TRUE) * 1.25) +
+     theme_bw() +
+     theme(
+       legend.position = "none",
+       panel.border = element_blank(),
+       panel.grid.major.x = element_blank(),
+       panel.grid.minor.x = element_blank(),
+       axis.line = element_line(colour = "black"),
+       axis.text = element_text(size = 18),
+       axis.title = element_text(size = 20),
+       axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, margin = margin(t = 10)),
+       plot.margin = margin(b = 40, l = 20, r = 20, t = 20, unit = "pt")
+     ) +
+     xlab("Chromosome") +
+     ylab("LOD")
+ })
+
+
+ # Render the plot with the threshold line
+
+
+ # Render the plot with metadata title and threshold line
+ output$scan_plot <- renderPlot({
+   req(plot_base(), input$LOD_thr, input$which_trait)
   
-  # get the peaks info ------------------------------------------------------------------
-  observeEvent(input$selected_dataset, {
-    peaks <- peak_finder(file_directory, input$selected_dataset)
-    output$peaks <- DT::renderDT({DT::datatable(
-      peaks,
-      options = list(paging = TRUE,    ## paginate the output
-                     pageLength = 5,  ## number of rows to output for each page
-                     scrollX = TRUE,   ## enable scrolling on X axis
-                     scrollY = TRUE,   ## enable scrolling on Y axis
-                     autoWidth = TRUE, ## use smart column width handling
-                     server = TRUE,   ## use client-side processing
-                     dom = 'Bfrtip',
-                     buttons = c('csv', 'excel'),
-                     columnDefs = list(list(targets = '_all', className = 'dt-center'),
-                                       list(targets = c(0, 8, 9), visible = FALSE))
-      ),
-      extensions = 'Buttons',
-      selection = 'single', ## enable selection of a single row
-      filter = 'bottom',              ## include column filters at the bottom
-      rownames = TRUE                ##  show row numbers/names
-    )
-    })
-  })
-  # get the peak selected for strain effects-------------------------------------------
-  observeEvent(input$which_trait, {
-    req(input$selected_dataset)
-    req(input$which_trait)
-    chosen_trait <- str_split(input$which_trait, pattern=" [(]")[[1]][2]
-    chosen_trait <- str_split(chosen_trait, pattern="[)]")[[1]][1]
-    peaks <- peak_finder(file_directory, input$selected_dataset)
-    peaks <- subset(peaks, trait == chosen_trait)
-    updateSelectizeInput(session,
-                         "which_peak",
-                         choices = peaks$marker,
-                         options = list(maxItems = 1,
-                                        maxOptions = 5),
-                         server = TRUE
-    )
-  })
+   # Get peak information for the current trait
+   peaks_info <- peak_finder(file_directory, input$selected_dataset) %>%
+     filter(trait == input$which_trait) %>%
+     arrange(desc(lod)) %>%
+     slice(1)  # Get the highest peak for this trait
+  
+   # Create metadata text
+   trait_text <- paste0("Trait: ", input$which_trait)
+   peak_text <- if(nrow(peaks_info) > 0) {
+     paste0("Peak Marker: ", peaks_info$marker,
+           " (Chr", peaks_info$chr, ":", round(peaks_info$pos, 2), ")")
+   } else {
+     "No significant peaks"
+   }
+   lod_text <- if(nrow(peaks_info) > 0) {
+     paste0("Max LOD: ", peaks_info$lod)
+   } else {
+     ""
+   }
+  
+   # Add metadata to plot
+   plot_base() +
+     geom_hline(yintercept = input$LOD_thr, color = "black", linetype = "dashed") +
+     ggtitle(label = trait_text,
+             subtitle = paste0(peak_text, "\n", lod_text)) +
+     theme(
+       plot.title = element_text(color = "#2C3E50", size = 18, face = "bold"),
+       plot.subtitle = element_text(color = "#E74C3C", size = 16),
+       plot.title.position = "plot",
+       plot.margin = margin(t = 40, r = 20, b = 20, l = 20)
+     )
+ })
 
 
-#MAKE THIS REACTIVE INSTEAD ??????
+  # Show near-point metadata on click
+ output$scan_points <- renderPrint({
+   req(plot_obj())
+   near_points <- nearPoints(plot_obj()[[2]], input$plot_click,
+                             xvar = "BPcum", yvar = "LOD", threshold = 10, maxpoints = 1, addDist = TRUE)
+   if (nrow(near_points) > 0) {
+     print(near_points)
+   } else {
+     "Click on a point to see metadata"
+   }
+ })
 
-  # show the strain effects-----------------------------------------------------------
-  observeEvent(c(input$alleles, input$which_peak), {  # Now observing both the button and peak selection
-    req(input$selected_dataset)
-    req(input$which_trait)
-    req(input$which_peak)
+
+
+
+ # Update trait list based on selected dataset with improved search functionality
+ observeEvent(input$selected_dataset, {
+   req(input$selected_dataset)
+   tryCatch({
+     dataset_files <- file_directory %>%
+       filter(group == input$selected_dataset, file_type == "scans")
     
-    peaks <- peak_finder(file_directory, input$selected_dataset)
+     if (nrow(dataset_files) > 0) {
+       fst_path <- csv2fst(dataset_files$File_path[1])
+       scan_data_sample <- fst::read_fst(fst_path, columns = "Phenotype")
+       available_traits <- unique(na.omit(scan_data_sample$Phenotype))
+      
+       updateSelectizeInput(session, "which_trait",
+                          choices = available_traits,
+                          server = TRUE,
+                          options = list(
+                            maxOptions = 10000,
+                            create = FALSE,  # Don't allow creating new options
+                            persist = TRUE,  # Keep the typed text when backspace
+                            createOnBlur = FALSE,
+                            selectOnTab = TRUE,
+                            placeholder = 'Type to search traits...',
+                            searchField = 'value'
+                          ))
+     }
+   }, error = function(e) {
+     updateSelectizeInput(session, "which_trait", choices = character(0))
+   })
+ })
+
+
+
+
+ # Update Peaks Table when dataset is chosen
+ observeEvent(input$selected_dataset, {
+   req(input$selected_dataset)
+  
+   tryCatch({
+     # Get peaks data
+     peaks <- peak_finder(file_directory, input$selected_dataset)
     
-    # Check if scan data exists and is additive
-    if (peaks$intcovar[1] == "none") {
-        # set trait
-        chosen_trait <- str_split(input$which_trait, pattern=" [(]")[[1]][2]
-        chosen_trait <- str_split(chosen_trait, pattern="[)]")[[1]][1]
-        
-        # set peaks
-        peaks <- subset(peaks, trait == chosen_trait)
-        peaks <- subset(peaks, marker == input$which_peak)  # Changed from marker.id to marker
-        
-        # Check if we have data after filtering
-        if (nrow(peaks) > 0) {
-            # Select and rename columns
-            peaks <- peaks[c("marker","A","B","C","D","E","F","G","H")]
-            colnames(peaks)[2:9] <- c("AJ","B6","129","NOD","NZO","CAST","PWK","WSB")
-            
-            # Reshape data
-            peaks <- reshape2::melt(peaks, id.vars = "marker")
-            
-            # Define colors
-            newClrs <- c(
-                "AJ" = "#000000",
-                "B6" = "#96989A",
-                "129" = "#E69F00",
-                "NOD" = "#0072B2",
-                "NZO" = "#619BFF",
-                "CAST" = "#009E73",
-                "PWK" = "#D55E00",
-                "WSB" = "#CC79A7"
-            )
-            
-            # Create plot
-            plot_alleles <- ggplot(data = peaks, aes(x = marker, y = value, color = variable)) +
-                geom_point(size = 10) +
-                scale_color_manual(values = newClrs) +
-                theme_bw() +
-                theme(
-                    legend.text = element_text(size = 18),
-                    panel.border = element_blank(),
-                    panel.grid.major.x = element_blank(),
-                    panel.grid.minor.x = element_blank(),
-                    axis.line = element_line(colour = "black"),
-                    axis.text = element_text(size = 18),
-                    axis.title = element_text(size = 20)
-                ) +
-                labs(x = "Marker ID", y = "Founder allele effect", color = "Strain") +
-                geom_hline(yintercept = 0, color = "black")
-            
-            output$allele_effects <- renderPlot({
-                print(plot_alleles)
-            })
-        } else {
-            output$allele_effects <- renderText({"No data available for selected peak"})
-        }
-    } else {
-        output$allele_effects <- renderText({"Strain effects only available for additive scans"})
-    }
-  })
+     # Get available traits from scan data
+     dataset_files <- file_directory %>%
+       filter(group == input$selected_dataset, file_type == "scans")
+    
+     if (nrow(dataset_files) > 0) {
+       fst_path <- csv2fst(dataset_files$File_path[1])
+       scan_data_sample <- fst::read_fst(fst_path, columns = "Phenotype")
+       available_scan_traits <- unique(na.omit(scan_data_sample$Phenotype))
+      
+       # Filter peaks to only show traits that exist in scan data
+       peaks_to_show <- peaks %>%
+         filter(trait %in% available_scan_traits) %>%
+         select(marker, trait, chr, pos, lod) %>% # Keep only relevant columns
+         arrange(trait, desc(lod)) # Sort by trait and LOD score
+      
+       output$peaks <- renderDT({
+         datatable(peaks_to_show,
+                  options = list(
+                    pageLength = 5,
+                    scrollX = TRUE,
+                    dom = 'lftip', # Added 'f' for search
+                    searchCols = list(
+                      list(searchable = TRUE), # marker
+                      list(searchable = TRUE), # trait
+                      list(searchable = TRUE), # chr
+                      list(searchable = TRUE), # pos
+                      list(searchable = TRUE)  # lod
+                    ),
+                    columnDefs = list(
+                      list(
+                        targets = c(3, 4), # pos and lod columns
+                        searchable = TRUE,
+                        type = 'numeric'
+                      )
+                    )
+                  ),
+                  filter = 'top', # Adds filter row at top of each column
+                  rownames = FALSE)
+       })
+     }
+   }, error = function(e) {
+     output$error_message <- renderText({
+       paste("Error loading peaks data:", e$message)
+     })
+   })
+ })
+
+
+ # Update Peaks Dropdown based on selected trait
+
+
+
+
+# Add this observer to update peak options when trait is selected
+observeEvent(input$which_trait, {
+ req(input$selected_dataset, input$which_trait)
+ peaks <- peak_finder(file_directory, input$selected_dataset)
+ if (!is.null(peaks) && "trait" %in% colnames(peaks)) {
+   filtered_peaks <- peaks %>% filter(trait == input$which_trait)
+   peak_options <- unique(filtered_peaks$marker)
+   updateSelectizeInput(session, "which_peak", choices = peak_options, server = TRUE)
+ } else {
+   updateSelectizeInput(session, "which_peak", choices = character(0), server = TRUE)
+ }
+})
+
+
+observeEvent(scan_data_reactive(), {
+   if (!is.null(scan_data_reactive())) {
+     output$error_message <- renderText({ "" })
+   }
+ })
+
+
+# Plot Strain Effects when a peak is selected
+observeEvent(input$which_peak, {  # Simplified trigger
+ req(input$selected_dataset)
+ req(input$which_trait)
+ req(input$which_peak)
+  peaks <- peak_finder(file_directory, input$selected_dataset)
+  # Check if scan data exists and is additive
+ if (!is.null(peaks) && "intcovar" %in% colnames(peaks) && peaks$intcovar[1] == "none") {
+   # Filter peaks for the selected trait
+   peaks <- peaks %>% filter(trait == input$which_trait, marker == input$which_peak)
+  
+   # Check if we have data after filtering
+   if (nrow(peaks) > 0) {
+     # Select and rename columns
+     peaks <- peaks[c("marker","A","B","C","D","E","F","G","H")]
+     colnames(peaks)[2:9] <- c("AJ","B6","129","NOD","NZO","CAST","PWK","WSB")
+    
+     # Reshape data
+     peaks <- reshape2::melt(peaks, id.vars = "marker")
+    
+     # Define colors
+     newClrs <- c(
+       "AJ" = "#000000",
+       "B6" = "#96989A",
+       "129" = "#E69F00",
+       "NOD" = "#0072B2",
+       "NZO" = "#619BFF",
+       "CAST" = "#009E73",
+       "PWK" = "#D55E00",
+       "WSB" = "#CC79A7"
+     )
+    
+     # Create plot
+     plot_alleles <- ggplot(data = peaks, aes(x = marker, y = value, color = variable)) +
+       geom_point(size = 10) +
+       scale_color_manual(values = newClrs) +
+       theme_bw() +
+       theme(
+         legend.text = element_text(size = 18),
+         panel.border = element_blank(),
+         panel.grid.major.x = element_blank(),
+         panel.grid.minor.x = element_blank(),
+         axis.line = element_line(colour = "black"),
+         axis.text = element_text(size = 18),
+         axis.title = element_text(size = 20)
+       ) +
+       labs(x = "Marker ID", y = "Founder allele effect", color = "Strain") +
+       geom_hline(yintercept = 0, color = "black")
+    
+     output$allele_effects <- renderPlot({
+       plot_alleles
+     })
+   } else {
+     output$allele_effects <- renderPlot({ NULL })
+   }
+ } else {
+   output$allele_effects <- renderPlot({ NULL })
+ }
+})
 }
 
 
-# set app ====================================================================================================
-shiny::shinyApp(ui = ui, server = server)
+shinyApp(ui = ui, server = server)
