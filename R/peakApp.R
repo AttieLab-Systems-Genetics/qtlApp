@@ -45,12 +45,12 @@ peakServer <- function(id, main_par, import) {
         pattern="[)]")[[1]][1]
     })
     peaks <- shiny::reactive({
-      shiny::req(main_par$selected_dataset, chosen_trait())
+      shiny::req(main_par$group, chosen_trait())
       shiny::withProgress(
         message = paste("peaks of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          subset(peak_finder(import()$file_directory, main_par$selected_dataset), trait == chosen_trait())
+          subset(peak_finder(import()$file_directory, main_par$group), trait == chosen_trait())
         })
     })
 

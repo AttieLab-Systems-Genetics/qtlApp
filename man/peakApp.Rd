@@ -9,7 +9,7 @@
 \usage{
 peakApp()
 
-peakServer(id, main_par, file_directory)
+peakServer(id, main_par, import)
 
 peakInput(id)
 
@@ -18,7 +18,7 @@ peakOutput(id)
 \arguments{
 \item{id}{shiny identifier}
 
-\item{file_directory}{data frame with file directory information}
+\item{import}{reactive list with file_directory}
 }
 \description{
 Peak App Module

@@ -9,7 +9,7 @@
 \usage{
 qtlApp()
 
-qtlServer(id, file_directory, annotation_list, markers)
+qtlServer(id, import)
 
 qtlInput(id)
 
@@ -18,11 +18,7 @@ qtlOutput(id)
 \arguments{
 \item{id}{shiny identifier}
 
-\item{file_directory}{data frame with file directory information}
-
-\item{annotation_list}{list with annotation information}
-
-\item{markers}{list object with marker information}
+\item{import}{reactive list with file_directory, annotation_list and markers}
 }
 \description{
 QTL App

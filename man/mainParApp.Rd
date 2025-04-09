@@ -21,7 +21,7 @@ mainParOutput(id)
 \arguments{
 \item{id}{shiny identifier}
 
-\item{data}{reactive list with file_directory and annotation_list}
+\item{import}{reactive list with file_directory and annotation_list}
 }
 \description{
 Main Parameter App Module

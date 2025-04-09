@@ -47,13 +47,13 @@ scanServer <- function(id, main_par, import) {
         
     # create the scans only when `scan` button clicked
     shiny::observeEvent(input$scan, {
-      shiny::req(main_par$selected_dataset, chosen_trait())
+      shiny::req(main_par$group, chosen_trait())
       shiny::req(main_par$which_trait, input$LOD_thr)
       scans <- shiny::withProgress(
         message = paste("scan of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          trait_scan(import()$file_directory, main_par$selected_dataset, chosen_trait())
+          trait_scan(import()$file_directory, main_par$group, chosen_trait())
         })
       scan_plot <- QTL_plot_visualizer(scans, main_par$which_trait, input$LOD_thr, import()$markers)
       output$scan_plot <- shiny::renderPlot({
