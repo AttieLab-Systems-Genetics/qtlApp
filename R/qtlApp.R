@@ -1,43 +1,13 @@
-#' QTL Server
+#' QTL App
 #' 
 #' @param id shiny identifier
-#' @param file_directory data frame with file directory information
-#' @param annotation_list list with annotation information
-#' @param markers list object with marker information
+#' @param import reactive list with file_directory, annotation_list and markers
 #' 
 #' @importFrom shiny helpText moduleServer NS shinyApp
 #' @importFrom bslib page_sidebar sidebar
 #' @importFrom shinyjs useShinyjs
+#' 
 #' @export
-qtlServer <- function(id, file_directory, annotation_list, markers) {
-    shiny::moduleServer(id, function(input, output, session) {
-      ns <- session$ns
-      main_par <- mainParServer("main_par", file_directory, annotation_list)
-      scanServer("scan", main_par, file_directory, annotation_list, markers)
-      peakServer("peak", main_par, file_directory)
-  })
-}
-qtlInput <- function(id) {
-  ns <- shiny::NS(id)
-  list(
-    shiny::helpText("Select your dataset, trait to show, and other options"),
-    mainParInput(ns("main_par")), # "selected_dataset"
-    scanInput(ns("scan")),        # "LOD_thr"
-    mainParUI(ns("main_par")),    # "which_trait"
-    scanUI(ns("scan")),           # "scan" actionButton
-    peakInput(ns("peak")))        # "which_peak", "alleles" actionButton
-}
-#' @export
-#' @rdname qtlServer
-qtlOutput <- function(id) {
-  ns <- shiny::NS(id)
-  list(
-    scanOutput(ns("scan")),
-    peakOutput(ns("peak"))
-  )
-}
-#' @export
-#' @rdname qtlServer
 qtlApp <- function() {
   source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
   ui <- bslib::page_sidebar(
@@ -48,7 +18,39 @@ qtlApp <- function() {
     qtlOutput("qtl")
   )
   server <- function(input, output, session) {
-    qtlServer("qtl", file_directory, annotation_list, markers)
+    import <- importServer("import")
+    qtlServer("qtl", import)
   }
   shiny::shinyApp(ui = ui, server = server)
+}
+#' @rdname qtlApp
+#' @export
+qtlServer <- function(id, import) {
+    shiny::moduleServer(id, function(input, output, session) {
+      ns <- session$ns
+      main_par <- mainParServer("main_par", import)
+      scanServer("scan", main_par, import)
+      peakServer("peak", main_par, import)
+  })
+}
+#' @rdname qtlApp
+#' @export
+qtlInput <- function(id) {
+  ns <- shiny::NS(id)
+  list(
+    shiny::helpText("Select your dataset, trait to show, and other options"),
+    mainParInput(ns("main_par")), # "selected_dataset"
+    scanInput(ns("scan")),        # "LOD_thr"
+    mainParUI(ns("main_par")),    # "which_trait"
+    scanUI(ns("scan")),           # "scan" actionButton
+    peakInput(ns("peak")))        # "which_peak", "alleles" actionButton
+}
+#' @rdname qtlApp
+#' @export
+qtlOutput <- function(id) {
+  ns <- shiny::NS(id)
+  list(
+    scanOutput(ns("scan")),
+    peakOutput(ns("peak"))
+  )
 }

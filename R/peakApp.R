@@ -1,7 +1,7 @@
-#' Peak module
+#' Peak App Module
 #'
 #' @param id shiny identifier
-#' @param file_directory data frame with file directory information
+#' @param import reactive list with file_directory
 #'
 #' @importFrom DT datatable DTOutput renderDT
 #' @importFrom shiny moduleServer NS observeEvent plotOutput reactive renderPlot renderText
@@ -12,8 +12,29 @@
 #' @importFrom reshape2 melt
 #' @importFrom ggplot2 aes element_blank element_line element_text geom_hline geom_point ggplot
 #'             labs scale_color_manual theme theme_bw
+#' 
 #' @export
-peakServer <- function(id, main_par, file_directory) {
+peakApp <- function() {
+  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
+  ui <- bslib::page_sidebar(
+    title = "Test Scan",
+    sidebar = bslib::sidebar("side_panel",
+      mainParInput("main_par"),
+      mainParUI("main_par"),
+      peakInput("peak")
+    ),
+    peakOutput("peak")
+  )
+  server <- function(input, output, session) {
+      import <- importServer("import")
+      main_par <- mainParServer("main_par", import)
+      peakServer("peak", main_par, import)
+  }
+  shiny::shinyApp(ui = ui, server = server)
+}
+#' @rdname peakApp
+#' @export
+peakServer <- function(id, main_par, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -29,7 +50,7 @@ peakServer <- function(id, main_par, file_directory) {
         message = paste("peaks of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          subset(peak_finder(file_directory, main_par$selected_dataset), trait == chosen_trait())
+          subset(peak_finder(import()$file_directory, main_par$selected_dataset), trait == chosen_trait())
         })
     })
 
@@ -113,6 +134,8 @@ peakServer <- function(id, main_par, file_directory) {
     })
   })
 }
+#' @rdname peakApp
+#' @export
 peakInput <- function(id) {
   ns <- shiny::NS(id)
   list(
@@ -125,6 +148,8 @@ peakInput <- function(id) {
         placeholder = 'Search...'
       )))
 }
+#' @rdname peakApp
+#' @export
 peakOutput <- function(id) {
   ns <- shiny::NS(id)
   list(
@@ -137,23 +162,4 @@ peakOutput <- function(id) {
       shiny::uiOutput(ns("allele_effects")) |>
         shinycssloaders::withSpinner(color="#0dc5c1"))
   )
-}
-#' @export 
-#' @rdname peakServer
-peakApp <- function() {
-  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
-  ui <- bslib::page_sidebar(
-    title = "Test Scan",
-    sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"),
-      mainParUI("main_par"),
-      peakInput("peak")
-    ),
-    peakOutput("peak")
-  )
-  server <- function(input, output, session) {
-      main_par <- mainParServer("main_par", file_directory, annotation_list)
-      peakServer("peak", main_par, file_directory)
-  }
-  shiny::shinyApp(ui = ui, server = server)
 }
