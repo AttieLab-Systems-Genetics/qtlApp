@@ -1,9 +1,7 @@
-#' Scan module
+#' Scan App Module
 #'
 #' @param id shiny identifier
-#' @param file_directory data frame with file directory information
-#' @param annotation_list list with annotation information
-#' @param markers list object with marker information
+#' @param import reactive list with file_directory and markers
 #'
 #' @importFrom DT DTOutput renderDT
 #' @importFrom shiny actionButton moduleServer nearPoints NS plotOutput reactive renderPlot
@@ -12,8 +10,31 @@
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr across mutate where
 #' @importFrom stringr str_split
+#' 
 #' @export
-scanServer <- function(id, main_par, file_directory, annotation_list, markers) {
+scanApp <- function() {
+  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
+  ui <- bslib::page_sidebar(
+    title = "Test Scan",
+    sidebar = bslib::sidebar("side_panel",
+      mainParInput("main_par"),
+      mainParUI("main_par"),
+      scanInput("scan"),
+      scanUI("scan")
+    ),
+    scanOutput("scan")
+  )
+  server <- function(input, output, session) {
+      import <- importServer("import")
+      main_par <- mainParServer("main_par", import)
+      scanServer("scan", main_par, import)
+  }
+  shiny::shinyApp(ui = ui, server = server)
+
+}
+#' @rdname scanApp
+#' @export
+scanServer <- function(id, main_par, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -32,9 +53,9 @@ scanServer <- function(id, main_par, file_directory, annotation_list, markers) {
         message = paste("scan of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          trait_scan(file_directory, main_par$selected_dataset, chosen_trait())
+          trait_scan(import()$file_directory, main_par$selected_dataset, chosen_trait())
         })
-      scan_plot <- QTL_plot_visualizer(scans, main_par$which_trait, input$LOD_thr, markers)
+      scan_plot <- QTL_plot_visualizer(scans, main_par$which_trait, input$LOD_thr, import()$markers)
       output$scan_plot <- shiny::renderPlot({
         scan_plot[[1]]
       })
@@ -47,6 +68,8 @@ scanServer <- function(id, main_par, file_directory, annotation_list, markers) {
     })
   })
 }
+#' @rdname scanApp
+#' @export
 scanInput <- function(id) {
   ns <- shiny::NS(id)
   shiny::sliderInput(ns("LOD_thr"),
@@ -56,10 +79,14 @@ scanInput <- function(id) {
     value = 7.5,
     round = TRUE)
 }
+#' @rdname scanApp
+#' @export
 scanUI <- function(id) {
   ns <- shiny::NS(id)
   shiny::actionButton(ns("scan"), "Show the LOD scan")
 }
+#' @rdname scanApp
+#' @export
 scanOutput <- function(id) {
     ns <- shiny::NS(id)
     bslib::card(
@@ -68,25 +95,4 @@ scanOutput <- function(id) {
         shinycssloaders::withSpinner(color="#0dc5c1"),
       DT::DTOutput(ns("scan_points"))
     )
-}
-#' @export
-#' @rdname scanServer
-scanApp <- function() {
-  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
-  ui <- bslib::page_sidebar(
-    title = "Test Scan",
-    sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"),
-      mainParUI("main_par"),
-      scanInput("scan"),
-      scanUI("scan")
-    ),
-    scanOutput("scan")
-  )
-  server <- function(input, output, session) {
-      main_par <- mainParServer("main_par", file_directory, annotation_list)
-      scanServer("scan", main_par, file_directory, annotation_list, markers)
-  }
-  shiny::shinyApp(ui = ui, server = server)
-
 }
