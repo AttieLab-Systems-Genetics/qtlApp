@@ -2,6 +2,7 @@
 #'
 #' @param id shiny identifier
 #' @param import reactive list with file_directory and markers
+#' @param main_par reactive list with group and which_trait
 #'
 #' @importFrom DT DTOutput renderDT
 #' @importFrom shiny actionButton moduleServer nearPoints NS plotOutput reactive renderPlot

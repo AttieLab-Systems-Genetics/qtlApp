@@ -21,6 +21,8 @@ scanOutput(id)
 \arguments{
 \item{id}{shiny identifier}
 
+\item{main_par}{reactive list with group and which_trait}
+
 \item{import}{reactive list with file_directory and markers}
 }
 \description{
