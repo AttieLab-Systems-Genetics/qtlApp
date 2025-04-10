@@ -5,7 +5,7 @@
 \alias{importServer}
 \alias{importUI}
 \alias{importOutput}
-\title{Import Data App Module}
+\title{Import Import App Module}
 \usage{
 importApp()
 
@@ -25,5 +25,5 @@ importOutput(id)
 \item{set_type}{character string as reactive object}
 }
 \description{
-Import Data App Module
+Import Import App Module
 }

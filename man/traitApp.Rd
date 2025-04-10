@@ -9,7 +9,7 @@
 \usage{
 traitApp()
 
-traitServer(id, import, trait_type)
+traitServer(id, main_par, import)
 
 traitUI(id)
 
