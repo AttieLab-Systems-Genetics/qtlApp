@@ -4,12 +4,14 @@
 \alias{peak_finder}
 \title{Find the peaks}
 \usage{
-peak_finder(file_dir, selected_dataset)
+peak_finder(file_dir, selected_dataset, selected_trait = NULL)
 }
 \arguments{
 \item{file_dir}{data frame with file directory information}
 
 \item{selected_dataset}{character string}
+
+\item{selected_trait}{character string}
 }
 \description{
 Find the peaks
