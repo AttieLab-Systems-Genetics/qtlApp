@@ -4,7 +4,7 @@
 #' @param selected_dataset character string
 #' @param selected_trait character string
 #'
-#' @importFrom dplyr relocate
+#' @importFrom dplyr across mutate relocate where
 #' @export
 peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
   # Create a unique cache key that includes the dataset
@@ -115,6 +115,9 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
       peaks_data <- as.data.frame(peaks_data)
       # Remove unnecessary column `Which_mice` if present
       peaks_data[["Which_mice"]] <- NULL
+      # Round off numeric columns to 5 significant digits
+      peaks_data <- dplyr::mutate(peaks_data,
+        dplyr::across(dplyr::where(is.numeric), function(x) signif(x, 5)))
       # Cache the result
       peaks_cache[[cache_key]] <- peaks_data
           
