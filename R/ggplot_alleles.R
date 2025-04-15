@@ -19,7 +19,7 @@ ggplot_alleles <- function(peak, colors = newClrs) {
     "PWK" = "#D55E00",
     "WSB" = "#CC79A7")
   ggplot2::ggplot(data = peak) +
-    ggplot2::aes(x = .data$marker, y = .data$value, color = .data$variable)) +
+    ggplot2::aes(x = .data$marker, y = .data$value, color = .data$variable) +
     ggplot2::geom_point(size = 10) +
     ggplot2::scale_color_manual(values = colors) +
     ggplot2::theme_bw() +

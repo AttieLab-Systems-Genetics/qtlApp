@@ -91,6 +91,6 @@ QTL_plot_visualizer <- function(qtl.temp, phenotype, LOD_thr, mrkrs) {
   # Convert back to tibble for ggplot
   qtl_plot_obj <- as_tibble(qtl.temp)
  
-  return(list(NULL, qtl_plot_obj))
+  return(qtl_plot_obj)
 }
 

@@ -40,7 +40,7 @@ traitServer <- function(id, main_par, import) {
     })
     # Get trait list
     trait_type <- shiny::reactive({
-      get_trait_type(shiny::req(import()), main_par$group)
+      get_trait_type(shiny::req(import()), main_par$selected_dataset)
     })
     trait_list <- shiny::reactive({
       shiny::req(trait_type())

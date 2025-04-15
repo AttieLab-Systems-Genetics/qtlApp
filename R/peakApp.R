@@ -15,7 +15,6 @@
 #' 
 #' @export
 peakApp <- function() {
-  source(system.file("data/cache.R", package="qtlApp"))
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
@@ -41,16 +40,16 @@ peakServer <- function(id, main_par, import) {
     # ** new version uses marker not trait **
 
     chosen_trait <- shiny::reactive({
-      shiny::req(main_par$which_trait)
-      get_chosen_trait(main_par$which_trait)
+      shiny::req(import(), main_par$which_trait, main_par$selected_dataset)
+      get_selected_trait(import(), main_par$which_trait, main_par$selected_dataset)
     })
     peaks <- shiny::reactive({
-      shiny::req(main_par$group, chosen_trait())
+      shiny::req(main_par$selected_dataset, chosen_trait())
       shiny::withProgress(
         message = paste("peaks of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          subset(peak_finder(import()$file_directory, main_par$group), trait == chosen_trait())
+          subset(peak_finder(import()$file_directory, main_par$selected_dataset), trait == chosen_trait())
         })
     })
 
@@ -93,7 +92,7 @@ peakServer <- function(id, main_par, import) {
           # Reshape data
           peak <- reshape2::melt(peak, id.vars = "marker")
           # Create plot
-          plot_alleles <- ggplot_allelse(peak)
+          plot_alleles <- ggplot_alleles(peak)
           shiny::renderPlot({
             print(plot_alleles)
           })

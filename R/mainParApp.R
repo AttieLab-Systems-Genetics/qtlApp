@@ -27,35 +27,22 @@ mainParServer <- function(id, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Select `group` = `selected_dataset`.
-    output$group <- shiny::renderUI({
+    # Select `selected_dataset` = `group`.
+    output$selected_dataset <- shiny::renderUI({
       shiny::req(import())
       choices <- import()$file_directory$group
-      shiny::selectizeInput(ns("group"), label = "Choose a data group",
+      shiny::selectizeInput(ns("selected_dataset"), label = "Choose a dataset",
         choices = choices, selected = choices[1], multiple = FALSE)
     })
-    trait_type <- shiny::reactive({
-      get_trait_type(shiny::req(import()), input$group)
-    })
-    trait_list <- shiny::reactive({
-      shiny::req(trait_type())
-      get_trait_list(import(), trait_type())
-    })
-    # ** Want to join symbol with either gene.id or transcript.id **
-    trait_id <- shiny::reactive({
-      get_trait_id(shiny::req(trait_type()))
-    })
-
     # Update trait choices.
-    shiny::observeEvent(shiny::req(trait_type(), trait_list(), trait_id()), {
-      choices <- get_trait_choices(shiny::req(import()),
-        trait_type(), trait_id(), trait_list())
+    shiny::observeEvent(shiny::req(input$selected_dataset), {
+      choices <- get_trait_choices(import(), input$selected_dataset)
       shiny::updateSelectizeInput(session, "which_trait",
         choices = choices, options = list(maxItems = 1, maxOptions = 5), server = TRUE)
     })
 
     output$returns <- shiny::renderPrint({
-      cat("group =", input$group,
+      cat("selected_dataset =", input$selected_dataset,
           "\nwhich_trait =", input$which_trait)
     })
     # Return.
@@ -67,7 +54,7 @@ mainParServer <- function(id, import) {
 mainParInput <- function(id) {
   ns <- shiny::NS(id)
   list(
-    shiny::uiOutput(ns("group")),
+    shiny::uiOutput(ns("selected_dataset")),
     shiny::sliderInput(ns("LOD_thr"),
       label = "LOD threshold for evaluation",
       min = 4, max = 20, value = 7.5, round = TRUE)
