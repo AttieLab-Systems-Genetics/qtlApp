@@ -29,28 +29,16 @@ importApp <- function() {
 importServer <- function(id) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    #import <- read.csv(system.file("data/import.csv", package = "qtlApp"))
-    import <- read.csv("data/import.csv")
-    out <- list()
-    for(i in 1:nrow(import)) {
-      ext <- tools::file_ext(import$filename[i])
-      switch(ext,
-        csv =   out[[import$object[i]]] <- read.csv(import$filename[i]),
-        rds =   out[[import$object[i]]] <- readRDS(import$filename[i]),
-        xlsx =  out[[import$object[i]]] <- readxl::read_excel(import$filename[i])
-      )
-    }
-    out$file_directory$group <- paste0(out$file_directory$diet, " ", 
-      out$file_directory$trait_compartment, " ",
-      out$file_directory$trait_type, ", ", 
-      out$file_directory$scan_type)
-
+    # Create caches for other apps.
+    create_cache()
+    # Import data from "data/import.csv".
+    import <- import_data()
+    annots <- names(import$annotation_list)
     output$import_data <- shiny::renderUI({
       shiny::selectInput(ns("import_data"),
         label = "Choose a filename",
-        choices = names(out))
+        choices = names(import))
       })
-    annots <- names(out$annotation_list)
     output$annots <- shiny::renderUI({
       if(shiny::req(input$import_data) == 'annotation_list') {
         shiny::selectInput(ns("annotation_list"),
@@ -61,9 +49,9 @@ importServer <- function(id) {
     output$show_data <- DT::renderDT({
         object <- shiny::req(input$import_data)
         if(object == 'annotation_list') {
-          df <- out[[object]][[shiny::req(input$annotation_list)]]
+          df <- import[[object]][[shiny::req(input$annotation_list)]]
         } else {
-          df <- out[[object]]
+          df <- import[[object]]
         }
         df
       }, 
@@ -79,7 +67,7 @@ importServer <- function(id) {
       )
     )
     # Return
-    shiny::reactive(out)
+    shiny::reactive(import)
   })
 }
 #' @rdname importApp

@@ -39,8 +39,7 @@ qtlInput <- function(id) {
   ns <- shiny::NS(id)
   list(
     shiny::helpText("Select your dataset, trait to show, and other options"),
-    mainParInput(ns("main_par")), # "selected_dataset"
-    scanInput(ns("scan")),        # "LOD_thr"
+    mainParInput(ns("main_par")), # "group", "LOD_thr"
     mainParUI(ns("main_par")),    # "which_trait"
     scanUI(ns("scan")),           # "scan" actionButton
     peakInput(ns("peak")))        # "which_peak", "alleles" actionButton

@@ -15,7 +15,7 @@
 #' 
 #' @export
 peakApp <- function() {
-  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
+  source(system.file("data/cache.R", package="qtlApp"))
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
@@ -38,11 +38,11 @@ peakServer <- function(id, main_par, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # ** new version uses marker not trait **
+
     chosen_trait <- shiny::reactive({
       shiny::req(main_par$which_trait)
-      stringr::str_split(
-        stringr::str_split(main_par$which_trait, pattern=" [(]")[[1]][2],
-        pattern="[)]")[[1]][1]
+      get_chosen_trait(main_par$which_trait)
     })
     peaks <- shiny::reactive({
       shiny::req(main_par$group, chosen_trait())

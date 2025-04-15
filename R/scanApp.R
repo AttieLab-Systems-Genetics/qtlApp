@@ -18,10 +18,9 @@ scanApp <- function() {
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"),
-      mainParUI("main_par"),
-      scanInput("scan"),
-      scanUI("scan")
+      mainParInput("main_par"), # "group", "LOD_thr"
+      mainParUI("main_par"),    # "which_trait"
+      scanUI("scan")            # "scan" actionButton
     ),
     scanOutput("scan")
   )
@@ -49,14 +48,14 @@ scanServer <- function(id, main_par, import) {
     # create the scans only when `scan` button clicked
     shiny::observeEvent(input$scan, {
       shiny::req(main_par$group, chosen_trait())
-      shiny::req(main_par$which_trait, input$LOD_thr)
+      shiny::req(main_par$which_trait, main_par$LOD_thr)
       scans <- shiny::withProgress(
         message = paste("scan of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
           trait_scan(import()$file_directory, main_par$group, chosen_trait())
         })
-      scan_plot <- QTL_plot_visualizer(scans, main_par$which_trait, input$LOD_thr, import()$markers)
+      scan_plot <- QTL_plot_visualizer(scans, main_par$which_trait, main_par$LOD_thr, import()$markers)
       output$scan_plot <- shiny::renderPlot({
         scan_plot[[1]]
       })
@@ -68,17 +67,6 @@ scanServer <- function(id, main_par, import) {
       })
     })
   })
-}
-#' @rdname scanApp
-#' @export
-scanInput <- function(id) {
-  ns <- shiny::NS(id)
-  shiny::sliderInput(ns("LOD_thr"),
-    label = "LOD threshold for evaluation",
-    min = 4,
-    max = 20,
-    value = 7.5,
-    round = TRUE)
 }
 #' @rdname scanApp
 #' @export

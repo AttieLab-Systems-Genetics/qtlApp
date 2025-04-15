@@ -3,7 +3,6 @@
 \name{scanApp}
 \alias{scanApp}
 \alias{scanServer}
-\alias{scanInput}
 \alias{scanUI}
 \alias{scanOutput}
 \title{Scan App Module}
@@ -11,8 +10,6 @@
 scanApp()
 
 scanServer(id, main_par, import)
-
-scanInput(id)
 
 scanUI(id)
 
