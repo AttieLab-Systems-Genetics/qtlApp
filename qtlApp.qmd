@@ -9,8 +9,8 @@ Goal is to walk through all steps of analysis and visualization.
 In the process, subgoal is to simplify code through helper functions
 and imagine dispersement of viz to shiny apps.
 Current data includes `clinical`, `genes` and `isoforms`,
-and code in this package (qtlApp) assumes one of these;
-as other data are added, changes will be needed.
+and some code in this package (qtlApp) assumes one of these;
+as other data are added, changes may be needed.
 
 Of special note for `genes` and `isoforms`:
 the `symbol` column is not unique.
@@ -97,16 +97,16 @@ Select base on prior regime.
 For genes and transcipts, the 
 
 ```{r}
-chosen_trait <- qtlApp::get_chosen_trait(which_trait)
-chosen_peak <- subset(peaks, trait == chosen_trait)
+selected_trait <- qtlApp::get_selected_trait(which_trait, group)
+selected_peak <- subset(peaks, trait == selected_trait)
 ```
 
 ```{r}
-dplyr::select(chosen_peak, trait, chr, pos, marker, lod)
+dplyr::select(selected_peak, trait, chr, pos, marker, lod)
 ```
 
 ```{r}
-dplyr::select(chosen_peak, trait, LETTERS[1:8])
+dplyr::select(selected_peak, trait, LETTERS[1:8])
 ```
 
 ### Select peak by marker (as in kalynn_R)
@@ -117,7 +117,7 @@ select the desired peak.
 
 ```{r}
 peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, group,
-  qtlApp::get_chosen_trait(which_trait)))
+  qtlApp::get_selected_trait(which_trait, group)))
 ```
 
 ```{r}
@@ -132,14 +132,14 @@ dplyr::select(highest_peak, trait, chr, pos, marker, lod)
 ```
 
 ```{r}
-chosen_peak <- subset(peaks, marker == which_peak)
+selected_peak <- subset(peaks, marker == which_peak)
 ```
 
 ```{r}
-dplyr::select(chosen_peak, trait, chr, pos, marker, lod)
+dplyr::select(selected_peak, trait, chr, pos, marker, lod)
 ```
 
 ```{r}
-dplyr::select(chosen_peak, trait, LETTERS[1:8])
+dplyr::select(selected_peak, trait, LETTERS[1:8])
 ```
 

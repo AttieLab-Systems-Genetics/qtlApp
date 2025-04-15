@@ -58,22 +58,21 @@ peakServer <- function(id, main_par, import) {
     output$peaks <- DT::renderDT({DT::datatable(
       peaks(),
       options = list(paging = TRUE,    ## paginate the output
-                     pageLength = 5,  ## number of rows to output for each page
+                     pageLength = 5,   ## number of rows to output for each page
                      scrollX = TRUE,   ## enable scrolling on X axis
                      scrollY = TRUE,   ## enable scrolling on Y axis
                      autoWidth = TRUE, ## use smart column width handling
-                     server = TRUE,   ## use client-side processing
+                     server = TRUE,    ## use client-side processing
                      dom = 'Bfrtip',
                      buttons = c('csv', 'excel'),
                      columnDefs = list(list(targets = '_all', className = 'dt-center'),
                                        list(targets = c(0, 8, 9), visible = FALSE))
       ),
       extensions = 'Buttons',
-      selection = 'single', ## enable selection of a single row
-      filter = 'bottom',              ## include column filters at the bottom
-      rownames = TRUE)                ##  show row numbers/names
+      selection = 'single',            ## enable selection of a single row
+      filter = 'bottom',               ## include column filters at the bottom
+      rownames = TRUE)                 ##  show row numbers/names
     })
-        
     # Update peak selection-------------------------------------------
     shiny::observeEvent(peaks(), {
       shiny::updateSelectizeInput(session, "which_peak",
@@ -86,7 +85,6 @@ peakServer <- function(id, main_par, import) {
       if (peaks()$intcovar[1] == "none") {
         # set peaks
         peak <- subset(peaks(), marker == input$which_peak)  # Changed from marker.id to marker
-        
         # Check if we have data after filtering
         if (nrow(peak) > 0) {
           # Select and rename columns
@@ -94,34 +92,8 @@ peakServer <- function(id, main_par, import) {
           colnames(peak)[2:9] <- c("AJ","B6","129","NOD","NZO","CAST","PWK","WSB")
           # Reshape data
           peak <- reshape2::melt(peak, id.vars = "marker")
-            
-          # Define colors
-          newClrs <- c(
-                "AJ" = "#000000",
-                "B6" = "#96989A",
-                "129" = "#E69F00",
-                "NOD" = "#0072B2",
-                "NZO" = "#619BFF",
-                "CAST" = "#009E73",
-                "PWK" = "#D55E00",
-                "WSB" = "#CC79A7")
           # Create plot
-          plot_alleles <- ggplot2::ggplot(data = peak,
-            ggplot2::aes(x = marker, y = value, color = variable)) +
-            ggplot2::geom_point(size = 10) +
-            ggplot2::scale_color_manual(values = newClrs) +
-            ggplot2::theme_bw() +
-            ggplot2::theme(
-              legend.text = ggplot2::element_text(size = 18),
-              panel.border = ggplot2::element_blank(),
-              panel.grid.major.x = ggplot2::element_blank(),
-              panel.grid.minor.x = ggplot2::element_blank(),
-              axis.line = ggplot2::element_line(colour = "black"),
-              axis.text = ggplot2::element_text(size = 18),
-              axis.title = ggplot2::element_text(size = 20)) +
-            ggplot2::labs(x = "Marker ID", y = "Founder allele effect", color = "Strain") +
-            ggplot2::geom_hline(yintercept = 0, color = "black")
-            
+          plot_alleles <- ggplot_allelse(peak)
           shiny::renderPlot({
             print(plot_alleles)
           })

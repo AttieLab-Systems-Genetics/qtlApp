@@ -8,7 +8,7 @@
 #'             scale_x_continuous theme theme_bw xlab ylab ylim
 #' @importFrom rlang .data
 #' @export
-plot_qtl_scan <- function(qtl_plot_obj) {
+ggplot_qtl_scan <- function(qtl_plot_obj) {
   # Create axis labels
   axisdf = dplyr::group_by(qtl_plot_obj, .data$order) |>
     dplyr::summarize(center = (max(.data$BPcum) + min(.data$BPcum))/2)

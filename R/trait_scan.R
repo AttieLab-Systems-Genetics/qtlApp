@@ -5,7 +5,8 @@
 #' @param selected_trait character string
 #' 
 #' @importFrom fst read_fst
-#' @importFrom dplyr filter
+#' @importFrom stringr str_detect str_replace
+#' @importFrom data.table rbindlist setnames
 #' @export
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   # Create a more unique cache key that includes the full dataset name
@@ -62,7 +63,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
         if(!"LOD" %in% colnames(data)) {
           possible_lod_cols <- grep("lod|LOD|score", colnames(data), ignore.case = TRUE, value = TRUE)
           if(length(possible_lod_cols) > 0) {
-            setnames(data, possible_lod_cols[1], "LOD")
+            data.table::setnames(data, possible_lod_cols[1], "LOD")
           } else {
             warning("LOD column not found in file: ", fst_path)
             next
@@ -71,7 +72,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
         if(!"marker" %in% colnames(data)) {
           possible_marker_cols <- grep("marker|id|snp", colnames(data), ignore.case = TRUE, value = TRUE)
           if(length(possible_marker_cols) > 0) {
-            setnames(data, possible_marker_cols[1], "marker")
+            data.table::setnames(data, possible_marker_cols[1], "marker")
           } else {
             warning("marker column not found in file: ", fst_path)
             next
