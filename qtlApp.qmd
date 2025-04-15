@@ -1,0 +1,145 @@
+---
+title: qtlApp Vignette
+date: `r format(Sys.time(), "%d %b %Y")`
+---
+
+# qtlApp Markdown
+
+Goal is to walk through all steps of analysis and visualization.
+In the process, subgoal is to simplify code through helper functions
+and imagine dispersement of viz to shiny apps.
+Current data includes `clinical`, `genes` and `isoforms`,
+and code in this package (qtlApp) assumes one of these;
+as other data are added, changes will be needed.
+
+Of special note for `genes` and `isoforms`:
+the `symbol` column is not unique.
+For instance, there are 20666 entries in
+`import$annotation_list$genes`, but only 20634 unique symbols.
+More seriously for
+`import$annotation_list$isoforms`, there are 59088 entries
+but only 20279 unique symbols, with 15 of those not correspondging
+to symbols among the `genes`.
+[One of those symbols is "retired",
+4 are putative genes "GmNNNNN",
+and 5 end in ".N".]
+
+New code uses caches.
+The routine `create_cache()` puts cache names in global environment,
+accessible to all routines,
+while caches themselves live in the empty environment.
+
+```{r}
+qtlApp::create_cache()
+```
+
+## Import
+
+Import data as list to be used in all apps.
+
+```{r}
+import <- qtlApp::import_data()
+```
+
+## MainPar
+
+The `mainPar` app is used to select
+
+- `group` = selected dataset
+- `LOD_thr` = LOD threshold
+- `which_trait` = which trait to examine
+
+This reduces redundancy as the `mainParInput()` and `mainParUI()` functions
+are used in other apps,
+where inputs are accessed as, for instance, `main_par$group`.
+Other inputs may be added later.
+
+```{r}
+# mainParInput
+group <- import$file_directory$group[1]
+LOD_thr <- 7
+# mainParUI
+which_trait <- qtlApp::get_trait_choices(import, group)[1]
+```
+
+## Peak
+
+The `peakApp()` is in process of being rebuilt.
+Important first to understand improvements and goals.
+The earlier code focused on `trait` column (e.g. gene symbol)
+whereas current code in `kalynn_R` focuses on `marker`.
+
+The `peak_finder()` function uses caching.
+Here we use `suppressMessages()` to suppress caching messages,
+then print the cache information.
+
+```{r}
+peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, group))
+```
+
+```{r}
+rlang::env_print(peaks_cache)
+```
+
+```{r}
+filtered_peaks <- dplyr::filter(peaks, lod >= LOD_thr) |>
+  dplyr::arrange(dplyr::desc(lod))
+highest_peak <- filtered_peaks[1,]
+```
+
+```{r}
+dplyr::select(highest_peak, trait, chr, pos, marker, lod)
+```
+
+### Select peak by trait
+
+Select base on prior regime.
+For genes and transcipts, the 
+
+```{r}
+chosen_trait <- qtlApp::get_chosen_trait(which_trait)
+chosen_peak <- subset(peaks, trait == chosen_trait)
+```
+
+```{r}
+dplyr::select(chosen_peak, trait, chr, pos, marker, lod)
+```
+
+```{r}
+dplyr::select(chosen_peak, trait, LETTERS[1:8])
+```
+
+### Select peak by marker (as in kalynn_R)
+
+Use `selected_trait` parameter to `peak_finder()`.
+A trait may have multiple peaks;
+select the desired peak.
+
+```{r}
+peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, group,
+  qtlApp::get_chosen_trait(which_trait)))
+```
+
+```{r}
+filtered_peaks <- dplyr::filter(peaks, lod >= LOD_thr) |>
+  dplyr::arrange(dplyr::desc(lod))
+highest_peak <- filtered_peaks[1,]
+which_peak <- highest_peak$marker
+```
+
+```{r}
+dplyr::select(highest_peak, trait, chr, pos, marker, lod)
+```
+
+```{r}
+chosen_peak <- subset(peaks, marker == which_peak)
+```
+
+```{r}
+dplyr::select(chosen_peak, trait, chr, pos, marker, lod)
+```
+
+```{r}
+dplyr::select(chosen_peak, trait, LETTERS[1:8])
+```
+

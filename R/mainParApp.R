@@ -4,7 +4,7 @@
 #' @param import reactive list with file_directory and annotation_list
 #'
 #' @importFrom shiny moduleServer reactive renderPrint req selectizeInput
-#'             shinyApp updateSelectizeInput verbatimTextOutput
+#'             shinyApp sliderInput updateSelectizeInput verbatimTextOutput
 #' @importFrom bslib page
 #' 
 #' @export
@@ -43,21 +43,13 @@ mainParServer <- function(id, import) {
     })
     # ** Want to join symbol with either gene.id or transcript.id **
     trait_id <- shiny::reactive({
-      switch(shiny::req(trait_type()), # ** Expand for new data types ** #
-        genes    = "gene.id",
-        isoforms = "transcript.id",
-        clinical = "data_name")
+      get_trait_id(shiny::req(trait_type()))
     })
 
     # Update trait choices.
     shiny::observeEvent(shiny::req(trait_type(), trait_list(), trait_id()), {
-      choices <- paste0("(", trait_list()[[trait_id()]], ")")
-      annotation_list <- shiny::req(import())$annotation_list
-      if(trait_type() == "clinical") {
-        choices <- paste(annotation_list$clinical$ID, choices)
-      } else {
-        choices <- paste(annotation_list$genes$symbol, choices)
-      }
+      choices <- get_trait_choices(shiny::req(import()),
+        trait_type(), trait_id(), trait_list())
       shiny::updateSelectizeInput(session, "which_trait",
         choices = choices, options = list(maxItems = 1, maxOptions = 5), server = TRUE)
     })
@@ -74,7 +66,12 @@ mainParServer <- function(id, import) {
 #' @export
 mainParInput <- function(id) {
   ns <- shiny::NS(id)
-  shiny::uiOutput(ns("group"))
+  list(
+    shiny::uiOutput(ns("group")),
+    shiny::sliderInput(ns("LOD_thr"),
+      label = "LOD threshold for evaluation",
+      min = 4, max = 20, value = 7.5, round = TRUE)
+  )
 }
 #' @rdname mainParApp
 #' @export

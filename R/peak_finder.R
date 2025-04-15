@@ -113,6 +113,8 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
       message("Final peaks data columns: ", paste(colnames(peaks_data), collapse=", "))
       # Convert to data.frame for compatibility
       peaks_data <- as.data.frame(peaks_data)
+      # Remove unnecessary column `Which_mice` if present
+      peaks_data[["Which_mice"]] <- NULL
       # Cache the result
       peaks_cache[[cache_key]] <- peaks_data
           
@@ -125,7 +127,7 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
     message("Using cached peaks data for ",
       if(is.null(selected_trait)) selected_dataset else paste(selected_trait, "in", selected_dataset))
   }
-   return(peaks_cache[[cache_key]])
+  return(peaks_cache[[cache_key]])
 }
 create_empty_peaks <- function() {
   data.frame(
