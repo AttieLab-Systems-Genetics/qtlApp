@@ -4,10 +4,16 @@
 #' @param colors character vector of colors for the plot
 #'
 #' @importFrom ggplot2 aes element_blank element_line element_text
-#'             geom_hline geom_point ggplot labs scale_color_manual theme theme_bw
+#'             geom_hline geom_point ggplot labs scale_color_manual
+#'             theme theme_bw theme_void
 #' @importFrom rlang .data
 #' @export
 ggplot_alleles <- function(peak, colors = newClrs) {
+  if(!nrow(peak)) {
+    return(ggplot2::ggplot( ) +
+      ggplot2::theme_void() +
+      ggplot2::labs(title = "No data to plot"))
+  }
   # Define colors
   newClrs <- c(
     "AJ" = "#000000",

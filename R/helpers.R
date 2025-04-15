@@ -5,6 +5,7 @@ create_cache <- function(caches = c("peaks", "trait")) {
       pos = globalenv())
   }
 }
+#' @importFrom stringr str_remove
 #' @export
 get_trait_choices <- function(import, selected_dataset) {
   trait_type <- get_trait_type(import, selected_dataset)
@@ -25,6 +26,7 @@ get_trait_choices <- function(import, selected_dataset) {
   }
   choices
 }
+#' @importFrom stringr str_split
 #' @export
 get_selected_trait <- function(import, which_trait, selected_dataset) {
   # Split the trait string by "_" to separate the symbol and ID.
@@ -36,6 +38,27 @@ get_selected_trait <- function(import, which_trait, selected_dataset) {
     which_trait <- stringr::str_split(which_trait, pattern="_")[[1]][1]
   }
   which_trait
+}
+#' @importFrom reshape2 melt
+#' @export
+pivot_peaks <- function(peaks, which_peak) {
+  # Check if scan data exists and is additive
+  if (peaks$intcovar[1] == "none") {
+    # set peaks
+    peak <- subset(peaks, marker == which_peak)  # Changed from marker.id to marker
+    # Check if we have data after filtering
+    if (nrow(peak) > 0) {
+      # Select and rename columns
+      peak <- peak[c("marker","A","B","C","D","E","F","G","H")]
+      colnames(peak)[2:9] <- c("AJ","B6","129","NOD","NZO","CAST","PWK","WSB")
+      # Reshape data
+      peak <- reshape2::melt(peak, id.vars = "marker")
+    }
+  } else {
+    # If not additive, return NULL
+    peak <- NULL
+  }
+  return(peak)
 }
 # internal helper functions
 get_trait_type <- function(import, selected_dataset) {

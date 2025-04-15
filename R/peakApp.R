@@ -49,7 +49,9 @@ peakServer <- function(id, main_par, import) {
         message = paste("peaks of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          subset(peak_finder(import()$file_directory, main_par$selected_dataset), trait == chosen_trait())
+          subset(
+            suppressMessages(peak_finder(import()$file_directory, main_par$selected_dataset)),
+            trait == chosen_trait())
         })
     })
 
@@ -80,28 +82,11 @@ peakServer <- function(id, main_par, import) {
     # Show allele effects.-----------------------------------------------------------
     output$allele_effects <- renderUI({
       shiny::req(peaks(), input$which_peak)
-      # Check if scan data exists and is additive
-      if (peaks()$intcovar[1] == "none") {
-        # set peaks
-        peak <- subset(peaks(), marker == input$which_peak)  # Changed from marker.id to marker
-        # Check if we have data after filtering
-        if (nrow(peak) > 0) {
-          # Select and rename columns
-          peak <- peak[c("marker","A","B","C","D","E","F","G","H")]
-          colnames(peak)[2:9] <- c("AJ","B6","129","NOD","NZO","CAST","PWK","WSB")
-          # Reshape data
-          peak <- reshape2::melt(peak, id.vars = "marker")
-          # Create plot
-          plot_alleles <- ggplot_alleles(peak)
-          shiny::renderPlot({
-            print(plot_alleles)
-          })
-        } else {
-          shiny::renderText({"No data available for selected peak"})
-        }
-      } else {
-        shiny::renderText({"Strain effects only available for additive scans"})
-      }
+      peak <- pivot_peaks(peaks(), input$which_peak)
+      plot_alleles <- ggplot_alleles(peak)
+      shiny::renderPlot({
+        print(plot_alleles)
+      })
     })
   })
 }
