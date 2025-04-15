@@ -45,21 +45,21 @@ import <- qtlApp::import_data()
 
 The `mainPar` app is used to select
 
-- `group` = selected dataset
+- `selected_dataset` = selected dataset
 - `LOD_thr` = LOD threshold
 - `which_trait` = which trait to examine
 
 This reduces redundancy as the `mainParInput()` and `mainParUI()` functions
 are used in other apps,
-where inputs are accessed as, for instance, `main_par$group`.
+where inputs are accessed as, for instance, `main_par$selected_dataset`.
 Other inputs may be added later.
 
 ```{r}
 # mainParInput
-group <- import$file_directory$group[1]
+selected_dataset <- import$file_directory$group[1]
 LOD_thr <- 7
 # mainParUI
-which_trait <- qtlApp::get_trait_choices(import, group)[1]
+which_trait <- qtlApp::get_trait_choices(import, selected_dataset)[1]
 ```
 
 ## Peak
@@ -74,7 +74,7 @@ Here we use `suppressMessages()` to suppress caching messages,
 then print the cache information.
 
 ```{r}
-peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, group))
+peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset))
 ```
 
 ```{r}
@@ -97,7 +97,7 @@ Select base on prior regime.
 For genes and transcipts, the 
 
 ```{r}
-selected_trait <- qtlApp::get_selected_trait(which_trait, group)
+selected_trait <- qtlApp::get_selected_trait(import, which_trait, selected_dataset)
 selected_peak <- subset(peaks, trait == selected_trait)
 ```
 
@@ -116,8 +116,8 @@ A trait may have multiple peaks;
 select the desired peak.
 
 ```{r}
-peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, group,
-  qtlApp::get_selected_trait(which_trait, group)))
+peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset,
+  qtlApp::get_selected_trait(import, which_trait, selected_dataset)))
 ```
 
 ```{r}

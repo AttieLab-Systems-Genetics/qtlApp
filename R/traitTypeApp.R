@@ -33,7 +33,7 @@ traitTypeServer <- function(id, main_par, import) {
     ns <- session$ns
     # Return
     shiny::reactive({
-      get_trait_type(shiny::req(import()), main_par$group)
+      get_trait_type(shiny::req(import()), main_par$selected_dataset)
     })
   })
 }

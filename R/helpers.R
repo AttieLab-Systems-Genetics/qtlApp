@@ -6,8 +6,8 @@ create_cache <- function(caches = c("peaks", "trait")) {
   }
 }
 #' @export
-get_trait_choices <- function(import, selected_group) {
-  trait_type <- get_trait_type(import, selected_group)
+get_trait_choices <- function(import, selected_dataset) {
+  trait_type <- get_trait_type(import, selected_dataset)
   trait_id <- get_trait_id(trait_type)
   trait_list = get_trait_list(import, trait_type)
   # Choices come from elements of `import$annotation_list`
@@ -26,21 +26,21 @@ get_trait_choices <- function(import, selected_group) {
   choices
 }
 #' @export
-get_selected_trait <- function(which_trait, selected_group) {
+get_selected_trait <- function(import, which_trait, selected_dataset) {
   # Split the trait string by "_" to separate the symbol and ID.
   # Useful for gene or transcript names and IDs.
   # Caution: symbols may not be unique.
   # Caution: some clinical or other traits may have "_" in name.
-  trait_type <- get_trait_type(import, selected_group)
+  trait_type <- get_trait_type(import, selected_dataset)
   if(trait_type %in% c("genes", "isoforms")) {
     which_trait <- stringr::str_split(which_trait, pattern="_")[[1]][1]
   }
   which_trait
 }
 # internal helper functions
-get_trait_type <- function(import, selected_group) {
+get_trait_type <- function(import, selected_dataset) {
   file_directory <- import$file_directory
-  file_directory <- subset(file_directory, group == selected_group)
+  file_directory <- subset(file_directory, group == selected_dataset)
   trait_type <- tolower(file_directory$trait_type[1])
   trait_type
 }

@@ -9,7 +9,6 @@
 #' 
 #' @export
 qtlApp <- function() {
-  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
   ui <- bslib::page_sidebar(
     title = "Pre-scanned QTL visualizer, implemented for Diet DO study",
     shinyjs::useShinyjs(),

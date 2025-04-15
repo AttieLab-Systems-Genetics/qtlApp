@@ -2,7 +2,7 @@
 #'
 #' @param id shiny identifier
 #' @param import reactive list with file_directory and markers
-#' @param main_par reactive list with group and which_trait
+#' @param main_par reactive list with selected_dataset, LOD_thr and which_trait
 #'
 #' @importFrom DT DTOutput renderDT
 #' @importFrom shiny actionButton moduleServer nearPoints NS plotOutput reactive renderPlot
@@ -14,11 +14,10 @@
 #' 
 #' @export
 scanApp <- function() {
-  source(system.file("shinyApp/qtlSetup.R", package = "qtlApp"))
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"), # "group", "LOD_thr"
+      mainParInput("main_par"), # "selected_dataset", "LOD_thr"
       mainParUI("main_par"),    # "which_trait"
       scanUI("scan")            # "scan" actionButton
     ),
@@ -47,15 +46,17 @@ scanServer <- function(id, main_par, import) {
         
     # create the scans only when `scan` button clicked
     shiny::observeEvent(input$scan, {
-      shiny::req(main_par$group, chosen_trait())
+      shiny::req(main_par$selected_dataset, chosen_trait())
       shiny::req(main_par$which_trait, main_par$LOD_thr)
       scans <- shiny::withProgress(
         message = paste("scan of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          trait_scan(import()$file_directory, main_par$group, chosen_trait())
+          trait_scan(import()$file_directory, main_par$selected_dataset, chosen_trait())
         })
-      scan_plot <- QTL_plot_visualizer(scans, main_par$which_trait, main_par$LOD_thr, import()$markers)
+      # ** check this code **
+      scan_plot <- ggplot_qtl_scan(
+        QTL_plot_visualizer(scans, main_par$which_trait, main_par$LOD_thr, import()$markers))
       output$scan_plot <- shiny::renderPlot({
         scan_plot[[1]]
       })
