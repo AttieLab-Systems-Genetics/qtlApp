@@ -7,8 +7,11 @@ create_cache <- function(caches = c("peaks", "trait")) {
 }
 #' @importFrom stringr str_remove
 #' @export
-get_trait_choices <- function(import, selected_dataset) {
+get_trait_choices <- function(import, selected_dataset = NULL) {
   trait_type <- get_trait_type(import, selected_dataset)
+  if(is.null(trait_type)) {
+    return(NULL)
+  }
   trait_id <- get_trait_id(trait_type)
   trait_list = get_trait_list(import, trait_type)
   # Choices come from elements of `import$annotation_list`
@@ -61,7 +64,10 @@ pivot_peaks <- function(peaks, which_peak) {
   return(peak)
 }
 # internal helper functions
-get_trait_type <- function(import, selected_dataset) {
+get_trait_type <- function(import, selected_dataset = NULL) {
+  if(is.null(selected_dataset)) {
+    return(NULL)
+  }
   file_directory <- import$file_directory
   file_directory <- subset(file_directory, group == selected_dataset)
   trait_type <- tolower(file_directory$trait_type[1])

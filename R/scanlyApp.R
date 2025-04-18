@@ -12,7 +12,7 @@
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr across mutate where
 #' @importFrom stringr str_split
-#' 
+#'
 #' @export
 scanlyApp <- function() {
   ui <- bslib::page_sidebar(
@@ -30,7 +30,6 @@ scanlyApp <- function() {
       scanlyServer("scanly", main_par, scan_plot)
   }
   shiny::shinyApp(ui = ui, server = server)
-
 }
 #' @rdname scanApp
 #' @export
@@ -51,64 +50,11 @@ scanlyServer <- function(id, main_par, scan_plot) {
     observeEvent(event_data("plotly_click", source = "scan_plot"), {
       clicked_data(event_data("plotly_click", source = "scan_plot"))
     })
-      # Create the interactive plotly plot
-  output$scan_plot <- renderPlotly({
-      req(plot_base(), input$which_trait)
-      
-      # Get the base plot and data
-      plot_result <- plot_base()
-      p <- plot_result$p
-      plot_data <- plot_result$data
-      
-      # Show the highest LOD peak
-      peaks_info <- peak_finder(file_directory, input$selected_dataset, input$which_trait)
-      if (nrow(peaks_info) > 0) {
-          peaks_info <- peaks_info %>%
-              arrange(desc(lod)) %>%
-              slice(1)
-          
-          peak_point <- plot_data %>%
-              filter(markers == peaks_info$marker)
-          
-          if (nrow(peak_point) > 0) {
-              # Add the red diamond at the peak
-              if (input$selected_chr == "All") {
-                  p <- p + geom_point(data = peak_point,
-                                     aes(x = BPcum, y = LOD),
-                                     color = "red",
-                                     size = 3,
-                                     shape = 20)
-              } else {
-                  p <- p + geom_point(data = peak_point,
-                                     aes(x = position, y = LOD),
-                                     color = "red",
-                                     size = 3,
-                                     shape = 20)
-              }
-          }
-      }
-      
-      # Create formatted trait text for plot title using the official gene symbol
-      trait_text <- paste0("<b style='font-size: 24px;'>", official_gene_symbol(), "</b>")
-      
-      # Create subtitle with peak information
-      subtitle <- if(nrow(peaks_info) > 0) {
-          chr_label <- if(peaks_info$chr %in% c(20,21,22)) {
-              c("X","Y","M")[peaks_info$chr-19]
-          } else {
-              peaks_info$chr
-          }
-          paste0(
-              "<span style='font-size: 16px;'>",
-              "<b>Peak Marker:</b> ", peaks_info$marker,
-              " (Chr", chr_label, ":", round(peaks_info$pos, 2), " Mb) | ",
-              "<b>LOD:</b> ", round(peaks_info$lod, 2),
-              "</span>"
-          )
-      } else {
-          "<span style='font-size: 16px; color: #7f8c8d;'>No significant peaks</span>"
-      }
-
+    # Create the interactive plotly plot
+    output$scan_plot <- renderPlotly({
+      req(scan_plot(), input$which_trait)
+      ggplotly_qtl_scan()
+    })
   })
 }
 #' @rdname scanApp
