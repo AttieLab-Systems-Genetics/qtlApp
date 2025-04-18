@@ -1,14 +1,15 @@
 #' Plot the QTL if doing a new scan
 #' 
 #' @param qtl_plot_obj object with data to plot
+#' @param LOD_thr threshold for LOD score
 #' 
 #' @importFrom dplyr group_by summarise
-#' @importFrom ggplot2 aes element_blank element_line element_text expansion
-#'             geom_hline geom_line ggplot margin scale_color_manual
+#' @importFrom ggplot2 aes aes_string element_blank element_line element_text
+#'             expansion geom_hline geom_line ggplot margin scale_color_manual
 #'             scale_x_continuous theme theme_bw xlab ylab ylim
 #' @importFrom rlang .data
 #' @export
-ggplot_qtl_scan <- function(qtl_plot_obj) {
+ggplot_qtl_scan <- function(qtl_plot_obj, LOD_thr = NULL) {
   # Create axis labels
   axisdf = dplyr::group_by(qtl_plot_obj, .data$order) |>
     dplyr::summarize(center = (max(.data$BPcum) + min(.data$BPcum))/2)
@@ -18,9 +19,8 @@ ggplot_qtl_scan <- function(qtl_plot_obj) {
   axisdf$order[axisdf$order == 22] <- "M"
   axisdf$order <- factor(axisdf$order, levels=c(as.character(1:19), "X", "Y", "M"))
   # Create plot object.
-  ggplot2::ggplot(qtl_plot_obj) +
-    ggplot2::aes(x=.data$BPcum, y=.data$LOD) +
-    ggplot2::geom_line(ggplot2::aes(color=as.factor(.data$chr)), alpha=0.8, linewidth=.5) +
+  p <- ggplot2::ggplot(qtl_plot_obj, ggplot2::aes_string(x="BPcum", y="LOD")) +
+    ggplot2::geom_line(ggplot2::aes(color=as.factor(chr)), alpha=0.8, linewidth=.5) +
     ggplot2::scale_color_manual(values = rep(c("black", "darkgrey"), 22)) +
     ggplot2::scale_x_continuous(
       label = axisdf$order, 
@@ -47,6 +47,10 @@ ggplot_qtl_scan <- function(qtl_plot_obj) {
       plot.margin = ggplot2::margin(b = 40, l = 20, r = 20, t = 20, unit = "pt")
     ) +
     ggplot2::xlab("Chromosome") +
-    ggplot2::ylab("LOD") +
-    ggplot2::geom_hline(ggplot2::aes(yintercept=.data$LOD_thr), color="black", linetype="dashed")
+    ggplot2::ylab("LOD")
+  if(!is.null(LOD_thr)) {
+    p <- p + ggplot2::geom_hline(ggplot2::aes(yintercept = LOD_thr),
+      color = "black", linetype = "dashed")
+  }
+  return(p)
 }

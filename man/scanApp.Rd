@@ -3,15 +3,12 @@
 \name{scanApp}
 \alias{scanApp}
 \alias{scanServer}
-\alias{scanUI}
 \alias{scanOutput}
 \title{Scan App Module}
 \usage{
 scanApp()
 
 scanServer(id, main_par, import)
-
-scanUI(id)
 
 scanOutput(id)
 }
