@@ -1,4 +1,4 @@
-#' Scan App Module
+#' Plotly Scan App Module
 #'
 #' @param id shiny identifier
 #' @param import reactive list with file_directory and markers
@@ -14,81 +14,106 @@
 #' @importFrom stringr str_split
 #' 
 #' @export
-scanApp <- function() {
+scanlyApp <- function() {
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
       mainParInput("main_par"), # "selected_dataset", "LOD_thr"
       mainParUI("main_par")    # "which_trait"
     ),
-    scanOutput("scan")
+    scanlyOutput("scanly")
   )
   server <- function(input, output, session) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      scanServer("scan", main_par, import)
+      scan_plot <- scanServer("scan", main_par, import)
+      scanlyServer("scanly", main_par, scan_plot)
   }
   shiny::shinyApp(ui = ui, server = server)
 
 }
 #' @rdname scanApp
 #' @export
-scanServer <- function(id, main_par, import) {
+scanlyServer <- function(id, main_par, scan_plot) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    # Find selected_trait; special handling for `genes` or `isoforms`.
-    selected_trait <- shiny::reactive({
-      shiny::req(import(), main_par$selected_dataset)
-      trait <- shiny::req(main_par$which_trait)
-      # if gene or isoform then trait is `symbol_id``.
-      trait_type <- get_trait_type(import(), main_par$selected_dataset)
-      if(trait_type %in% c("genes", "isoforms")) {
-        trait <- stringr::str_remove(main_par$which_trait, "_.*")
-      }
-      trait
-    })
-    scans <- shiny::reactive({
-      shiny::req(main_par$selected_dataset, selected_trait())
-      scans <- shiny::withProgress(
-        message = paste("scan of", selected_trait(), "in progress"),
-        value = 0, {
-          shiny::setProgress(1)
-          suppressMessages(
-            trait_scan(import()$file_directory,
-              main_par$selected_dataset, selected_trait()))
-        }
-      )
-    })
-    scan_plot <- shiny::reactive({
-      shiny::req(scans(), main_par$which_trait, main_par$LOD_thr)
-      ggplot_qtl_scan(
-        QTL_plot_visualizer(
-          scans(), main_par$which_trait, main_par$LOD_thr, import()$markers))
-    })
+    # Plotly plot
     output$scan_plot <- shiny::renderUI({
       shiny::req(scan_plot())
-      shiny::plotOutput(ns("render_plot"), click = ns("plot_click")) |>
+      plotly::plotlyOutput(ns("render_plot"), click = ns("plot_click")) |>
         shinycssloaders::withSpinner(type = 8, color = "#3498db")
     })
-    output$render_plot <- shiny::renderPlot({
+    output$render_plot <- plotly::renderPlotly({
       shiny::req(scan_plot())
       scan_plot()
     })
-    # ** This is being replaced by plotly clicked_data **
-    output$clicked_point_info <-  DT::renderDT({
-      shiny::req(scan_plot(), input$plot_click)
-      out <- shiny::nearPoints(scan_plot(), input$plot_click,
-        xvar = "BPcum", yvar = "LOD",
-        threshold = 10, maxpoints = 1, addDist = TRUE)
-      dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+    # Handle clicked points display
+    observeEvent(event_data("plotly_click", source = "scan_plot"), {
+      clicked_data(event_data("plotly_click", source = "scan_plot"))
     })
-    # Return
-    scan_plot
+      # Create the interactive plotly plot
+  output$scan_plot <- renderPlotly({
+      req(plot_base(), input$which_trait)
+      
+      # Get the base plot and data
+      plot_result <- plot_base()
+      p <- plot_result$p
+      plot_data <- plot_result$data
+      
+      # Show the highest LOD peak
+      peaks_info <- peak_finder(file_directory, input$selected_dataset, input$which_trait)
+      if (nrow(peaks_info) > 0) {
+          peaks_info <- peaks_info %>%
+              arrange(desc(lod)) %>%
+              slice(1)
+          
+          peak_point <- plot_data %>%
+              filter(markers == peaks_info$marker)
+          
+          if (nrow(peak_point) > 0) {
+              # Add the red diamond at the peak
+              if (input$selected_chr == "All") {
+                  p <- p + geom_point(data = peak_point,
+                                     aes(x = BPcum, y = LOD),
+                                     color = "red",
+                                     size = 3,
+                                     shape = 20)
+              } else {
+                  p <- p + geom_point(data = peak_point,
+                                     aes(x = position, y = LOD),
+                                     color = "red",
+                                     size = 3,
+                                     shape = 20)
+              }
+          }
+      }
+      
+      # Create formatted trait text for plot title using the official gene symbol
+      trait_text <- paste0("<b style='font-size: 24px;'>", official_gene_symbol(), "</b>")
+      
+      # Create subtitle with peak information
+      subtitle <- if(nrow(peaks_info) > 0) {
+          chr_label <- if(peaks_info$chr %in% c(20,21,22)) {
+              c("X","Y","M")[peaks_info$chr-19]
+          } else {
+              peaks_info$chr
+          }
+          paste0(
+              "<span style='font-size: 16px;'>",
+              "<b>Peak Marker:</b> ", peaks_info$marker,
+              " (Chr", chr_label, ":", round(peaks_info$pos, 2), " Mb) | ",
+              "<b>LOD:</b> ", round(peaks_info$lod, 2),
+              "</span>"
+          )
+      } else {
+          "<span style='font-size: 16px; color: #7f8c8d;'>No significant peaks</span>"
+      }
+
   })
 }
 #' @rdname scanApp
 #' @export
-scanOutput <- function(id) {
+scanlyOutput <- function(id) {
     ns <- shiny::NS(id)
     bslib::card(
       bslib::card_header("LOD profile"),

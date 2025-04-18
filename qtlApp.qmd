@@ -156,11 +156,52 @@ print(class(peak_plot))
 print(peak_plot)
 ```
 
+## Scan Genome
+
+```{r}
+scans <- suppressMessages(
+  qtlApp::trait_scan(import$file_directory, selected_dataset, selected_trait))
+```
+
+The following should be constituted as a qtl2_scan object.
+
+```{r}
+qtl_obj <- qtlApp::QTL_plot_visualizer(
+  scans, which_trait, LOD_thr, import$markers)
+```
+
+```{r}
+scan_plot <- qtlApp::ggplot_qtl_scan(qtl_obj)
+ggplot2::ggsave("scan.pdf", scan_plot)
+```
+
+```{r}
+qtl_peak <- dplyr::filter(qtl_obj, LOD == max(LOD))
+dplyr::mutate(qtl_peak, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+```
+
+### Plotly interactive
+
+```{r}
+selected_chr = selected_peak$chr
+qtlApp::ggplotly_qtl_scan(scan_plot, selected_chr)
+```
+
+
+
 ## Things Left to do
 
 - clicked_data reactivity
 - scanApp: redesign
 - downloadApp: create using new ideas and foundrShiny::downloadApp.R
 - rethink observe and observeEvent
-- 
+  
+### Issues
+
+- `selected_dataset` initial selected not showing
+- figure out `clicked_data` and `event_data` with `plotly`
+  - `ggplotly_qtl_scan()` is start but does not have clicked in
+  - need to figure out plot_data and peak_info for this routine
+  - `scanlyApp.R` is start only
+- figure out how to display plots with radian or R in vscode
 
