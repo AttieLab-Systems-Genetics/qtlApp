@@ -59,11 +59,14 @@ scanServer <- function(id, main_par, import) {
         }
       )
     })
-    scan_plot <- shiny::reactive({
+    qtl_plot_obj <- shiny::reactive({
       shiny::req(scans(), main_par$which_trait, main_par$LOD_thr)
-      ggplot_qtl_scan(
-        QTL_plot_visualizer(
-          scans(), main_par$which_trait, main_par$LOD_thr, import()$markers))
+      QTL_plot_visualizer(
+        scans(), main_par$which_trait, main_par$LOD_thr, import()$markers)
+    })
+    scan_plot <- shiny::reactive({
+      shiny::req(qtl_plot_obj())
+      ggplot_qtl_scan(qtl_plot_obj())
     })
     output$scan_plot <- shiny::renderUI({
       shiny::req(scan_plot())
@@ -76,13 +79,13 @@ scanServer <- function(id, main_par, import) {
     })
     # ** This is being replaced by plotly clicked_data **
     output$clicked_point_info <-  DT::renderDT({
-      shiny::req(scan_plot(), input$plot_click)
-      out <- shiny::nearPoints(scan_plot(), input$plot_click,
+      shiny::req(qtl_plot_obj(), input$plot_click)
+      out <- shiny::nearPoints(qtl_plot_obj(), input$plot_click,
         xvar = "BPcum", yvar = "LOD",
         threshold = 10, maxpoints = 1, addDist = TRUE)
       dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
     })
-    # Return
+    # Return # ** may need qtl_plot_obj() data.frame **
     scan_plot
   })
 }
@@ -93,7 +96,6 @@ scanOutput <- function(id) {
     bslib::card(
       bslib::card_header("LOD profile"),
       shiny::uiOutput(ns("scan_plot")),
-      shiny::h4("Clicked point info does not work at this time"),
       DT::DTOutput(ns("clicked_point_info"))
     )
 }

@@ -1,7 +1,12 @@
 ---
 title: qtlApp Vignette
 date: `r format(Sys.time(), "%d %b %Y")`
+output: html_document
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
 
 # qtlApp Markdown
 
