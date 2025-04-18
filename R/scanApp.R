@@ -5,8 +5,8 @@
 #' @param main_par reactive list with selected_dataset, LOD_thr and which_trait
 #'
 #' @importFrom DT DTOutput renderDT
-#' @importFrom shiny actionButton moduleServer nearPoints NS plotOutput reactive renderPlot
-#'             req setProgress shinyApp withProgress
+#' @importFrom shiny actionButton moduleServer nearPoints NS plotOutput
+#'             reactive renderPlot req setProgress shinyApp withProgress
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr across mutate where
@@ -38,10 +38,14 @@ scanServer <- function(id, main_par, import) {
     ns <- session$ns
 
     chosen_trait <- shiny::reactive({
-      shiny::req(main_par$which_trait)
-      stringr::str_split(
-        stringr::str_split(main_par$which_trait, pattern=" [(]")[[1]][2],
-        pattern="[)]")[[1]][1]
+      shiny::req(main_par$selected_dataset, import())
+      trait <- shiny::req(main_par$which_trait)
+      # if gene or isoform then trait is `symbol_id``.
+      trait_type <- get_trait_type(import(), main_par$selected_dataset)
+      if(trait_type %in% c("genes", "isoforms")) {
+        trait <- stringr::str_remove(main_par$which_trait, "_.*")
+      }
+      trait
     })
         
     # create the scans only when `scan` button clicked
@@ -52,17 +56,22 @@ scanServer <- function(id, main_par, import) {
         message = paste("scan of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
-          trait_scan(import()$file_directory, main_par$selected_dataset, chosen_trait())
-        })
+          suppressMessages(
+            trait_scan(import()$file_directory,
+              main_par$selected_dataset, chosen_trait()))
+        }
+      )
       # ** check this code **
       scan_plot <- ggplot_qtl_scan(
-        QTL_plot_visualizer(scans, main_par$which_trait, main_par$LOD_thr, import()$markers))
+        QTL_plot_visualizer(
+          scans, main_par$which_trait, main_par$LOD_thr, import()$markers))
       output$scan_plot <- shiny::renderPlot({
         scan_plot[[1]]
       })
       output$scan_points <-  DT::renderDT({
         shiny::req(input$plot_click)
-        out <- shiny::nearPoints(scan_plot[[2]], input$plot_click, xvar = "BPcum",
+        out <- shiny::nearPoints(scan_plot[[2]], input$plot_click,
+          xvar = "BPcum",
           yvar = "LOD", threshold = 10, maxpoints = 1, addDist = TRUE)
         dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), signif, 4))
       })

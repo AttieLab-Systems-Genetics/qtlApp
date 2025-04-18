@@ -131,6 +131,11 @@ which_peak <- highest_peak$marker
 dplyr::select(highest_peak, trait, chr, pos, marker, lod)
 ```
 
+### Alleles at Selected Peak
+
+I cannot seem to get plot to show via radian or R.
+I can save as PDF for now.
+
 ```{r}
 selected_peak <- subset(peaks, marker == which_peak)
 ```
@@ -142,4 +147,20 @@ dplyr::select(selected_peak, trait, chr, pos, marker, lod)
 ```{r}
 dplyr::select(selected_peak, trait, LETTERS[1:8])
 ```
+
+```{r}
+peak <- qtlApp::pivot_peaks(selected_peak, which_peak)
+peak_plot <- qtlApp::ggplot_alleles(peak)
+ggplot2::ggsave("alleles.pdf", peak_plot)
+print(class(peak_plot))
+print(peak_plot)
+```
+
+## Things Left to do
+
+- clicked_data reactivity
+- scanApp: redesign
+- downloadApp: create using new ideas and foundrShiny::downloadApp.R
+- rethink observe and observeEvent
+- 
 
