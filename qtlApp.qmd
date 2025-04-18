@@ -198,6 +198,8 @@ qtlApp::ggplotly_qtl_scan(scan_plot, selected_chr)
 
 - clicked_data reactivity
 - scanApp: redesign
+  - have scanlyServer depend on scanServer return
+  - may need qtl_obj data.frame
 - downloadApp: create using new ideas and foundrShiny::downloadApp.R
 - rethink observe and observeEvent
   
