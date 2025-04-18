@@ -4,10 +4,12 @@
 \alias{ggplot_qtl_scan}
 \title{Plot the QTL if doing a new scan}
 \usage{
-ggplot_qtl_scan(qtl_plot_obj)
+ggplot_qtl_scan(qtl_plot_obj, LOD_thr = NULL)
 }
 \arguments{
 \item{qtl_plot_obj}{object with data to plot}
+
+\item{LOD_thr}{threshold for LOD score}
 }
 \description{
 Plot the QTL if doing a new scan
