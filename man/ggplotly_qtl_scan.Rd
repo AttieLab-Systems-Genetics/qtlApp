@@ -6,6 +6,8 @@
 \usage{
 ggplotly_qtl_scan(
   scan_plot,
+  peaks_info,
+  plot_data,
   selected_chr = "2",
   plot_width = 900,
   plot_height = 600
@@ -13,6 +15,10 @@ ggplotly_qtl_scan(
 }
 \arguments{
 \item{scan_plot}{ggplot object}
+
+\item{peaks_info}{data frame with peak information}
+
+\item{plot_data}{data frame with plot data}
 
 \item{selected_chr}{selected chromosome}
 

@@ -198,7 +198,6 @@ qtlApp::ggplotly_qtl_scan(scan_plot, selected_chr)
   
 ### Issues
 
-- `selected_dataset` initial selected not showing
 - figure out `clicked_data` and `event_data` with `plotly`
   - `ggplotly_qtl_scan()` is start but does not have clicked in
   - need to figure out plot_data and peak_info for this routine

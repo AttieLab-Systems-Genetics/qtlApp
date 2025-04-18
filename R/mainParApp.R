@@ -26,21 +26,23 @@ mainParApp <- function(id) {
 mainParServer <- function(id, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-
     # Select `selected_dataset` = `group`.
     output$selected_dataset <- shiny::renderUI({
       shiny::req(import())
-      choices <- import()$file_directory$group
+      choices <- unique(import()$file_directory$group)
+      selected <- choices[1]
       shiny::selectizeInput(ns("selected_dataset"), label = "Choose a dataset",
-        choices = choices, selected = choices[1], multiple = FALSE)
+        choices = choices, selected = selected, multiple = FALSE)
     })
     # Update trait choices.
     shiny::observeEvent(shiny::req(input$selected_dataset), {
+      # If no dataset is selected, set the first one as default.
+      # Update the trait choices based on the selected dataset.
       choices <- get_trait_choices(import(), input$selected_dataset)
       shiny::updateSelectizeInput(session, "which_trait",
         choices = choices, options = list(maxItems = 1, maxOptions = 5), server = TRUE)
     })
-
+    # Show returned values.
     output$returns <- shiny::renderPrint({
       cat("selected_dataset =", input$selected_dataset,
           "\nwhich_trait =", input$which_trait)
