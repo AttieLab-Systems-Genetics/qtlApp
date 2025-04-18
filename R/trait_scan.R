@@ -11,7 +11,7 @@
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   # Create a more unique cache key that includes the full dataset name
   cache_key <- paste(selected_dataset, tolower(selected_trait), sep = "_")
-  if(!is.null(trait_cache[[cache_key]])) {
+  if (!is.null(trait_cache[[cache_key]])) {
     message("Using cached data for trait: ", selected_trait, " in dataset: ", selected_dataset)
     return(trait_cache[[cache_key]])
   }
@@ -19,7 +19,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   # Filter the file directory for the selected dataset and scan type
   file_dir <- subset(file_dir, group == selected_dataset & file_type == "scans")
   # Check if we found any matching files
-  if(nrow(file_dir) == 0) {
+  if (nrow(file_dir) == 0) {
     stop("No matching files found for the selected dataset: ", selected_dataset)
   }
   # Initialize list to store data from each file
@@ -30,14 +30,14 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
     chr_num <- file_dir$ID_code[i]
     fst_path <- file_dir$File_path[i]
 
-    if(!file.exists(fst_path)) {
+    if (!file.exists(fst_path)) {
       warning("File does not exist: ", fst_path)
       next
     }
     # Ensure we are working with an FST file
-    if(!stringr::str_detect(fst_path, "fst$")) {
+    if (!stringr::str_detect(fst_path, "fst$")) {
       fst_path <- stringr::str_replace(fst_path, "csv$", "fst")
-      if(!file.exists(fst_path)) {
+      if (!file.exists(fst_path)) {
         warning("FST file not found: ", fst_path)
         next
       }
@@ -51,8 +51,9 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
       # Convert Phenotype column to lowercase for case-insensitive matching
       trait_index[, Phenotype := tolower(Phenotype)]
       # Check if the trait is present in this chromosome (case-insensitive)
+      # ** this will have problems with duplicate genes or isoforms **
       trait_rows <- trait_index[Phenotype == tolower(selected_trait), ]
-      if(nrow(trait_rows) > 0) {
+      if (nrow(trait_rows) > 0) {
         message("Found trait in chromosome ", chr_num, " at rows ", trait_rows$from, "-", trait_rows$to)
         # Read only the rows for this trait
         data <- fst::read_fst(fst_path,
@@ -60,18 +61,18 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
           to = trait_rows$to,
           as.data.table = TRUE)
         # Ensure required columns are present
-        if(!"LOD" %in% colnames(data)) {
+        if (!"LOD" %in% colnames(data)) {
           possible_lod_cols <- grep("lod|LOD|score", colnames(data), ignore.case = TRUE, value = TRUE)
-          if(length(possible_lod_cols) > 0) {
+          if (length(possible_lod_cols) > 0) {
             data.table::setnames(data, possible_lod_cols[1], "LOD")
           } else {
             warning("LOD column not found in file: ", fst_path)
             next
           }
         }
-        if(!"marker" %in% colnames(data)) {
+        if (!"marker" %in% colnames(data)) {
           possible_marker_cols <- grep("marker|id|snp", colnames(data), ignore.case = TRUE, value = TRUE)
-          if(length(possible_marker_cols) > 0) {
+          if (length(possible_marker_cols) > 0) {
             data.table::setnames(data, possible_marker_cols[1], "marker")
           } else {
             warning("marker column not found in file: ", fst_path)
@@ -79,12 +80,12 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
           }
         }
         # Verify that we have the correct trait data (case-insensitive)
-        if("Phenotype" %in% colnames(data)) {
+        if ("Phenotype" %in% colnames(data)) {
             # Double-check that all rows are for the requested trait
             data <- data[tolower(Phenotype) == tolower(selected_trait)]
             message("Verified ", nrow(data), " rows for trait: ", selected_trait)
         }
-        if(nrow(data) > 0) {
+        if (nrow(data) > 0) {
           message("Adding ", nrow(data), " rows from chromosome ", chr_num)
           all_data[[length(all_data) + 1]] <- data
         }
@@ -96,7 +97,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
     })
   }
   # Check if we found any data
-  if(length(all_data) == 0) {
+  if (length(all_data) == 0) {
     stop("Trait '", selected_trait, "' not found in any chromosome for dataset: ", selected_dataset)
   }
   # Combine all data

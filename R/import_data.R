@@ -10,7 +10,7 @@
 import_data <- function() {
   import <- read.csv(system.file("data/import.csv", package = "qtlApp"))
   out <- list()
-  for(i in 1:nrow(import)) {
+  for (i in 1:nrow(import)) {
     ext <- tools::file_ext(import$filename[i])
     switch(ext,
       csv =   out[[import$object[i]]] <- read.csv(import$filename[i]),

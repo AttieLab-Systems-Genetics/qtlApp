@@ -40,7 +40,7 @@ importServer <- function(id) {
         choices = names(import))
       })
     output$annots <- shiny::renderUI({
-      if(shiny::req(input$import_data) == 'annotation_list') {
+      if (shiny::req(input$import_data) == 'annotation_list') {
         shiny::selectInput(ns("annotation_list"),
           label = "Choose a dataset",
           choices = annots)
@@ -48,7 +48,7 @@ importServer <- function(id) {
     })
     output$show_data <- DT::renderDT({
         object <- shiny::req(input$import_data)
-        if(object == 'annotation_list') {
+        if (object == 'annotation_list') {
           df <- import[[object]][[shiny::req(input$annotation_list)]]
         } else {
           df <- import[[object]]

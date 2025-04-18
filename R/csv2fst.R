@@ -1,50 +1,46 @@
-#' Convert CSV to FST File
-#' 
+#' Convert CSV files to FST format for better performance
+#'
 #' @param csv_path path to CSV or FST file
-#' 
+#'
 #' @importFrom data.table fread
 #' @importFrom dplyr arrange
 #' @importFrom stringr str_detect str_replace
 #' @importFrom fst write_fst
 #' @export
-csv2fst <- function(csv_path) {
-  if(stringr::str_detect(csv_path, "csv$")) {
+csv2fst <- function(csv_path, chunk_size = 50000) {
+  # Check if the input file is a CSV
+  if (stringr::str_detect(csv_path, "csv$")) {
+    # Create FST filename by replacing .csv with .fst
     fst_path <- stringr::str_replace(csv_path, "csv$", "fst")
-    if(!file.exists(fst_path)) {
-      # Write FST file.
-      warning("Writing FST file: ", fst_path)
-      fst::write_fst(
-        data.table::fread(csv_path, drop = "Which_mice") |> dplyr::arrange(Phenotype),
-        path = fst_path, compress = 100)
+    # Only create FST file if it doesn't already exist
+    if (!file.exists(fst_path)) {
+      warning("Writing FST file in chunks: ", fst_path)
+      # Initialize list to store chunks
+      all_chunks <- list()
+      skip <- 0
+      # Read CSV in chunks to handle large files
+      repeat {
+        chunk <- data.table::fread(csv_path, skip = skip, nrows = chunk_size, showProgress = TRUE)
+        if (nrow(chunk) == 0) break
+          all_chunks[[length(all_chunks) + 1]] <- chunk
+          skip <- skip + chunk_size
+      }
+      # Combine all chunks
+      full_data <- data.table::rbindlist(all_chunks)
+      # Sort by Phenotype if the column exists
+      if ("Phenotype" %in% colnames(full_data)) {
+        data.table::setorder(full_data, Phenotype)
+      } else {
+        warning("Column 'Phenotype' not found. Data will not be sorted.")
+      }
+      # Write to FST format with compression
+      fst::write_fst(full_data, path = fst_path, compress = 50)
     }
   } else {
-    if(!stringr::str_detect(csv_path, "fst$"))
+    # Check if the file is already an FST file
+    if (!stringr::str_detect(csv_path, "fst$"))
       stop("No CSV or FST name provided: ", csv_path)
     fst_path <- csv_path
   }
   return(fst_path)
-}
-#' Convert CSV to FST File
-#' 
-#' @param fst_path path to FST file
-#' 
-#' @importFrom dplyr filter group_by mutate n row_number select slice
-#' @importFrom tidyr pivot_wider
-#' @importFrom stringr str_replace
-#' @importFrom fst read_fst write_fst
-#' @export
-fst_rows <- function(fst_path) {
-  row_path <- stringr::str_replace(fst_path, ".fst$", "_row.fst")
-  if(!file.exists(row_path)) {
-    # Database of first and last entries by phenotype
-    rows <- fst::read_fst(fst_path) |>
-      dplyr::select(Phenotype) |>
-      dplyr::mutate(rown = dplyr::row_number()) |>
-      dplyr::group_by(Phenotype) |>
-      dplyr::slice(c(1, dplyr::n())) |>
-      dplyr::mutate(set = c("from", "to")) |>
-      tidyr::pivot_wider(names_from = "set", values_from = "rown")
-    fst::write_fst(rows, row_path)
-  }
-  return(row_path)
 }
