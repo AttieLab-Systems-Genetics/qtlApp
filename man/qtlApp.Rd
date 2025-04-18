@@ -9,7 +9,7 @@
 \usage{
 qtlApp()
 
-qtlServer(id, import)
+qtlServer(id)
 
 qtlInput(id)
 

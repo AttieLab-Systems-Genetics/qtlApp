@@ -17,16 +17,16 @@ qtlApp <- function() {
     qtlOutput("qtl")
   )
   server <- function(input, output, session) {
-    import <- importServer("import")
-    qtlServer("qtl", import)
+    qtlServer("qtl")
   }
   shiny::shinyApp(ui = ui, server = server)
 }
 #' @rdname qtlApp
 #' @export
-qtlServer <- function(id, import) {
+qtlServer <- function(id) {
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
+      import <- importServer("import")
       main_par <- mainParServer("main_par", import)
       scanServer("scan", main_par, import)
       peakServer("peak", main_par, import)
@@ -40,7 +40,6 @@ qtlInput <- function(id) {
     shiny::helpText("Select your dataset, trait to show, and other options"),
     mainParInput(ns("main_par")), # "group", "LOD_thr"
     mainParUI(ns("main_par")),    # "which_trait"
-    scanUI(ns("scan")),           # "scan" actionButton
     peakInput(ns("peak")))        # "which_peak", "alleles" actionButton
 }
 #' @rdname qtlApp
