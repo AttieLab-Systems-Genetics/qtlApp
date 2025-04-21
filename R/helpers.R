@@ -87,8 +87,8 @@ get_trait_list <- function(import, trait_type) {
   annotation_list[[trait_type]]
 }
 get_trait_id <- function(trait_type) {
-  switch(trait_type, # ** Expand for new data types ** #
+  switch(trait_type,
     genes    = "gene.id",
     isoforms = "transcript.id",
-    clinical = "data_name")
+    "data_name")
 }
