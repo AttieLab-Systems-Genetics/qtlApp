@@ -1,5 +1,12 @@
 #!/usr/bin/env Rscript
 
+if (length(args)==0) {
+  args[1] <- "v5_simple_scan_genes_diet_interactive_female_mice"
+}
+if (length(args) < 2) {
+  args[2] <- "LIVER_DO1200"
+}
+
 # Script to compile data from gz files into separate FST files for each chromosome
 
 # Define and create our custom temporary directory, as env vars are ignored
@@ -25,7 +32,8 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/LIVER_DO1200/v5_simple_scan_genes_diet_interactive_female_mice/output"
+INPUT_DIR <- file.path("/mnt/rdrive/mkeller3/General/main_directory/scans",
+  args[2], args[1], "output")
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 
 # Set data.table specific temp directory
