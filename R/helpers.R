@@ -24,7 +24,12 @@ get_trait_choices <- function(import, selected_dataset = NULL) {
 }
 #' @importFrom stringr str_remove
 #' @export
-join_symbol_id <- function(annotation_list, trait_type, trait_id) {
+join_symbol_id <- function(annotation_list,
+                           trait_type = c("genes","isoforms"),
+                           trait_id = get_trait_id(trait_type)) {
+  # `trait_type` should be "genes" or "isoforms"
+  # trait_id should be "gene.id" or "transcript.id"
+  trait_type <- arg_match(trait_type)
   # Remove "ENSMUSG" (genes) or "ENSMUST" (transcripts)
   # and leading zeros from the trait ID
   # and create choices by combining the symbol and simplified ID
