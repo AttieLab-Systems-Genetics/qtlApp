@@ -50,3 +50,6 @@ po/*~
 rsconnect/
 
 *.html
+
+# Ignore specific R script
+kalynn_R/latest_app_kalynn/chromosome_compile.R

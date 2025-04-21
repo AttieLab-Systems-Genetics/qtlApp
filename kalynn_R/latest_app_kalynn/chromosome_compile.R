@@ -1,28 +1,20 @@
 #!/usr/bin/env Rscript
 
-args = commandArgs(trailingOnly=TRUE)
-if (length(args)==0) {
-  args[1] <- "v5_simple_scan_genes_diet_interactive_female_mice"
-}
-if (length(args) < 2) {
-  args[2] <- "LIVER_DO1200"
-}
-
 # Script to compile data from gz files into separate FST files for each chromosome
 
 # Define and create our custom temporary directory, as env vars are ignored
-my_temp_dir <- "/data/dev/tmp_KW"
-dir.create(my_temp_dir, showWarnings = FALSE, recursive = TRUE, mode = "0777")
-message(paste("Using custom temporary directory for operations:", my_temp_dir))
+#my_temp_dir <- "/data/dev/tmp_KW"
+#dir.create(my_temp_dir, showWarnings = FALSE, recursive = TRUE, mode = "0777")
+#message(paste("Using custom temporary directory for operations:", my_temp_dir))
 
 # Ensure custom temp directory is cleaned up on exit (even if script is interrupted)
-cleanup <- function() {
-  if (dir.exists(my_temp_dir)) {
-    message(paste("Cleaning up custom temporary directory:", my_temp_dir))
-    unlink(my_temp_dir, recursive = TRUE, force = TRUE)
-  }
-}
-on.exit(cleanup(), add = TRUE)
+#cleanup <- function() {
+  #f (dir.exists(my_temp_dir)) {
+   # message(paste("Cleaning up custom temporary directory:", my_temp_dir))
+    #unlink(my_temp_dir, recursive = TRUE, force = TRUE)
+  #}
+#}
+#on.exit(cleanup(), add = TRUE)
 
 
 # Load required libraries
@@ -33,12 +25,11 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- file.path("/mnt/rdrive/mkeller3/General/main_directory/scans",
-  args[2], args[1], "output")
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/LIVER_DO1200/v5_simple_scan_genes_diet_interactive_female_mice/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 
 # Set data.table specific temp directory
-options(datatable.tmpdir = my_temp_dir)
+#options(datatable.tmpdir = my_temp_dir)
 
 # Extract the basename of the input directory for use in output filenames
 # This will extract "isoform_additive" from the path
