@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
 
+args = commandArgs(trailingOnly=TRUE)
 if (length(args)==0) {
   args[1] <- "v5_simple_scan_genes_diet_interactive_female_mice"
 }
