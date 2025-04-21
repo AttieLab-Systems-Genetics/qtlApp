@@ -4,14 +4,15 @@
 #' @param import reactive list with file_directory
 #'
 #' @importFrom DT datatable DTOutput renderDT
-#' @importFrom shiny moduleServer NS observeEvent plotOutput reactive renderPlot renderText
-#'             req selectizeInput setProgress shinyApp textOutput updateSelectizeInput withProgress
+#' @importFrom shiny moduleServer NS observeEvent plotOutput reactive renderPlot
+#'             renderText req selectizeInput setProgress shinyApp textOutput
+#'             updateSelectizeInput withProgress
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom stringr str_split
 #' @importFrom reshape2 melt
-#' @importFrom ggplot2 aes element_blank element_line element_text geom_hline geom_point ggplot
-#'             labs scale_color_manual theme theme_bw
+#' @importFrom ggplot2 aes element_blank element_line element_text geom_hline
+#'             geom_point ggplot labs scale_color_manual theme theme_bw
 #' 
 #' @export
 peakApp <- function() {
@@ -41,23 +42,25 @@ peakServer <- function(id, main_par, import) {
 
     chosen_trait <- shiny::reactive({
       shiny::req(import(), main_par$which_trait, main_par$selected_dataset)
-      get_selected_trait(import(), main_par$which_trait, main_par$selected_dataset)
+      get_selected_trait(import(),
+                         main_par$which_trait, main_par$selected_dataset)
     })
-    peaks <- shiny::reactive({
+    peak_table <- shiny::reactive({
       shiny::req(main_par$selected_dataset, chosen_trait())
       shiny::withProgress(
         message = paste("peaks of", chosen_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
           subset(
-            suppressMessages(peak_finder(import()$file_directory, main_par$selected_dataset)),
+            suppressMessages(peak_finder(import()$file_directory,
+                                         main_par$selected_dataset)),
             trait == chosen_trait())
         })
     })
 
-    # get the peaks info ------------------------------------------------------------------
-    output$peaks <- DT::renderDT({DT::datatable(
-      peaks(),
+    # Table ov peaks info ------------------------------------------------------
+    output$peak_table <- DT::renderDT({DT::datatable(
+      peak_table(),
       options = list(paging = TRUE,    ## paginate the output
                      pageLength = 5,   ## number of rows to output for each page
                      scrollX = TRUE,   ## enable scrolling on X axis
@@ -66,8 +69,9 @@ peakServer <- function(id, main_par, import) {
                      server = TRUE,    ## use client-side processing
                      dom = 'Bfrtip',
                      buttons = c('csv', 'excel'),
-                     columnDefs = list(list(targets = '_all', className = 'dt-center'),
-                                       list(targets = c(0, 8, 9), visible = FALSE))
+                     columnDefs = list(
+                       list(targets = '_all', className = 'dt-center'),
+                       list(targets = c(0, 8, 9), visible = FALSE))
       ),
       extensions = 'Buttons',
       selection = 'single',            ## enable selection of a single row
@@ -75,19 +79,22 @@ peakServer <- function(id, main_par, import) {
       rownames = TRUE)                 ##  show row numbers/names
     })
     # Update peak selection-------------------------------------------
-    shiny::observeEvent(peaks(), {
+    shiny::observeEvent(peak_table(), {
       shiny::updateSelectizeInput(session, "which_peak",
-        choices = peaks()$marker, options = list(maxItems = 1, maxOptions = 5), server = TRUE)
+        choices = peak_table()$marker,
+        options = list(maxItems = 1, maxOptions = 5), server = TRUE)
     })
-    # Show allele effects.-----------------------------------------------------------
+    # Show allele effects.------------------------------------------------------
     output$allele_effects <- renderUI({
-      shiny::req(peaks(), input$which_peak)
-      peak <- pivot_peaks(peaks(), input$which_peak)
+      shiny::req(peak_table(), input$which_peak)
+      peak <- pivot_peaks(peak_table(), input$which_peak)
       plot_alleles <- ggplot_alleles(peak)
       shiny::renderPlot({
         print(plot_alleles)
       })
     })
+    # Return
+    peak_table
   })
 }
 #' @rdname peakApp
@@ -95,7 +102,8 @@ peakServer <- function(id, main_par, import) {
 peakInput <- function(id) {
   ns <- shiny::NS(id)
   list(
-    shiny::helpText("Choose a peak to see the strain effects. This only applies to the additive scans."),
+    shiny::helpText("Choose a peak to see the strain effects.",
+      "This only applies to the additive scans."),
     shiny::selectizeInput(ns("which_peak"),
       label = "Choose peak",
       choices = NULL,
@@ -111,7 +119,7 @@ peakOutput <- function(id) {
   list(
     bslib::card(
       bslib::card_header("Peaks"),
-      DT::DTOutput(ns("peaks"))
+      DT::DTOutput(ns("peak_table"))
     ),
     bslib::card(
       bslib::card_header("Strain effects"),

@@ -28,7 +28,7 @@ qtlServer <- function(id) {
       ns <- session$ns
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      scanServer("scan", main_par, import)
+      scanServer("scan_table", main_par, import)
       peakServer("peak", main_par, import)
   })
 }
@@ -47,7 +47,7 @@ qtlInput <- function(id) {
 qtlOutput <- function(id) {
   ns <- shiny::NS(id)
   list(
-    scanOutput(ns("scan")),
+    scanOutput(ns("scan_table")),
     peakOutput(ns("peak"))
   )
 }

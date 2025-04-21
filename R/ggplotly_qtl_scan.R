@@ -1,24 +1,24 @@
 #' Plot the QTL if doing a new scan
 #' 
-#' @param scan_plot ggplot object
-#' @param peaks_info data frame with peak information
-#' @param plot_data data frame with plot data
+#' @param peak_table data frame with peak information
+#' @param scan_table data frame with scan data
 #' @param selected_chr selected chromosome
 #' @param plot_width width of the plot
 #' @param plot_height height of the plot
 #'
 #' @importFrom plotly config ggplotly layout
 #' @export
-ggplotly_qtl_scan <- function(scan_plot, peaks_info, plot_data, selected_chr = "2", plot_width = 900, plot_height = 600) {
+ggplotly_qtl_scan <- function(scan_table, peak_table,
+                              selected_chr = "2", plot_width = 900, plot_height = 600) {
   # Create formatted trait text for plot title using the official gene symbol
   trait_text <- paste0("<b style='font-size: 24px;'>", official_gene_symbol(), "</b>")
   # Show the highest LOD peak
-  if (nrow(peaks_info) > 0) {
-    peaks_info <- peaks_info |>
+  if (nrow(peak_table) > 0) {
+    peak_table <- peak_table |>
       dplyr::arrange(desc(lod)) |>
       dplyr::slice(1)
-    peak_point <- plot_data |>
-      dplyr::filter(markers == peaks_info$marker)
+    peak_point <- scan_table |>
+      dplyr::filter(markers == peak_table$marker)
     if (nrow(peak_point) > 0) {
       # Add red diamond at the peak
       if (input$selected_chr == "All") {
@@ -26,7 +26,7 @@ ggplotly_qtl_scan <- function(scan_plot, peaks_info, plot_data, selected_chr = "
       } else {
         xvar = "position"
       }
-      scan_plot <- scan_plot + 
+      scan_plot <- ggplot_qtl_scan(scan_table) + 
         ggplot2::geom_point(data = peak_point,
           ggplot2::aes(x = .data[[xvar]], y = .data$LOD),
           color = "red",
@@ -36,18 +36,18 @@ ggplotly_qtl_scan <- function(scan_plot, peaks_info, plot_data, selected_chr = "
   }
   # Create subtitle with peak information
   subtitle <-
-    if (nrow(peaks_info) > 0) {
+    if (nrow(peak_table) > 0) {
       chr_label <- 
-        if (peaks_info$chr %in% c(20,21,22)) {
-          c("X","Y","M")[peaks_info$chr-19]
+        if (peak_table$chr %in% c(20,21,22)) {
+          c("X","Y","M")[peak_table$chr-19]
         } else {
-          peaks_info$chr
+          peak_table$chr
         }
       paste0(
         "<span style='font-size: 16px;'>",
-        "<b>Peak Marker:</b> ", peaks_info$marker,
-        " (Chr", chr_label, ":", round(peaks_info$pos, 2), " Mb) | ",
-        "<b>LOD:</b> ", round(peaks_info$lod, 2),
+        "<b>Peak Marker:</b> ", peak_table$marker,
+        " (Chr", chr_label, ":", round(peak_table$pos, 2), " Mb) | ",
+        "<b>LOD:</b> ", round(peak_table$lod, 2),
         "</span>"
       )
     } else {
