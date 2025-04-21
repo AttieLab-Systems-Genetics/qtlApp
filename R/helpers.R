@@ -5,7 +5,6 @@ create_cache <- function(caches = c("peaks", "trait")) {
       pos = globalenv())
   }
 }
-#' @importFrom stringr str_remove
 #' @export
 get_trait_choices <- function(import, selected_dataset = NULL) {
   trait_type <- get_trait_type(import, selected_dataset)
@@ -19,15 +18,20 @@ get_trait_choices <- function(import, selected_dataset = NULL) {
   if(!(trait_type %in% c("genes", "isoforms"))) {
     choices <- annotation_list[[trait_type]][[trait_id]]
   } else { # "genes", "isoforms"
-    # Remove "ENSMUSG" (genes) or "ENSMUST" (transcripts)
-    # and leading zeros from the trait ID
-    # and create choices by combining the symbol and simplified ID
-    # e.g. "A1bg_1".
-    id <- stringr::str_remove(annotation_list[[trait_type]][[trait_id]],
-      pattern = "ENSMUS[GT]0+")
-    choices <- paste(annotation_list[[trait_type]]$symbol, id, sep = "_")
+    choices <- join_symbol_id(annotation_list, trait_type, trait_id)
   }
   choices
+}
+#' @importFrom stringr str_remove
+#' @export
+join_symbol_id <- function(annotation_list, trait_type, trait_id) {
+  # Remove "ENSMUSG" (genes) or "ENSMUST" (transcripts)
+  # and leading zeros from the trait ID
+  # and create choices by combining the symbol and simplified ID
+  # e.g. "A1bg_1".
+  id <- stringr::str_remove(annotation_list[[trait_type]][[trait_id]],
+                            pattern = "ENSMUS[GT]0+")
+  paste(annotation_list[[trait_type]]$symbol, id, sep = "_")
 }
 #' @importFrom stringr str_split
 #' @export
