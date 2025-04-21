@@ -1,0 +1,213 @@
+---
+title: qtlApp Vignette
+date: `r format(Sys.time(), "%d %b %Y")`
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# qtlApp Markdown
+
+Goal is to walk through all steps of analysis and visualization.
+In the process, subgoal is to simplify code through helper functions
+and imagine dispersement of viz to shiny apps.
+Current data includes `clinical`, `genes` and `isoforms`,
+and some code in this package (qtlApp) assumes one of these;
+as other data are added, changes may be needed.
+
+Of special note for `genes` and `isoforms`:
+the `symbol` column is not unique.
+For instance, there are 20666 entries in
+`import$annotation_list$genes`, but only 20634 unique symbols.
+More seriously for
+`import$annotation_list$isoforms`, there are 59088 entries
+but only 20279 unique symbols, with 15 of those not correspondging
+to symbols among the `genes`.
+[One of those symbols is "retired",
+4 are putative genes "GmNNNNN",
+and 5 end in ".N".]
+
+New code uses caches.
+The routine `create_cache()` puts cache names in global environment,
+accessible to all routines,
+while caches themselves live in the empty environment.
+
+```{r}
+qtlApp::create_cache()
+```
+
+## Import
+
+Import data as list to be used in all apps.
+
+```{r}
+import <- qtlApp::import_data()
+```
+
+## MainPar
+
+The `mainPar` app is used to select
+
+- `selected_dataset` = selected dataset
+- `LOD_thr` = LOD threshold
+- `which_trait` = which trait to examine
+
+This reduces redundancy as the `mainParInput()` and `mainParUI()` functions
+are used in other apps,
+where inputs are accessed as, for instance, `main_par$selected_dataset`.
+Other inputs may be added later.
+
+```{r}
+# mainParInput
+selected_dataset <- import$file_directory$group[1]
+LOD_thr <- 7
+# mainParUI
+which_trait <- qtlApp::get_trait_choices(import, selected_dataset)[1]
+```
+
+## Peak
+
+The `peakApp()` is in process of being rebuilt.
+Important first to understand improvements and goals.
+The earlier code focused on `trait` column (e.g. gene symbol)
+whereas current code in `kalynn_R` focuses on `marker`.
+
+The `peak_finder()` function uses caching.
+Here we use `suppressMessages()` to suppress caching messages,
+then print the cache information.
+
+```{r}
+peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset))
+```
+
+```{r}
+rlang::env_print(peaks_cache)
+```
+
+```{r}
+filtered_peaks <- dplyr::filter(peaks, lod >= LOD_thr) |>
+  dplyr::arrange(dplyr::desc(lod))
+highest_peak <- filtered_peaks[1,]
+```
+
+```{r}
+dplyr::select(highest_peak, trait, chr, pos, marker, lod)
+```
+
+### Select peak by trait
+
+Select base on prior regime.
+For genes and transcipts, the 
+
+```{r}
+selected_trait <- qtlApp::get_selected_trait(import, which_trait, selected_dataset)
+selected_peak <- subset(peaks, trait == selected_trait)
+```
+
+```{r}
+dplyr::select(selected_peak, trait, chr, pos, marker, lod)
+```
+
+```{r}
+dplyr::select(selected_peak, trait, LETTERS[1:8])
+```
+
+### Select peak by marker (as in kalynn_R)
+
+Use `selected_trait` parameter to `peak_finder()`.
+A trait may have multiple peaks;
+select the desired peak.
+
+```{r}
+peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset,
+  qtlApp::get_selected_trait(import, which_trait, selected_dataset)))
+```
+
+```{r}
+filtered_peaks <- dplyr::filter(peaks, lod >= LOD_thr) |>
+  dplyr::arrange(dplyr::desc(lod))
+highest_peak <- filtered_peaks[1,]
+which_peak <- highest_peak$marker
+```
+
+```{r}
+dplyr::select(highest_peak, trait, chr, pos, marker, lod)
+```
+
+### Alleles at Selected Peak
+
+I cannot seem to get plot to show via radian or R.
+I can save as PDF for now.
+
+```{r}
+selected_peak <- subset(peaks, marker == which_peak)
+```
+
+```{r}
+dplyr::select(selected_peak, trait, chr, pos, marker, lod)
+```
+
+```{r}
+dplyr::select(selected_peak, trait, LETTERS[1:8])
+```
+
+```{r}
+peak <- qtlApp::pivot_peaks(selected_peak, which_peak)
+peak_plot <- qtlApp::ggplot_alleles(peak)
+ggplot2::ggsave("alleles.pdf", peak_plot)
+print(class(peak_plot))
+print(peak_plot)
+```
+
+## Scan Genome
+
+```{r}
+scans <- suppressMessages(
+  qtlApp::trait_scan(import$file_directory, selected_dataset, selected_trait))
+```
+
+The following should be constituted as a qtl2_scan object.
+
+```{r}
+qtl_obj <- qtlApp::QTL_plot_visualizer(
+  scans, which_trait, LOD_thr, import$markers)
+```
+
+```{r}
+scan_plot <- qtlApp::ggplot_qtl_scan(qtl_obj)
+ggplot2::ggsave("scan.pdf", scan_plot)
+```
+
+```{r}
+qtl_peak <- dplyr::filter(qtl_obj, LOD == max(LOD))
+dplyr::mutate(qtl_peak, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+```
+
+### Plotly interactive
+
+```{r}
+selected_chr = selected_peak$chr
+qtlApp::ggplotly_qtl_scan(scan_plot, selected_chr)
+```
+
+
+
+## Things Left to do
+
+- clicked_data reactivity
+- scanApp: redesign
+  - have scanlyServer depend on scanServer return
+  - may need qtl_obj data.frame
+- downloadApp: create using new ideas and foundrShiny::downloadApp.R
+- rethink observe and observeEvent
+  
+### Issues
+
+- figure out `clicked_data` and `event_data` with `plotly`
+  - `ggplotly_qtl_scan()` is start but does not have clicked in
+  - need to figure out plot_data and peak_info for this routine
+  - `scanlyApp.R` is start only
+- figure out how to display plots with radian or R in vscode
+
