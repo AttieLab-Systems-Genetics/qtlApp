@@ -15,7 +15,7 @@ scanServer(id, main_par, import)
 
 scanOutput(id)
 
-scanlyServer(id, main_par, scan_table)
+scanlyServer(id, main_par, scan_table, peak_table)
 
 scanlyInput(id)
 
