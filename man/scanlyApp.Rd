@@ -9,10 +9,12 @@ scanlyApp()
 \arguments{
 \item{id}{shiny identifier}
 
-\item{import}{reactive list with file_directory and markers}
-
 \item{main_par}{reactive list with selected_dataset, LOD_thr and which_trait}
+
+\item{scan_table}{reactive list with scan table}
 }
 \description{
-Plotly Scan App Module
+This app has a point-click feature not yet implemented.
+See `kalynn_R/latest_app_kalynn/app.R`.
+Also not sure if `selected_chr` should be here or elsewhere.
 }

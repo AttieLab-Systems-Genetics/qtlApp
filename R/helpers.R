@@ -29,7 +29,7 @@ join_symbol_id <- function(annotation_list,
                            trait_id = get_trait_id(trait_type)) {
   # `trait_type` should be "genes" or "isoforms"
   # trait_id should be "gene.id" or "transcript.id"
-  trait_type <- arg_match(trait_type)
+  trait_type <- match.arg(trait_type)
   # Remove "ENSMUSG" (genes) or "ENSMUST" (transcripts)
   # and leading zeros from the trait ID
   # and create choices by combining the symbol and simplified ID
