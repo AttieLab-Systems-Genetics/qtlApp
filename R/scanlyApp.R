@@ -24,7 +24,7 @@ scanlyApp <- function() {
     sidebar = bslib::sidebar("side_panel",
       mainParInput("main_par"), # "selected_dataset", "LOD_thr"
       mainParUI("main_par"),    # "which_trait"
-      scanlyInput("scanly").    # "selected_chr"
+      scanlyInput("scanly")     # "selected_chr"
     ),
     scanlyOutput("scanly")
   )

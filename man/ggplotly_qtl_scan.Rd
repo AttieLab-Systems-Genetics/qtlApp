@@ -5,20 +5,17 @@
 \title{Plot the QTL if doing a new scan}
 \usage{
 ggplotly_qtl_scan(
-  scan_plot,
-  peaks_info,
-  plot_data,
+  scan_table,
+  peak_table,
   selected_chr = "2",
   plot_width = 900,
   plot_height = 600
 )
 }
 \arguments{
-\item{scan_plot}{ggplot object}
+\item{scan_table}{data frame with scan data}
 
-\item{peaks_info}{data frame with peak information}
-
-\item{plot_data}{data frame with plot data}
+\item{peak_table}{data frame with peak information}
 
 \item{selected_chr}{selected chromosome}
 
