@@ -79,10 +79,13 @@ peakServer <- function(id, main_par, import) {
       rownames = TRUE)                 ##  show row numbers/names
     })
     # Update peak selection-------------------------------------------
-    shiny::observeEvent(peak_table(), {
-      shiny::updateSelectizeInput(session, "which_peak",
-        choices = peak_table()$marker,
-        options = list(maxItems = 1, maxOptions = 5), server = TRUE)
+    shiny::observeEvent(shiny::req(peak_table(), main_par$LOD_thr), {
+      ordered_markers <- highest_peaks(peak_table(), main_par$LOD_thr)$marker
+      if(!is.null(ordered_peaks)) {
+        shiny::updateSelectizeInput(session, "which_peak",
+          choices = ordered_markers, selected = ordered_markers[1],
+          options = list(maxItems = 1, maxOptions = 5), server = TRUE)
+      }
     })
     # Show allele effects.------------------------------------------------------
     output$allele_effects <- renderUI({

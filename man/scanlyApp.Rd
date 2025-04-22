@@ -11,7 +11,9 @@ scanlyApp()
 
 \item{main_par}{reactive list with selected_dataset, LOD_thr and which_trait}
 
-\item{scan_table}{reactive list with scan table}
+\item{scan_table}{reactive dataframe from scanServer}
+
+\item{peak_table}{reactive dataframe from peakServer}
 }
 \description{
 This app has a point-click feature not yet implemented.

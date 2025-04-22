@@ -3,13 +3,16 @@
 #' @param peak_table data frame with peak information
 #' @param scan_table data frame with scan data
 #' @param selected_chr selected chromosome
+#' @param source name of the plotly source for click events
 #' @param plot_width width of the plot
 #' @param plot_height height of the plot
 #'
 #' @importFrom plotly config ggplotly layout
 #' @export
 ggplotly_qtl_scan <- function(scan_table, peak_table,
-                              selected_chr = "2", plot_width = 900, plot_height = 600) {
+                              selected_chr = "2",
+                              source = "scanly_plot",
+                              plot_width = 900, plot_height = 600) {
   # Create formatted trait text for plot title using the official gene symbol
   trait_text <- paste0("<b style='font-size: 24px;'>", official_gene_symbol(), "</b>")
   # Show the highest LOD peak
@@ -54,7 +57,7 @@ ggplotly_qtl_scan <- function(scan_table, peak_table,
       "<span style='font-size: 16px; color: #7f8c8d;'>No significant peaks</span>"
     }
   # Convert ggplot to plotly with custom dimensions and removed features
-  plt <- plotly::ggplotly(scan_plot, source = "scan_plot",
+  plt <- plotly::ggplotly(scan_plot, source = source,
     width = plot_width, height = plot_height, tooltip = c("x", "y", "chr")) |>
     plotly::layout(
       title = list(

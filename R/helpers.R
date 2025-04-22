@@ -38,6 +38,15 @@ join_symbol_id <- function(annotation_list,
                             pattern = "ENSMUS[GT]0+")
   paste(annotation_list[[trait_type]]$symbol, id, sep = "_")
 }
+#' @importFrom dplyr arrange desc filter
+#' @importFrom rlang .data
+#' @export
+highest_peaks <- function(peak_table, LOD_thr) {
+  filtered_peaks <- dplyr::filter(peak_table, .data$lod >= LOD_thr) |>
+    dplyr::arrange(dplyr::desc(.data$lod))
+  if (nrow(filtered_peaks) == 0) return(NULL)
+  filtered_peaks
+}
 #' @importFrom stringr str_split
 #' @export
 get_selected_trait <- function(import, which_trait, selected_dataset) {

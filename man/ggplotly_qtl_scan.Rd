@@ -8,6 +8,7 @@ ggplotly_qtl_scan(
   scan_table,
   peak_table,
   selected_chr = "2",
+  source = "scanly_plot",
   plot_width = 900,
   plot_height = 600
 )
@@ -18,6 +19,8 @@ ggplotly_qtl_scan(
 \item{peak_table}{data frame with peak information}
 
 \item{selected_chr}{selected chromosome}
+
+\item{source}{name of the plotly source for click events}
 
 \item{plot_width}{width of the plot}
 
