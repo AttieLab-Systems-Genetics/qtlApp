@@ -19,11 +19,15 @@ peakApp <- function() {
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"),
-      mainParUI("main_par"),
-      peakInput("peak")
-    ),
-    peakOutput("peak")
+      mainParInput("main_par"), # "selected_dataset", "LOD_thr"
+      mainParUI("main_par"),    # "which_trait"
+      peakInput("peak")),       # "which_peak"
+    bslib::card(
+      bslib::card_header("Peaks"),
+      peakOutput("peak")),
+    bslib::card(
+      bslib::card_header("Strain effects"),
+      peakUI("peak"))
   )
   server <- function(input, output, session) {
       import <- importServer("import")
@@ -93,7 +97,8 @@ peakServer <- function(id, main_par, import) {
       peak <- pivot_peaks(peak_table(), input$which_peak)
       plot_alleles <- ggplot_alleles(peak)
       shiny::renderPlot({
-        print(plot_alleles)
+        print(plot_alleles) |>
+          shinycssloaders::withSpinner(color="#0dc5c1")
       })
     })
     # Return
@@ -117,16 +122,13 @@ peakInput <- function(id) {
 }
 #' @rdname peakApp
 #' @export
+peakUI <- function(id) {
+  ns <- shiny::NS(id)
+  shiny::uiOutput(ns("allele_effects"))
+}
+#' @rdname peakApp
+#' @export
 peakOutput <- function(id) {
   ns <- shiny::NS(id)
-  list(
-    bslib::card(
-      bslib::card_header("Peaks"),
-      DT::DTOutput(ns("peak_table"))
-    ),
-    bslib::card(
-      bslib::card_header("Strain effects"),
-      shiny::uiOutput(ns("allele_effects")) |>
-        shinycssloaders::withSpinner(color="#0dc5c1"))
-  )
+  DT::DTOutput(ns("peak_table"))
 }

@@ -4,6 +4,7 @@
 \alias{peakApp}
 \alias{peakServer}
 \alias{peakInput}
+\alias{peakUI}
 \alias{peakOutput}
 \title{Peak App Module}
 \usage{
@@ -12,6 +13,8 @@ peakApp()
 peakServer(id, main_par, import)
 
 peakInput(id)
+
+peakUI(id)
 
 peakOutput(id)
 }

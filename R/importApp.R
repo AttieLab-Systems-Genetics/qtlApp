@@ -73,14 +73,14 @@ importServer <- function(id) {
 #' @rdname importApp
 #' @export
 importUI <- function(id) {
-    ns <- shiny::NS(id)
-    list(
-        shiny::uiOutput(ns("import_data")),
-        shiny::uiOutput(ns("annots")))
+  ns <- shiny::NS(id)
+  list(
+    shiny::uiOutput(ns("import_data")),
+    shiny::uiOutput(ns("annots")))
 }
 #' @rdname importApp
 #' @export
 importOutput <- function(id) {
-    ns <- shiny::NS(id)
-    DT::DTOutput(ns('show_data'))
+  ns <- shiny::NS(id)
+  DT::DTOutput(ns('show_data'))
 }

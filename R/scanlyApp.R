@@ -23,14 +23,17 @@
 #' @export
 scanlyApp <- function() {
   ui <- bslib::page_sidebar(
-    title = "Test Scan",
+    title = "Test Plotly Scan",
     sidebar = bslib::sidebar("side_panel",
       mainParInput("main_par"), # "selected_dataset", "LOD_thr"
       mainParUI("main_par"),    # "which_trait"
-      scanlyInput("scanly")     # "selected_chr"
-    ),
-    scanlyOutput("scanly"),
-    scanlyUI("scanly")
+      scanlyInput("scanly")),   # "selected_chr"
+    bslib::card(
+      bslib::card_header("LOD profile"),
+      scanlyOutput("scanly")),
+    bslib::card(
+      bslib::card_header("Clicked Peak"),
+      scanlyUI("scanly"))
   )
   server <- function(input, output, session) {
       import <- importServer("import")
@@ -146,18 +149,12 @@ scanlyInput <- function(id) {
 #' @rdname scanApp
 #' @export
 scanlyUI <- function(id) {
-    ns <- shiny::NS(id)
-    bslib::card(
-      bslib::card_header("Clicked Peak"),
-      shiny::uiOutput(ns("high_peak"))
-    )
+  ns <- shiny::NS(id)
+  shiny::uiOutput(ns("high_peak"))
 }
 #' @rdname scanApp
 #' @export
 scanlyOutput <- function(id) {
-    ns <- shiny::NS(id)
-    bslib::card(
-      bslib::card_header("LOD profile"),
-      shiny::uiOutput(ns("scan_plot"))
-    )
+  ns <- shiny::NS(id)
+  shiny::uiOutput(ns("scan_plot"))
 }

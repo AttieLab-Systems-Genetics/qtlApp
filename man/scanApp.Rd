@@ -3,6 +3,7 @@
 \name{scanApp}
 \alias{scanApp}
 \alias{scanServer}
+\alias{scanUI}
 \alias{scanOutput}
 \alias{scanlyServer}
 \alias{scanlyInput}
@@ -13,6 +14,8 @@
 scanApp()
 
 scanServer(id, main_par, import)
+
+scanUI(id)
 
 scanOutput(id)
 
