@@ -81,7 +81,7 @@ peakServer <- function(id, main_par, import) {
     # Update peak selection-------------------------------------------
     shiny::observeEvent(shiny::req(peak_table(), main_par$LOD_thr), {
       ordered_markers <- highest_peaks(peak_table(), main_par$LOD_thr)$marker
-      if(!is.null(ordered_peaks)) {
+      if(!is.null(ordered_markers)) {
         shiny::updateSelectizeInput(session, "which_peak",
           choices = ordered_markers, selected = ordered_markers[1],
           options = list(maxItems = 1, maxOptions = 5), server = TRUE)

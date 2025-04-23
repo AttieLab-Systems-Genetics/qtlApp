@@ -2,6 +2,7 @@
 #' 
 #' @param qtl_plot_obj object with data to plot
 #' @param LOD_thr threshold for LOD score
+#' @param xvar variable for x-axis (default: "BPcum")
 #' 
 #' @importFrom dplyr group_by summarise
 #' @importFrom ggplot2 aes aes_string element_blank element_line element_text
@@ -9,17 +10,17 @@
 #'             scale_x_continuous theme theme_bw xlab ylab ylim
 #' @importFrom rlang .data
 #' @export
-ggplot_qtl_scan <- function(qtl_plot_obj, LOD_thr = NULL) {
+ggplot_qtl_scan <- function(qtl_plot_obj, LOD_thr = NULL, xvar = "BPcum") {
   # Create axis labels
   axisdf = dplyr::group_by(qtl_plot_obj, .data$order) |>
-    dplyr::summarize(center = (max(.data$BPcum) + min(.data$BPcum))/2)
+    dplyr::summarize(center = (max(.data[[xvar]]) + min(.data[[xvar]]))/2)
   # Convert chromosome labels
   axisdf$order[axisdf$order == 20] <- "X"
   axisdf$order[axisdf$order == 21] <- "Y"
   axisdf$order[axisdf$order == 22] <- "M"
   axisdf$order <- factor(axisdf$order, levels=c(as.character(1:19), "X", "Y", "M"))
   # Create plot object.
-  p <- ggplot2::ggplot(qtl_plot_obj, ggplot2::aes_string(x="BPcum", y="LOD")) +
+  p <- ggplot2::ggplot(qtl_plot_obj, ggplot2::aes_string(x=xvar, y="LOD")) +
     ggplot2::geom_line(ggplot2::aes(color=as.factor(chr)), alpha=0.8, linewidth=.5) +
     ggplot2::scale_color_manual(values = rep(c("black", "darkgrey"), 22)) +
     ggplot2::scale_x_continuous(

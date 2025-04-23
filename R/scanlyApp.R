@@ -11,13 +11,14 @@
 #'
 #' @importFrom DT datatable DTOutput renderDT
 #' @importFrom shiny actionButton h4 moduleServer nearPoints NS plotOutput
-#'             reactive renderPlot renderUI req setProgress shinyApp
+#'             reactive reactiveVal renderPlot renderUI req setProgress shinyApp
 #'             uiOutput withProgress
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr across mutate where
 #' @importFrom stringr str_split
 #' @importFrom htmltools tags
+#' @importFrom plotly event_data plotlyOutput renderPlotly
 #'
 #' @export
 scanlyApp <- function() {
@@ -28,7 +29,8 @@ scanlyApp <- function() {
       mainParUI("main_par"),    # "which_trait"
       scanlyInput("scanly")     # "selected_chr"
     ),
-    scanlyOutput("scanly")
+    scanlyOutput("scanly"),
+    scanlyUI("scanly")
   )
   server <- function(input, output, session) {
       import <- importServer("import")
@@ -46,20 +48,12 @@ scanlyServer <- function(id, main_par, scan_table, peak_table) {
     ns <- session$ns
     # Plotly plot
     output$scan_plot <- shiny::renderUI({
-      shiny::req(scan_plot())
       plotly::plotlyOutput(ns("render_plot")) |>
         shinycssloaders::withSpinner(type = 8, color = "#3498db")
     })
     scanly_plot <- shiny::reactive({
       req(scan_table(), peak_table(), input$selected_chr)
-      # Check if the selected chromosome is "All"
-      if (input$selected_chr == "All") {
-        # Create a plot for all chromosomes
-        ggplotly_qtl_scan(scan_table(), peak_table(), source = "scanly_plot")
-      } else {
-        # Create a plot for the selected chromosome
-        ggplotly_qtl_scan(scan_table(), peak_table(), input$selected_chr, source = "scanly_plot")
-      }
+      ggplotly_qtl_scan(scan_table(), peak_table(), input$selected_chr, "scanly_plot")
     })
     output$render_plot <- plotly::renderPlotly({
       req(scanly_plot())
@@ -89,10 +83,27 @@ scanlyServer <- function(id, main_par, scan_table, peak_table) {
     plotly_click <- shiny::reactive({
       plotly::event_data("plotly_click", source = "scanly_plot")
     })
+    # `stable_peak()` stores the stable peak information for table display.
+    # `max_peak()` has maximum peak when reactives change.
+    # `stable_peak()` changes when `max_peak()` or `plotly_click()` changes.
+    # `stable_peak()` is not reactive but is updated by reactives.
+    stable_peak <- shiny::reactiveVal(NULL)
+    max_peak <- shiny::reactive({
+      shiny::req(peak_info(peak_table(), scan_table(), which_peak()))
+      out <- peak_info(peak_table(), scan_table(), which_peak())
+      stable_peak(out)
+      out
+    })
+    observeEvent(shiny::req(plotly_click()), {
+      shiny::req(peak_info(peak_table(), scan_table(), which_peak()))
+      out <- peak_info(peak_table(), scan_table(), which_peak(), plotly_click())
+      stable_peak(out)
+      out
+    })
     output$clicked_point_info <- DT::renderDT({
-      shiny::req(peak_info(peak_table(), scan_table(), which_peak(), plotly_click()))
-      DT:datatable(
-        peak_info(peak_table(), scan_table(), which_peak(), plotly_click()),
+      shiny::req(max_peak())
+      DT::datatable(
+        stable_peak(),
         options = list(dom = 't', ordering = FALSE, pageLength = 1),
         rownames = FALSE,
         class = 'compact hover',
@@ -112,7 +123,8 @@ scanlyServer <- function(id, main_par, scan_table, peak_table) {
         DT::DTOutput(ns("clicked_point_info")))
     })
     # Add observer for plotly double click event
-    shiny::observeEvent(plotly::event_data("plotly_doubleclick", source = "scan_plot"), {
+    shiny::observeEvent(
+      plotly::event_data("plotly_doubleclick", source = "scanly_plot"), {
       if(input$selected_chr != "All") {
         shiny::updateSelectInput(session, "selected_chr", selected = "All")
       }
@@ -133,11 +145,19 @@ scanlyInput <- function(id) {
 }
 #' @rdname scanApp
 #' @export
+scanlyUI <- function(id) {
+    ns <- shiny::NS(id)
+    bslib::card(
+      bslib::card_header("Clicked Peak"),
+      shiny::uiOutput(ns("high_peak"))
+    )
+}
+#' @rdname scanApp
+#' @export
 scanlyOutput <- function(id) {
     ns <- shiny::NS(id)
     bslib::card(
       bslib::card_header("LOD profile"),
-      shiny::uiOutput(ns("scan_plot")),
-      shiny::uiOutput(ns("high_peak"))
+      shiny::uiOutput(ns("scan_plot"))
     )
 }

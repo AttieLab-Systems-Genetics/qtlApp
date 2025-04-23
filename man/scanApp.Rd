@@ -6,6 +6,7 @@
 \alias{scanOutput}
 \alias{scanlyServer}
 \alias{scanlyInput}
+\alias{scanlyUI}
 \alias{scanlyOutput}
 \title{Scan App Module}
 \usage{
@@ -18,6 +19,8 @@ scanOutput(id)
 scanlyServer(id, main_par, scan_table, peak_table)
 
 scanlyInput(id)
+
+scanlyUI(id)
 
 scanlyOutput(id)
 }
