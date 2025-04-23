@@ -12,16 +12,20 @@
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr across mutate where
 #' @importFrom stringr str_split
-#' 
+#'
 #' @export
 scanApp <- function() {
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
       mainParInput("main_par"), # "selected_dataset", "LOD_thr"
-      mainParUI("main_par")    # "which_trait"
-    ),
-    scanOutput("scan_table")
+      mainParUI("main_par")),    # "which_trait"
+    bslib::card(
+      bslib::card_header("LOD profile"),
+      scanOutput("scan_table")),
+    bslib::card(
+      bslib::card_header("Clicked Peak"),
+      scanUI("scan_table"))
   )
   server <- function(input, output, session) {
       import <- importServer("import")
@@ -29,7 +33,6 @@ scanApp <- function() {
       scanServer("scan_table", main_par, import)
   }
   shiny::shinyApp(ui = ui, server = server)
-
 }
 #' @rdname scanApp
 #' @export
@@ -91,11 +94,13 @@ scanServer <- function(id, main_par, import) {
 }
 #' @rdname scanApp
 #' @export
+scanUI <- function(id) {
+  ns <- shiny::NS(id)
+  DT::DTOutput(ns("plot_click"))
+}
+#' @rdname scanApp
+#' @export
 scanOutput <- function(id) {
-    ns <- shiny::NS(id)
-    bslib::card(
-      bslib::card_header("LOD profile"),
-      shiny::uiOutput(ns("scan_plot")),
-      DT::DTOutput(ns("plot_click"))
-    )
+  ns <- shiny::NS(id)
+  shiny::uiOutput(ns("scan_plot"))
 }

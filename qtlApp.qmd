@@ -79,7 +79,7 @@ Here we use `suppressMessages()` to suppress caching messages,
 then print the cache information.
 
 ```{r}
-peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset))
+peak_table <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset))
 ```
 
 ```{r}
@@ -87,7 +87,7 @@ rlang::env_print(peaks_cache)
 ```
 
 ```{r}
-filtered_peaks <- dplyr::filter(peaks, lod >= LOD_thr) |>
+filtered_peaks <- dplyr::filter(peak_table, lod >= LOD_thr) |>
   dplyr::arrange(dplyr::desc(lod))
 highest_peak <- filtered_peaks[1,]
 ```
@@ -103,7 +103,7 @@ For genes and transcipts, the
 
 ```{r}
 selected_trait <- qtlApp::get_selected_trait(import, which_trait, selected_dataset)
-selected_peak <- subset(peaks, trait == selected_trait)
+selected_peak <- subset(peak_table, trait == selected_trait)
 ```
 
 ```{r}
@@ -121,12 +121,13 @@ A trait may have multiple peaks;
 select the desired peak.
 
 ```{r}
-peaks <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset,
-  qtlApp::get_selected_trait(import, which_trait, selected_dataset)))
+selected_trait <- qtlApp::get_selected_trait(import, which_trait, selected_dataset)
+peak_table <- suppressMessages(qtlApp::peak_finder(import$file_directory, selected_dataset,
+  selected_trait))
 ```
 
 ```{r}
-filtered_peaks <- dplyr::filter(peaks, lod >= LOD_thr) |>
+filtered_peaks <- dplyr::filter(peak_table, lod >= LOD_thr) |>
   dplyr::arrange(dplyr::desc(lod))
 highest_peak <- filtered_peaks[1,]
 which_peak <- highest_peak$marker
@@ -142,7 +143,7 @@ I cannot seem to get plot to show via radian or R.
 I can save as PDF for now.
 
 ```{r}
-selected_peak <- subset(peaks, marker == which_peak)
+selected_peak <- subset(peak_table, marker == which_peak)
 ```
 
 ```{r}
@@ -171,35 +172,51 @@ scans <- suppressMessages(
 The following should be constituted as a qtl2_scan object.
 
 ```{r}
-qtl_obj <- qtlApp::QTL_plot_visualizer(
+scan_table <- qtlApp::QTL_plot_visualizer(
   scans, which_trait, LOD_thr, import$markers)
 ```
 
 ```{r}
-scan_plot <- qtlApp::ggplot_qtl_scan(qtl_obj)
-ggplot2::ggsave("scan.pdf", scan_plot)
+scan_plot <- qtlApp::ggplot_qtl_scan(scan_table)
+print(scan_plot)
 ```
 
 ```{r}
-qtl_peak <- dplyr::filter(qtl_obj, LOD == max(LOD))
+qtl_peak <- dplyr::filter(scan_table, LOD == max(LOD))
 dplyr::mutate(qtl_peak, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
 ```
 
-### Plotly interactive
+Plot scan for peak chromosome.
+
+```{r}
+scan_plot_peak <- qtlApp::ggplot_qtl_scan(
+  dplyr::filter(scan_table, chr %in% qtl_peak$chr)) +
+  ggplot2::geom_hline(yintercept = LOD_thr,
+    linetype = "dashed", color = "blue", linewidth = 2)
+print(scan_plot_peak)
+```
+
+## Plotly interactive
+
+There is a way to make `scan_plot` interactive using `shiny::plotOutput()` with
+argument `source = "plot_click"`, which creates `input$plot_click`.
+In `scanApp.R`, this if used in `output$plot_click` to render a datatable that
+is shown via `DT` routines `renderDT()` and `DTOutput()`.
+Another way is using the
+[plotly](https://plotly.com/r/) package.
 
 ```{r}
 selected_chr = selected_peak$chr
-qtlApp::ggplotly_qtl_scan(scan_plot, selected_chr)
+qtlApp::ggplotly_qtl_scan(scan_table, peak_table, source = "scanly_plot",
+  selected_chr = selected_chr)
 ```
-
-
 
 ## Things Left to do
 
 - clicked_data reactivity
 - scanApp: redesign
   - have scanlyServer depend on scanServer return
-  - may need qtl_obj data.frame
+  - may need scan_table data.frame
 - downloadApp: create using new ideas and foundrShiny::downloadApp.R
 - rethink observe and observeEvent
   
