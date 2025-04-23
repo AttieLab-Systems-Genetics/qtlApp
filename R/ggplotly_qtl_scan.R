@@ -7,45 +7,46 @@
 #' @param plot_width width of the plot
 #' @param plot_height height of the plot
 #'
-#' @importFrom plotly config ggplotly layout
+#' @importFrom plotly config event_register ggplotly layout
 #' @export
 ggplotly_qtl_scan <- function(scan_table, peak_table,
-                              selected_chr = "2",
+                              selected_chr = "All",
                               source = "scanly_plot",
                               plot_width = 900, plot_height = 600) {
-  # Create formatted trait text for plot title using the official gene symbol
-  trait_text <- paste0("<b style='font-size: 24px;'>", official_gene_symbol(), "</b>")
-  # Show the highest LOD peak
-  if (nrow(peak_table) > 0) {
+  if (is.null(scan_table) || !nrow(scan_table)
+    || is.null(peak_table) || !nrow(peak_table)) return(ggplot2::ggplot())
+  
+  # Create formatted trait text for plot title using the trait name.
+  trait_text <- paste0("<b style='font-size: 24px;'>", peak_table$trait, "</b>")
+  # Add red diamond at the peak
+  if (selected_chr == "All") {
+    xvar = "BPcum"
+  } else {
+    xvar = "position"
+    scan_table <- scan_table |>
+      dplyr::filter(chr == selected_chr)
     peak_table <- peak_table |>
-      dplyr::arrange(desc(lod)) |>
-      dplyr::slice(1)
+      dplyr::filter(chr == selected_chr)
+  }
+  # Show the highest LOD peak
+  scan_plot <- ggplot_qtl_scan(scan_table, xvar = xvar)
+  peak_table <- peak_table |>
+    dplyr::arrange(desc(lod)) |>
+    dplyr::slice(1)
+  if (nrow(peak_table)) {
     peak_point <- scan_table |>
       dplyr::filter(markers == peak_table$marker)
-    if (nrow(peak_point) > 0) {
-      # Add red diamond at the peak
-      if (input$selected_chr == "All") {
-        xvar = "BPcum"
-      } else {
-        xvar = "position"
-      }
-      scan_plot <- ggplot_qtl_scan(scan_table) + 
-        ggplot2::geom_point(data = peak_point,
-          ggplot2::aes(x = .data[[xvar]], y = .data$LOD),
-          color = "red",
-          size = 3,
-          shape = 20)
-    }
+    scan_plot <- scan_plot +
+      ggplot2::geom_point(data = peak_point,
+        ggplot2::aes(x = .data[[xvar]], y = .data$LOD),
+        color = "red",
+        size = 3,
+        shape = 20)
   }
   # Create subtitle with peak information
   subtitle <-
     if (nrow(peak_table) > 0) {
-      chr_label <- 
-        if (peak_table$chr %in% c(20,21,22)) {
-          c("X","Y","M")[peak_table$chr-19]
-        } else {
-          peak_table$chr
-        }
+      chr_label <- chr_XYM(peak_table$chr)
       paste0(
         "<span style='font-size: 16px;'>",
         "<b>Peak Marker:</b> ", peak_table$marker,
@@ -59,6 +60,8 @@ ggplotly_qtl_scan <- function(scan_table, peak_table,
   # Convert ggplot to plotly with custom dimensions and removed features
   plt <- plotly::ggplotly(scan_plot, source = source,
     width = plot_width, height = plot_height, tooltip = c("x", "y", "chr")) |>
+    plotly::event_register("plotly_click") |>
+    plotly::event_register("plotly_doubleclick") |>
     plotly::layout(
       title = list(
         text = paste0(trait_text, '<br>', subtitle),
@@ -75,9 +78,11 @@ ggplotly_qtl_scan <- function(scan_table, peak_table,
         font = list(family = "Arial", size = 12, color = "#2c3e50"),
         bordercolor = "#95a5a6"
       ),
-      hovermode = "closest",
+      hovermode = "closest" #,
+      # ** there does not seem to be a way to set the double click event
+      # ** to reset the zoom level in plotly
       # Add double click event to reset to full view
-      doubleclick = if (selected_chr != "All") TRUE else FALSE
+      #doubleclick = if (selected_chr != "All") TRUE else FALSE
     ) |>
     # Remove unwanted modebar buttons
     plotly::config(

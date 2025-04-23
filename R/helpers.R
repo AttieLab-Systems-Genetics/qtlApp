@@ -101,3 +101,12 @@ get_trait_id <- function(trait_type) {
     isoforms = "transcript.id",
     "data_name")
 }
+chr_XYM <- function(chr) {
+  if(is.null(chr)) return(NA)
+  # Convert chromosome number to X, Y, or M
+  if (chr %in% c(20, 21, 22)) {
+    c("X", "Y", "M")[chr - 19]
+  } else {
+    chr
+  }
+}

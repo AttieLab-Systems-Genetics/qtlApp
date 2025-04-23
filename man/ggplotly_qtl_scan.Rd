@@ -7,7 +7,7 @@
 ggplotly_qtl_scan(
   scan_table,
   peak_table,
-  selected_chr = "2",
+  selected_chr = "All",
   source = "scanly_plot",
   plot_width = 900,
   plot_height = 600
