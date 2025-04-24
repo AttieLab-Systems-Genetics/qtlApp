@@ -5,7 +5,7 @@
 \title{Plot the QTL if doing a new scan}
 \usage{
 ggplotly_qtl_scan(
-  scan_table,
+  scan_object,
   peak_table,
   selected_chr = "All",
   source = "scanly_plot",
@@ -14,7 +14,7 @@ ggplotly_qtl_scan(
 )
 }
 \arguments{
-\item{scan_table}{data frame with scan data}
+\item{scan_object}{list object with scan data and plot}
 
 \item{peak_table}{data frame with peak information}
 

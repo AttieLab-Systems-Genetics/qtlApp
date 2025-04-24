@@ -1,8 +1,8 @@
 #' Plot the QTL if doing a new scan
 #' 
-#' @param qtl_plot_obj object with data to plot
+#' @param scan_table dataframe with data to plot
 #' @param LOD_thr threshold for LOD score
-#' @param xvar variable for x-axis (default: "BPcum")
+#' @param selected_chr chromosome to plot (default is "All")
 #' 
 #' @importFrom dplyr group_by summarise
 #' @importFrom ggplot2 aes aes_string element_blank element_line element_text
@@ -10,9 +10,17 @@
 #'             scale_x_continuous theme theme_bw xlab ylab ylim
 #' @importFrom rlang .data
 #' @export
-ggplot_qtl_scan <- function(qtl_plot_obj, LOD_thr = NULL, xvar = "BPcum") {
+ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All") {
+  if(is.null(scan_table) || !nrow(scan_table)) return(ggplot2::ggplot())
+  if (selected_chr == "All") {
+    xvar = "BPcum"
+  } else {
+    xvar = "position"
+    # `scan_table` is probably already filtered by chromosome, but make sure.
+    scan_table <- dplyr::filter(scan_table, .data$chr == selected_chr)
+  }
   # Create axis labels
-  axisdf = dplyr::group_by(qtl_plot_obj, .data$order) |>
+  axisdf = dplyr::group_by(scan_table, .data$order) |>
     dplyr::summarize(center = (max(.data[[xvar]]) + min(.data[[xvar]]))/2)
   # Convert chromosome labels
   axisdf$order[axisdf$order == 20] <- "X"
@@ -20,7 +28,7 @@ ggplot_qtl_scan <- function(qtl_plot_obj, LOD_thr = NULL, xvar = "BPcum") {
   axisdf$order[axisdf$order == 22] <- "M"
   axisdf$order <- factor(axisdf$order, levels=c(as.character(1:19), "X", "Y", "M"))
   # Create plot object.
-  p <- ggplot2::ggplot(qtl_plot_obj, ggplot2::aes_string(x=xvar, y="LOD")) +
+  p <- ggplot2::ggplot(scan_table, ggplot2::aes_string(x=xvar, y="LOD")) +
     ggplot2::geom_line(ggplot2::aes(color=as.factor(chr)), alpha=0.8, linewidth=.5) +
     ggplot2::scale_color_manual(values = rep(c("black", "darkgrey"), 22)) +
     ggplot2::scale_x_continuous(
@@ -28,7 +36,7 @@ ggplot_qtl_scan <- function(qtl_plot_obj, LOD_thr = NULL, xvar = "BPcum") {
       breaks = axisdf$center,
       expand = ggplot2::expansion(mult = 0.15)  # Increased padding
     ) +
-    ggplot2::ylim(0, max(qtl_plot_obj$LOD, na.rm=TRUE) * 1.25) +
+    ggplot2::ylim(0, max(scan_table$LOD, na.rm=TRUE) * 1.25) +
     ggplot2::theme_bw() +
     ggplot2::theme(
       legend.position = "none",
