@@ -19,7 +19,7 @@ scanApp <- function() {
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
       mainParInput("main_par"), # "selected_dataset", "LOD_thr"
-      mainParUI("main_par")),    # "which_trait"
+      mainParUI("main_par")),    # "which_trait", "selected_chr"
     bslib::card(
       bslib::card_header("LOD profile"),
       scanOutput("scan_table")),
@@ -30,7 +30,7 @@ scanApp <- function() {
   server <- function(input, output, session) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      scanServer("scan_table", main_par, import)
+      scan_object <- scanServer("scan_table", main_par, import)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
@@ -67,9 +67,17 @@ scanServer <- function(id, main_par, import) {
       QTL_plot_visualizer(
         scans(), main_par$which_trait, main_par$LOD_thr, import()$markers)
     })
+    scan_table_chr <- shiny::reactive({
+      shiny::req(scan_table(), main_par$selected_chr)
+      if (main_par$selected_chr == "All") {
+        scan_table()
+      } else {
+        dplyr::filter(scan_table(), .data$chr == main_par$selected_chr)
+      }
+    })
     scan_plot <- shiny::reactive({
-      shiny::req(scan_table())
-      ggplot_qtl_scan(scan_table())
+      shiny::req(scan_table_chr(), main_par$LOD_thr, main_par$selected_chr)
+      ggplot_qtl_scan(scan_table_chr(), main_par$LOD_thr, main_par$selected_chr)
     })
     output$scan_plot <- shiny::renderUI({
       shiny::req(scan_plot())
@@ -82,14 +90,20 @@ scanServer <- function(id, main_par, import) {
     })
     # See also plotly clicked_data in `scanlyApp()`.
     output$plot_click <-  DT::renderDT({
-      shiny::req(scan_table(), input$plot_click)
-      out <- shiny::nearPoints(scan_table(), input$plot_click,
-        xvar = "BPcum", yvar = "LOD",
+      shiny::req(scan_plot(), scan_table_chr(), main_par$selected_chr, input$plot_click)
+      xvar <- "position"
+      if (main_par$selected_chr == "All") xvar <- "BPcum"
+      out <- shiny::nearPoints(scan_table_chr(), input$plot_click,
+        xvar = xvar, yvar = "LOD",
         threshold = 10, maxpoints = 1, addDist = TRUE)
       dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
     })
     # Return
-    scan_table
+    shiny::reactive({
+      list(
+        table = shiny::req(scan_table_chr()),
+        plot  = shiny::req(scan_plot()))
+    })
   })
 }
 #' @rdname scanApp

@@ -4,14 +4,14 @@
 \alias{ggplot_qtl_scan}
 \title{Plot the QTL if doing a new scan}
 \usage{
-ggplot_qtl_scan(qtl_plot_obj, LOD_thr = NULL, xvar = "BPcum")
+ggplot_qtl_scan(scan_table, LOD_thr = NULL, selected_chr = "All")
 }
 \arguments{
-\item{qtl_plot_obj}{object with data to plot}
+\item{scan_table}{dataframe with data to plot}
 
 \item{LOD_thr}{threshold for LOD score}
 
-\item{xvar}{variable for x-axis (default: "BPcum")}
+\item{selected_chr}{chromosome to plot (default is "All")}
 }
 \description{
 Plot the QTL if doing a new scan

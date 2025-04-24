@@ -11,7 +11,7 @@ scanlyApp()
 
 \item{main_par}{reactive list with selected_dataset, LOD_thr and which_trait}
 
-\item{scan_table}{reactive dataframe from scanServer}
+\item{scan_object}{reactive list from scanServer}
 
 \item{peak_table}{reactive dataframe from peakServer}
 }

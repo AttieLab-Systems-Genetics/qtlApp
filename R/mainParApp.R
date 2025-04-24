@@ -11,8 +11,8 @@
 mainParApp <- function(id) {
   ui <- bslib::page(
     title = "Test MainPar Module",
-    mainParInput("main_par"),
-    mainParUI("main_par"),
+    mainParInput("main_par"), # "selected_dataset", "LOD_thr"
+    mainParUI("main_par"),    # "which_trait", "which_chr"
     mainParOutput("main_par")
   )
   server <- function(input, output, session) {
@@ -45,7 +45,9 @@ mainParServer <- function(id, import) {
     # Show returned values.
     output$returns <- shiny::renderPrint({
       cat("selected_dataset =", input$selected_dataset,
-          "\nwhich_trait =", input$which_trait)
+          "\nwhich_trait =", input$which_trait,
+          "\nselected_chr =", input$selected_chr,
+          "\nLOD_thr =", input$LOD_thr)
     })
     # Return.
     input
@@ -66,11 +68,19 @@ mainParInput <- function(id) {
 #' @export
 mainParUI <- function(id) {
   ns <- shiny::NS(id)
-  shiny::selectizeInput(ns("which_trait"),
-    label = "Choose the trait",
-    choices = NULL,
-    multiple = FALSE,
-    options = list(placeholder = 'Search...'))
+  list(
+    shiny::selectizeInput(ns("which_trait"),
+      label = "Choose the trait",
+      choices = NULL,
+      multiple = FALSE,
+      options = list(placeholder = 'Search...')),
+    shiny::selectInput(ns("selected_chr"), "Zoom to Chromosome:",
+      choices = c("All",
+                  "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+                  "11", "12", "13", "14", "15", "16", "17", "18", "19",
+                  "X", "Y", "M"),
+      selected = "All",
+      width = "150px"))
 }
 #' @rdname mainParApp
 #' @export
