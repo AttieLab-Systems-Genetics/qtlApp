@@ -70,7 +70,7 @@ scanlyServer <- function(id, main_par, scan_object, peak_table) {
     plotly_click <- shiny::reactive({
       plotly::event_data("plotly_click", source = "scanly_plot")
     })
-    observeEvent(shiny::req(plotly_click()), {
+    shiny::observeEvent(shiny::req(plotly_click()), {
       shiny::req(peak_info(peak_table(), scan_object(), which_peak()))
       out <- peak_info(peak_table(), scan_object()$table, which_peak(), plotly_click())
       stable_peak(out)
