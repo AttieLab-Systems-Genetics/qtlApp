@@ -33,26 +33,21 @@ options(shiny.maxRequestSize = 20000*1024^2)
 file_directory <- read.csv("/data/dev/miniViewer_3.0/file_index.csv")
 
 # Try to load gene symbols file
-possible_paths <- c(
-  "/data/dev/miniViewer_3.0/gene_symbols.csv",
-  "/srv/shiny-server/data/gene_symbols.csv",
-  "/home/khwillis@ad.wisc.edu/qtlApp/kalynn_R/latest_app_kalynn/data/gene_symbols.csv",
-  "kalynn_R/latest_app_kalynn/data/gene_symbols.csv",
-  "data/gene_symbols.csv"
-)
+gene_symbols_path <- "/data/dev/miniViewer_3.0/gene_symbols.csv"
 
+# Default gene symbols in case loading fails
 gene_symbols <- c("Gnai3", "Cdc45", "Slc4a1", "Abca12", "Nadk", "Tfpi", "Scnn1b", "Cdc20", "Gpr89", "Cdc73")
-for (path in possible_paths) {
-  if (file.exists(path)) {
-    message("Found gene symbols file at: ", path)
-    gene_symbols <- tryCatch({
-      as.character(fread(path)$gene_symbol)
-    }, error = function(e) {
-      warning("Error reading gene symbols file: ", e$message)
-      c("Gnai3", "Cdc45", "Slc4a1", "Abca12", "Nadk", "Tfpi", "Scnn1b", "Cdc20", "Gpr89", "Cdc73")
-    })
-    break
-  }
+
+if (file.exists(gene_symbols_path)) {
+  message("Loading gene symbols from: ", gene_symbols_path)
+  gene_symbols <- tryCatch({
+    as.character(fread(gene_symbols_path)$gene_symbol)
+  }, error = function(e) {
+    warning("Error reading gene symbols file: ", e$message)
+    c("Gnai3", "Cdc45", "Slc4a1", "Abca12", "Nadk", "Tfpi", "Scnn1b", "Cdc20", "Gpr89", "Cdc73")
+  })
+} else {
+  warning("Gene symbols file not found at: ", gene_symbols_path, ". Using default symbols.")
 }
 
 # Sort gene symbols
@@ -615,9 +610,28 @@ ui <- fluidPage(
   .selectize-input {
     border-radius: 6px;
     border: 1px solid #dce4ec;
+    position: relative;
+    z-index: 1;
   }
   .selectize-dropdown {
     z-index: 10000 !important;
+  }
+  /* Ensure the strain effects selectize appears above the spinner */
+  #which_peak + .selectize-control .selectize-dropdown {
+    z-index: 99999 !important;
+  }
+  /* Ensure all selectize dropdowns remain on top */
+  .selectize-control {
+    position: relative;
+    z-index: 10;
+  }
+  .selectize-dropdown {
+    z-index: 99999 !important;
+  }
+  /* Fix positioning of the spinner relative to the plot */
+  .shiny-spinner-output-container {
+    position: relative;
+    z-index: 0;
   }
   .title-panel {
     background-color: #2c3e50;
@@ -742,12 +756,12 @@ ui <- fluidPage(
           ),
           # Allele effects panel
           wellPanel(
-              style = "padding: 20px;",
+              style = "padding: 20px; position: relative; overflow: visible;",
               h4("Strain Effects", style = "color: #2c3e50; margin-bottom: 15px;"),
               div(style = "color: #7f8c8d; margin-bottom: 15px;",
                   "Select a peak to see strain effects (Only for additive scans)."
               ),
-              div(style = "margin-bottom: 20px;",
+              div(style = "margin-bottom: 20px; position: relative; z-index: 2;",
                   selectizeInput("which_peak", "Choose peak",
                       choices = NULL,
                       multiple = FALSE,
@@ -760,9 +774,9 @@ ui <- fluidPage(
                   downloadButton("download_effects_plot_png", "Download PNG"),
                   downloadButton("download_effects_plot_pdf", "Download PDF")
               ),
-              div(style = "margin-top: 20px;",
+              div(style = "margin-top: 20px; position: relative; z-index: 0;",
                   plotOutput("allele_effects", height = "400px") %>%
-                      withSpinner(type = 8, color = "#3498db")
+                      withSpinner(type = 8, color = "#3498db", proxy.height = "400px")
               )
           )
       ),
@@ -826,7 +840,7 @@ ui <- fluidPage(
                       )
                   ),
                   plotlyOutput("scan_plot", width = "100%", height = "auto") %>%
-                      withSpinner(type = 8, color = "#3498db"),
+                      withSpinner(type = 8, color = "#3498db", proxy.height = "600px"),
                   # Add clicked point info directly below plot
                   div(style = "margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;",
                       h5("Selected Point Information", style = "margin: 0 0 10px 0; color: #2c3e50; font-size: 14px;"),
