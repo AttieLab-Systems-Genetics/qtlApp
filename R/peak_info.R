@@ -13,7 +13,7 @@ peak_info <- function(peak_table, scan_table,
   nearest_point <- scan_table[which.min(distances), ]
   if (nrow(nearest_point) == 0) return(NULL)
   # Return the peak closest to the clicked point.
-  return(peak_info_table(peak_table, which_peak, nearest_point))  
+  return(peak_info_table(peak_table, which_peak, nearest_point))
 }
 peak_info_table <- function(peak_table,
                             which_peak = nearest_point$markers,
