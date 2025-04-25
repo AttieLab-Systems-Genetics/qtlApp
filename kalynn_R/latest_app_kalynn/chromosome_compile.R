@@ -2,19 +2,7 @@
 
 # Script to compile data from gz files into separate FST files for each chromosome
 
-# Define and create our custom temporary directory, as env vars are ignored
-#my_temp_dir <- "/data/dev/tmp_KW"
-#dir.create(my_temp_dir, showWarnings = FALSE, recursive = TRUE, mode = "0777")
-#message(paste("Using custom temporary directory for operations:", my_temp_dir))
 
-# Ensure custom temp directory is cleaned up on exit (even if script is interrupted)
-#cleanup <- function() {
-  #f (dir.exists(my_temp_dir)) {
-   # message(paste("Cleaning up custom temporary directory:", my_temp_dir))
-    #unlink(my_temp_dir, recursive = TRUE, force = TRUE)
-  #}
-#}
-#on.exit(cleanup(), add = TRUE)
 
 
 # Load required libraries
