@@ -1,6 +1,6 @@
 # Use a base image that allows specifying R version
 #FROM mini-viewer-image_v1
-FROM rocker/shiny-verse
+FROM rocker/shiny
 #FROM rocker/r-ver:4.1.1
 #FROM rocker/shiny:4.3.1
 #FROM dckremfinger/shiny_mediation:latest
@@ -14,16 +14,19 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean
 
 # Install required R packages from CRAN
-RUN R -e "install.packages(c(\
-    'rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', \
-    'grid', 'ggrepel', 'gridGraphics', 'ggpubr', 'shiny', \
-    'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', \
-    'shinycssloaders', 'data.table', 'reshape2', 'plotly', \
-    'ggiraph', 'writexl', 'fontawesome', 'fst', 'debounce', \
-    'R.utils', 'plumber', 'shinyjs'), repos='http://cran.rstudio.com/')"
+# RUN R -e "install.packages(c(\
+#     'rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', \
+#     'grid', 'ggrepel', 'gridGraphics', 'ggpubr', 'shiny', \
+#     'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', \
+#     'shinycssloaders', 'data.table', 'reshape2', 'plotly', \
+#     'ggiraph', 'writexl', 'fontawesome', 'fst', 'debounce', \
+#     'R.utils', 'plumber', 'shinyjs'), repos='http://cran.rstudio.com/')"
 
 # Install Bioconductor packages
-RUN R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('qtl2', update = FALSE, ask = FALSE)"
+# RUN R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('qtl2', update = FALSE, ask = FALSE)"
+
+# Force app logs to stderr (hopefully)
+ENV SHINY_LOG_STDERR=1
 
 # Create the data directory with proper permissions
 RUN mkdir -p /data
