@@ -13,14 +13,17 @@ RUN apt-get update && apt-get install -y \
     libgit2-dev \
     && apt-get clean
 
-# Install required R packages from CRAN
-RUN R -e "install.packages(c(\
-    'rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', 'ggpubr', \
-    'grid', 'ggrepel', 'gridGraphics', 'shiny', \
-    'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', \
-    'shinycssloaders', 'data.table', 'reshape2', 'plotly', \
-    'ggiraph', 'writexl', 'fontawesome', 'fst', 'debounce', \
-    'R.utils', 'plumber'), repos='http://cran.rstudio.com/')"
+# Install required R packages from CRAN more robustly
+RUN R -e "\
+  options(repos = c(CRAN = 'http://cran.rstudio.com/')); \
+  pkgs <- c('rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', 'ggpubr', 'grid', 'ggrepel', 'gridGraphics', 'shiny', 'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', 'shinycssloaders', 'data.table', 'reshape2', 'plotly', 'ggiraph', 'writexl', 'fontawesome', 'fst', 'debounce', 'R.utils', 'plumber'); \
+  install.packages(pkgs, dependencies = TRUE); \
+  installed_pkgs <- installed.packages()[, 'Package']; \
+  missing_pkgs <- pkgs[!(pkgs %in% installed_pkgs)]; \
+  if (length(missing_pkgs) > 0) { \
+    stop(paste('Failed to install packages:', paste(missing_pkgs, collapse=', '))) \
+  } \
+"
 
 # Install Bioconductor packages
 RUN R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('qtl2', update = FALSE, ask = FALSE)"

@@ -419,7 +419,7 @@ server <- function(input, output, session) {
       
       # Only proceed if trait is not empty
       if (nchar(selected_trait) > 0) {
-        message("Debounced trait change detected: ", selected_trait, " in dataset: ", selected_dataset_name)
+        message("DEBUG: Trait observer fired for: ", selected_trait, " in dataset: ", selected_dataset_name)
         
         # Clear previous results and error
         scan_data(NULL)
@@ -430,38 +430,39 @@ server <- function(input, output, session) {
 
         # Try to load scan data
         tryCatch({
-          message("Calling trait_scan for: ", selected_trait)
-          # Use the trait_scan function loaded from R/trait_scan.R
-          # Ensure file_directory is passed correctly (it's loaded globally)
+          message("DEBUG: Calling trait_scan for: ", selected_trait)
           loaded_scan_data <- trait_scan(file_directory, selected_dataset_name, selected_trait)
+          message("DEBUG: trait_scan returned ", nrow(loaded_scan_data), " rows.") # DEBUG
           scan_data(loaded_scan_data) # Update reactive value
-          message("trait_scan completed, rows: ", nrow(loaded_scan_data))
           
           # Extract and store the official symbol
           if("Phenotype" %in% colnames(loaded_scan_data) && nrow(loaded_scan_data) > 0) {
              official_symbol <- unique(loaded_scan_data$Phenotype)[1]
              official_trait_symbol(official_symbol)
-             message("Set official trait symbol: ", official_symbol)
+             message("DEBUG: Set official trait symbol: ", official_symbol)
+          } else {
+            message("DEBUG: Could not set official trait symbol from scan_data.") # DEBUG
           }
           
           # Try to load peaks data for this trait
-          message("Calling peak_finder for: ", selected_trait)
-          # Use the peak_finder function loaded from R/peak_finder.R
+          message("DEBUG: Calling peak_finder for: ", selected_trait)
           loaded_peaks_data <- peak_finder(file_directory, selected_dataset_name, selected_trait)
+          message("DEBUG: peak_finder returned ", nrow(loaded_peaks_data), " rows.") # DEBUG
           trait_peaks_data(loaded_peaks_data) # Update reactive value
-          message("peak_finder completed, rows: ", nrow(loaded_peaks_data))
           
         }, error = function(e) {
           error_msg <- paste("Error loading data for trait ", selected_trait, ":", e$message)
-          message(error_msg) 
+          message("ERROR: ", error_msg) # DEBUG
           error_message_reactive(error_msg)
           shinyjs::show("error_message_container")
           scan_data(NULL) # Clear data on error
           trait_peaks_data(NULL)
           official_trait_symbol("")
         })
+      } else {
+          message("DEBUG: Trait observer fired, but trait was empty.") # DEBUG
       }
-    }, ignoreInit = TRUE) # Added ignoreInit=TRUE 
+    }, ignoreInit = TRUE)
     
     # Observe dataset changes to clear caches and potentially reload current trait
     observeEvent(main_par_reactives()$selected_dataset, { 
