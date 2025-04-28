@@ -14,16 +14,16 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean
 
 # Install required R packages from CRAN
-# RUN R -e "install.packages(c(\
-#     'rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', \
-#     'grid', 'ggrepel', 'gridGraphics', 'ggpubr', 'shiny', \
-#     'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', \
-#     'shinycssloaders', 'data.table', 'reshape2', 'plotly', \
-#     'ggiraph', 'writexl', 'fontawesome', 'fst', 'debounce', \
-#     'R.utils', 'plumber', 'shinyjs'), repos='http://cran.rstudio.com/')"
+RUN R -e "install.packages(c(\
+    'rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', 'ggpubr', \
+    'grid', 'ggrepel', 'gridGraphics', 'shiny', \
+    'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', \
+    'shinycssloaders', 'data.table', 'reshape2', 'plotly', \
+    'ggiraph', 'writexl', 'fontawesome', 'fst', 'debounce', \
+    'R.utils', 'plumber'), repos='http://cran.rstudio.com/')"
 
 # Install Bioconductor packages
-# RUN R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('qtl2', update = FALSE, ask = FALSE)"
+RUN R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('qtl2', update = FALSE, ask = FALSE)"
 
 # Force app logs to stderr (hopefully)
 ENV SHINY_LOG_STDERR=1
@@ -48,11 +48,12 @@ RUN chmod -R 777 /data
 #COPY ./chris_qtlviz.R /srv/shiny-server/
 # Ensure the necessary permissions
 COPY app.R /srv/shiny-server/app.R
+COPY R/ /srv/shiny-server/R/
 RUN chown -R shiny:shiny /srv/shiny-server
 
 # Expose the port
 EXPOSE 3838
 
 # Run the Shiny server
-#CMD ["/usr/bin/shiny-server"]
+CMD ["/usr/bin/shiny-server"]
 
