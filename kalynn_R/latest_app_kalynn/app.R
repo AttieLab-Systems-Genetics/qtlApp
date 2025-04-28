@@ -414,12 +414,32 @@ server <- function(input, output, session) {
     observeEvent(trait_debounced(), { 
       # Use req() on the reactive value itself
       req(main_par_reactives()$selected_dataset, trait_debounced()) 
-      selected_trait <- trait_debounced()
+      selected_trait_input <- trait_debounced() # This is the raw Symbol_ID input
       selected_dataset_name <- main_par_reactives()$selected_dataset
       
       # Only proceed if trait is not empty
-      if (nchar(selected_trait) > 0) {
-        message("DEBUG: Trait observer fired for: ", selected_trait, " in dataset: ", selected_dataset_name)
+      if (nchar(selected_trait_input) > 0) {
+        # --- Extract the actual trait symbol using the helper function ---
+        selected_trait_symbol <- helpers::get_selected_trait(
+            file_directory = file_directory, # Pass the file directory
+            which_trait = selected_trait_input, 
+            selected_dataset = selected_dataset_name
+        )
+        
+        # Check if symbol extraction worked
+        if(is.null(selected_trait_symbol)){
+             error_msg <- paste("Could not determine trait symbol from input:", selected_trait_input)
+             message("ERROR: ", error_msg) 
+             error_message_reactive(error_msg)
+             shinyjs::show("error_message_container")
+             scan_data(NULL) 
+             trait_peaks_data(NULL)
+             official_trait_symbol("")
+             return() # Stop processing if symbol extraction failed
+        }
+        # --- End symbol extraction ---
+
+        message("DEBUG: Trait observer fired for input: ", selected_trait_input, ", using symbol: ", selected_trait_symbol, " in dataset: ", selected_dataset_name)
         
         # Clear previous results and error
         scan_data(NULL)
@@ -428,30 +448,32 @@ server <- function(input, output, session) {
         error_message_reactive("")
         shinyjs::hide("error_message_container")
 
-        # Try to load scan data
+        # Try to load scan data using the extracted symbol
         tryCatch({
-          message("DEBUG: Calling trait_scan for: ", selected_trait)
-          loaded_scan_data <- trait_scan(file_directory, selected_dataset_name, selected_trait)
+          message("DEBUG: Calling trait_scan for symbol: ", selected_trait_symbol)
+          loaded_scan_data <- trait_scan(file_directory, selected_dataset_name, selected_trait_symbol) # Use symbol here
           message("DEBUG: trait_scan returned ", nrow(loaded_scan_data), " rows.") # DEBUG
           scan_data(loaded_scan_data) # Update reactive value
           
-          # Extract and store the official symbol
+          # Extract and store the official symbol from the loaded data
           if("Phenotype" %in% colnames(loaded_scan_data) && nrow(loaded_scan_data) > 0) {
-             official_symbol <- unique(loaded_scan_data$Phenotype)[1]
+             official_symbol <- unique(loaded_scan_data$Phenotype)[1] # Use the actual Phenotype from data
              official_trait_symbol(official_symbol)
              message("DEBUG: Set official trait symbol: ", official_symbol)
           } else {
-            message("DEBUG: Could not set official trait symbol from scan_data.") # DEBUG
+            # Fallback if Phenotype column missing - use the extracted symbol
+            official_trait_symbol(selected_trait_symbol) 
+            message("DEBUG: Could not set official trait symbol from scan_data. Using extracted symbol: ", selected_trait_symbol) 
           }
           
-          # Try to load peaks data for this trait
-          message("DEBUG: Calling peak_finder for: ", selected_trait)
-          loaded_peaks_data <- peak_finder(file_directory, selected_dataset_name, selected_trait)
+          # Try to load peaks data for this trait using the extracted symbol
+          message("DEBUG: Calling peak_finder for symbol: ", selected_trait_symbol)
+          loaded_peaks_data <- peak_finder(file_directory, selected_dataset_name, selected_trait_symbol) # Use symbol here
           message("DEBUG: peak_finder returned ", nrow(loaded_peaks_data), " rows.") # DEBUG
           trait_peaks_data(loaded_peaks_data) # Update reactive value
           
         }, error = function(e) {
-          error_msg <- paste("Error loading data for trait ", selected_trait, ":", e$message)
+          error_msg <- paste("Error loading data for trait ", selected_trait_symbol, ":", e$message) # Report error with the symbol used
           message("ERROR: ", error_msg) # DEBUG
           error_message_reactive(error_msg)
           shinyjs::show("error_message_container")
