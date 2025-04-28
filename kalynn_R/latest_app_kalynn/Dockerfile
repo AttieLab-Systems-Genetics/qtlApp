@@ -1,32 +1,40 @@
 # Use a base image that allows specifying R version
 #FROM mini-viewer-image_v1
-FROM rocker/shiny
+FROM rocker/shiny-verse:latest
 #FROM rocker/r-ver:4.1.1
 #FROM rocker/shiny:4.3.1
 #FROM dckremfinger/shiny_mediation:latest
-# Install necessary system packages
-RUN apt-get update && apt-get install -y \
+
+USER root
+
+# Install necessary *additional* system packages (shiny-verse base has many already)
+# Keep Fortran/BLAS/LAPACK just in case qtl2 or others need them for compilation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gfortran \
+    libblas-dev \
+    liblapack-dev \
+    cmake \
+    libsodium-dev \
     libcurl4-gnutls-dev \
-    libcairo2-dev \
+    # libcairo2-dev # Likely included in shiny-verse
     libssl-dev \
     libxml2-dev \
     libgit2-dev \
-    && apt-get clean
+    # libpng-dev \ # Likely included
+    # libjpeg-dev \ # Likely included
+    # libtiff5-dev \ # Likely included
+    # libfreetype6-dev \ # Likely included
+    # libharfbuzz-dev \ # Likely included
+    # libfribidi-dev \ # Likely included
+    # libfontconfig1-dev \ # Likely included
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install required R packages from CRAN more robustly
-RUN R -e "\
-  options(repos = c(CRAN = 'http://cran.rstudio.com/')); \
-  pkgs <- c('rstudioapi', 'dplyr', 'stringr', 'tidyverse', 'ggplot2', 'ggpubr', 'grid', 'ggrepel', 'gridGraphics', 'shiny', 'shinyFiles', 'bslib', 'spsComps', 'DT', 'shinyjs', 'shinycssloaders', 'data.table', 'reshape2', 'plotly', 'ggiraph', 'writexl', 'fontawesome', 'fst', 'debounce', 'R.utils', 'plumber'); \
-  install.packages(pkgs, dependencies = TRUE); \
-  installed_pkgs <- installed.packages()[, 'Package']; \
-  missing_pkgs <- pkgs[!(pkgs %in% installed_pkgs)]; \
-  if (length(missing_pkgs) > 0) { \
-    stop(paste('Failed to install packages:', paste(missing_pkgs, collapse=', '))) \
-  } \
-"
+# Install R packages using the script (will modify script next)
+COPY install_packages.R /tmp/install_packages.R
+RUN Rscript /tmp/install_packages.R && rm /tmp/install_packages.R
 
-# Install Bioconductor packages
-RUN R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('qtl2', update = FALSE, ask = FALSE)"
+# Removed as qtl2 is now included above
 
 # Force app logs to stderr (hopefully)
 ENV SHINY_LOG_STDERR=1
@@ -34,22 +42,8 @@ ENV SHINY_LOG_STDERR=1
 # Create the data directory with proper permissions
 RUN mkdir -p /data
 RUN chmod -R 777 /data
-#COPY ./example_file_directory_forviewer/file_index.csv /data
-#COPY ./example_file_directory_forviewer/chromosomal_sep_mm11.csv /data
-#COPY ./example_file_directory_forviewer/revised_markers_v3.rds /data
-#COPY ./example_file_directory_forviewer/annotation_list.rds /data
-#COPY ./example_file_directory_forviewer/file_index.xlsx /data
-#COPY ./example_file_directory_forviewer/HC_results_sexplusgenlit_withinfo.csv /data
-#COPY ./example_file_directory_forviewer/HF_scans_sexgenlitadditivelivgenes.csv /data
-#COPY ./example_file_directory_forviewer/small_HC_csv_fortest.csv /data
-#COPY ./example_file_directory_forviewer/small_HF_csv_fortest.csv /data
 
 # Copy your Shiny app to the image
-#COPY ./brian_app.R /srv/shiny-server/app.R
-#COPY ./brian_setup.R /srv/shiny-server/
-#COPY ./kalynn_qtlviz.R /srv/shiny-server/
-#COPY ./chris_qtlviz.R /srv/shiny-server/
-# Ensure the necessary permissions
 COPY app.R /srv/shiny-server/app.R
 COPY R/ /srv/shiny-server/R/
 RUN chown -R shiny:shiny /srv/shiny-server
@@ -57,6 +51,7 @@ RUN chown -R shiny:shiny /srv/shiny-server
 # Expose the port
 EXPOSE 3838
 
+USER shiny
+
 # Run the Shiny server
 CMD ["/usr/bin/shiny-server"]
-

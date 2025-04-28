@@ -8,7 +8,8 @@ docker rm mini-viewer-image_v2
 cd "$(dirname "$0")" || exit 1
 
 # Remove --no-cache to allow using cached layers for faster builds
-docker build --build-arg LOCAL_DATA=/data/dev/miniViewer_3.0 -t mini-viewer-image_v2 .
+# Add --no-cache to force a rebuild without using cache
+docker build --no-cache --build-arg LOCAL_DATA=/data/dev/miniViewer_3.0 -t mini-viewer-image_v2 .
 
 # Change back to the original directory (optional, but good practice)
 cd -

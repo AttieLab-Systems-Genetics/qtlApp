@@ -23,7 +23,7 @@ require("plotly")
 require("ggiraph")    
 require("writexl")   
 require("fontawesome")
-require("debounce")
+# require("debounce") # Commented out as it's not available for R 4.4.2
 
 # Source modules (assuming they are in the R/ directory relative to app)
 # Function to source all R files in a directory
