@@ -6,7 +6,7 @@
 #'
 #' @param id shiny identifier
 #' @param main_par reactive list with selected_dataset, LOD_thr and which_trait
-#' @param scan_object reactive list from scanServer
+#' @param scan_list reactive list from scanServer
 #' @param peak_table reactive dataframe from peakServer
 #'
 #' @importFrom DT datatable DTOutput renderDT
@@ -37,15 +37,15 @@ scanlyApp <- function() {
   server <- function(input, output, session) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      scan_object <- scanServer("scan_object", main_par, import)
+      scan_list <- scanServer("scan_list", main_par, import)
       peak_table <- peakServer("peak_table", main_par, import)
-      scanlyServer("scanly", main_par, scan_object, peak_table)
+      scanlyServer("scanly", main_par, scan_list, peak_table)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
 #' @rdname scanApp
 #' @export
-scanlyServer <- function(id, main_par, scan_object, peak_table) {
+scanlyServer <- function(id, main_par, scan_list, peak_table) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
     # Plotly plot
@@ -54,8 +54,9 @@ scanlyServer <- function(id, main_par, scan_object, peak_table) {
         shinycssloaders::withSpinner(type = 8, color = "#3498db")
     })
     scanly_plot <- shiny::reactive({
-      req(scan_object(), peak_table(), main_par$selected_chr)
-      ggplotly_qtl_scan(scan_object(), peak_table(), main_par$selected_chr, "scanly_plot")
+      req(scan_list$plot(), scan_list$table(), peak_table(), main_par$selected_chr)
+      scans <- list(plot = scan_list$plot(), table = scan_list$table())
+      ggplotly_qtl_scan(scans, peak_table(), main_par$selected_chr, "scanly_plot")
     })
     output$render_plot <- plotly::renderPlotly({
       req(scanly_plot())
@@ -71,8 +72,8 @@ scanlyServer <- function(id, main_par, scan_object, peak_table) {
       plotly::event_data("plotly_click", source = "scanly_plot")
     })
     shiny::observeEvent(shiny::req(plotly_click()), {
-      shiny::req(peak_info(peak_table(), scan_object(), which_peak()))
-      out <- peak_info(peak_table(), scan_object()$table, which_peak(), plotly_click())
+      shiny::req(peak_info(peak_table(), scan_list$table(), which_peak()))
+      out <- peak_info(peak_table(), scan_list$table(), which_peak(), plotly_click())
       stable_peak(out)
       out
     })
@@ -82,8 +83,8 @@ scanlyServer <- function(id, main_par, scan_object, peak_table) {
       ordered_peaks$marker[1]
     })
     max_peak <- shiny::reactive({
-      shiny::req(peak_info(peak_table(), scan_object(), which_peak()))
-      out <- peak_info(peak_table(), scan_object()$table, which_peak())
+      shiny::req(peak_info(peak_table(), scan_list$table(), which_peak()))
+      out <- peak_info(peak_table(), scan_list$table(), which_peak())
       stable_peak(out)
       out
     })

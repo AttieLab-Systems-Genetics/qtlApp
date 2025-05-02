@@ -1,90 +1,85 @@
-#' Download App Module
+#' Download App
 #'
-#' @param id shiny identifier
-#' @param import reactive list with file_directory and annotation_list
-#' @param trait_type character string as reactive object
+#' @param id identifier for shiny reactive
+#' @param prefix static prefix for filename
+#' @param main_par input parameters from calling routine
+#' @param download_list reactiveValues with  postfix,plot,table
+#' @return nothing 
 #'
-#' @importFrom DT DTOutput renderDT
-#' @importFrom shiny moduleServer NS reactive renderText req selectInput shinyApp
-#'             textOutput
-#' @importFrom bslib page
-#' 
+#' @importFrom shiny column downloadButton downloadHandler fluidRow
+#'             moduleServer NS radioButtons reactive renderUI req
+#'             textAreaInput uiOutput
+#' @importFrom utils write.csv    
+#' @importFrom grDevices dev.off pdf
 #' @export
-downloadApp <- function() {
+downloadApp <- function(id) {
   ui <- bslib::page_sidebar(
-    title = "Test Plotly Scan",
+    title = "Test Download",
     sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"),   # "selected_dataset", "LOD_thr"
-      mainParUI("main_par"),      # "which_trait"
-      scanlyInput("scanly"),      # "selected_chr" ** this needs to move to mainParApp
-      downloadInput("download")), # "download"
+      mainParInput("main_par"), # "selected_dataset", "LOD_thr"
+      mainParUI("main_par"),    # "which_trait", "selected_chr"
+      downloadInput("download")), # plot_table
     bslib::card(
       bslib::card_header("LOD profile"),
-      scanOutput("scan_table"))
+      scanOutput("scan_list")),
+    bslib::card(
+      bslib::card_header("Download Info"),
+      downloadOutput("download"))
   )
-  server <- function(input, output, session) {
+  server <- function(input, output, session) { 
     import <- importServer("import")
     main_par <- mainParServer("main_par", import)
-    scan_table <- scanServer("scan_table", main_par, import)
-    peak_table <- peakServer("peak_table", main_par, import)
-    downloadServer("download", main_par, peak_table, scan_table)
+    scan_list <- scanServer("scan_list", main_par, import)
+    downloadServer("download", scan_list)
   }
-  shiny::shinyApp(ui = ui, server = server)
+  shiny::shinyApp(ui, server)
 }
 #' @rdname downloadApp
 #' @export
-downloadServer <- function(id, main_par, peak_table, scan_table, plot_result) {
+downloadServer <- function(id, download_list) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    output$downloadInput <- shiny::renderUI({
-      list(
-        shiny::downloadButton("download_qtl_plot", "Download QTL Plot"),
-        shiny::selectInput(ns("format"), "Format", choices = c("PNG", "PDF"))
-      )
+    output$downloads <- shiny::renderUI({
+      plot_table <- shiny::req(input$plot_table)
+      shiny::downloadButton(ns(plot_table), plot_table)
     })
-    output$download_qtl_plot <- shiny::downloadHandler(
-      filename = function() {
-        shiny::req(input$format)
-        # Include chromosome info in filename if specific chromosome is selected
-        chr_suffix <- if(main_par$selected_chr != "All") paste0("_chr", main_par$selected_chr) else ""
-        paste0("lod_plot_", main_par$which_trait, chr_suffix, "_", format(Sys.time(), "%Y%m%d"),
-          ".", input$format)
-      },
+    output$filename <- renderUI({
+      filename <- paste0(shiny::req(download_list$panel()), "_",
+                         shiny::req(download_list$postfix()))
+      shiny::textAreaInput(ns("filename"), "File Prefix:", filename)
+    })
+    output$Plots <- shiny::downloadHandler(
+      filename = function() paste0(shiny::req(input$filename), ".pdf"),
       content = function(file) {
-        # Get the base plot - this already has the chromosome filtering applied
-        # Get peak information for the current trait
-        peaks_info <- dplyr::filter(peak_table(), .data$lod >= main_par$LOD_thr) |>
-          dplyr::arrange(dplyr::desc(.data$lod))
-        # Filter peaks to only show those in the selected chromosome if applicable
-        if(main_par$selected_chr != "All") {
-          chr_num <- chr_XYM(main_par$selected_chr)
-          peaks_info <- dplyr::filter(peaks_info, .data$chr == chr_num)
-        }
-        # Get the highest peak (if any)
-        if(nrow(peaks_info) > 0) {
-          peaks_info <- peaks_info %>% slice(1)
-          # Find the peak point in the filtered data
-          peak_point <- dplyr::filter(scan_table, .data$markers == peaks_info$marker)
-          if (nrow(peak_point) > 0) {
-            # Add the red diamond at the peak
-            if (main_par$selected_chr == "All") {
-              xvar <- "BPcum"
-            } else {
-              xvar <- "position"
-            }
-            plot_result <- plot_result + 
-              ggplot2::geom_point(data = peak_point,
-                ggplot2::aes_string(x = xvar, y = "LOD"),
-                color = "red", size = 3, shape = 18)
-          }
-        }
-      }
-    )
+        # ** this is not working even thought plot seems fine **
+        grDevices::pdf(file, width = 9,
+                       height = shiny::req(download_list$height()))
+        print(shiny::req(download_list$plot()))
+        grDevices::dev.off()
+      },
+      contentType = "application/pdf")
+    output$Tables <- shiny::downloadHandler(
+      filename = function() paste0(shiny::req(input$filename), ".csv"),
+      content = function(file) {
+        table <- shiny::req(download_list$table())
+        utils::write.csv(table, file, row.names = FALSE)
+      })
   })
 }
 #' @rdname downloadApp
 #' @export
-downloadInput <- function(id, main_par, import) {
+downloadInput <- function(id) {
   ns <- shiny::NS(id)
-  shiny::uiOutput(ns("downloadInput"))
+  shiny::radioButtons(ns("plot_table"), "", c("Plots","Tables"), "Plots",
+    inline = TRUE)
+}
+#' @rdname downloadApp
+#' @export
+downloadOutput <- function(id) {
+  ns <- shiny::NS(id)
+  shiny::tagList(
+    shiny::h5("Download:"),
+    shiny::fluidRow(
+      shiny::column(3, shiny::uiOutput(ns("downloads"))),
+      shiny::column(9, shiny::uiOutput(ns("filename")))))
 }
