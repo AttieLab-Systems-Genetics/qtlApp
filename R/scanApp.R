@@ -6,7 +6,7 @@
 #'
 #' @importFrom DT DTOutput renderDT
 #' @importFrom shiny actionButton h4 moduleServer nearPoints NS plotOutput
-#'             reactive renderPlot renderUI req setProgress shinyApp
+#'             reactive reactiveValues renderPlot renderUI req setProgress shinyApp
 #'             uiOutput withProgress
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
@@ -22,15 +22,15 @@ scanApp <- function() {
       mainParUI("main_par")),    # "which_trait", "selected_chr"
     bslib::card(
       bslib::card_header("LOD profile"),
-      scanOutput("scan_table")),
+      scanOutput("scan_list")),
     bslib::card(
       bslib::card_header("Clicked Peak"),
-      scanUI("scan_table"))
+      scanUI("scan_list"))
   )
   server <- function(input, output, session) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      scan_object <- scanServer("scan_table", main_par, import)
+      scan_list <- scanServer("scan_list", main_par, import)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
@@ -99,11 +99,19 @@ scanServer <- function(id, main_par, import) {
       dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
     })
     # Return
-    shiny::reactive({
-      list(
-        table = shiny::req(scan_table_chr()),
-        plot  = shiny::req(scan_plot()))
-    })
+    shiny::reactiveValues(
+      panel = shiny::reactive("scan"),
+      postfix = shiny::reactive({
+        postfix <- shiny::req(main_par$which_trait)
+        if(shiny::req(main_par$selected_chr) != "All") {
+          postfix <- paste0(postfix, "_chr", main_par$selected_chr)
+        }
+        postfix
+      }),
+      height = shiny::reactive(6), # needs to be set
+      table = scan_table_chr,
+      plot  = scan_plot
+    )
   })
 }
 #' @rdname scanApp
