@@ -53,10 +53,19 @@ scanlyServer <- function(id, main_par, scan_list, peak_table) {
       plotly::plotlyOutput(ns("render_plot")) |>
         shinycssloaders::withSpinner(type = 8, color = "#3498db")
     })
+    # Extract `scan_table` and `scan_plot` from `scan_list`.
+    scan_table <- shiny::reactive({
+      shiny::req(scan_list$tables$scan())
+      scan_list$tables$scan()
+    })
+    scan_plot <- shiny::reactive({
+      shiny::req(scan_list$plots$scan())
+      scan_list$plots$scan()
+    })
     scanly_plot <- shiny::reactive({
-      req(scan_list$plot(), scan_list$table(), peak_table(), main_par$selected_chr)
-      scans <- list(plot = scan_list$plot(), table = scan_list$table())
-      ggplotly_qtl_scan(scans, peak_table(), main_par$selected_chr, "scanly_plot")
+      shiny::req(peak_table(), main_par$selected_chr)
+      scan_object <- list(plot = shiny::req(scan_plot()), table = shiny::req(scan_table()))
+      ggplotly_qtl_scan(scan_object, peak_table(), main_par$selected_chr, "scanly_plot")
     })
     output$render_plot <- plotly::renderPlotly({
       req(scanly_plot())
@@ -72,8 +81,8 @@ scanlyServer <- function(id, main_par, scan_list, peak_table) {
       plotly::event_data("plotly_click", source = "scanly_plot")
     })
     shiny::observeEvent(shiny::req(plotly_click()), {
-      shiny::req(peak_info(peak_table(), scan_list$table(), which_peak()))
-      out <- peak_info(peak_table(), scan_list$table(), which_peak(), plotly_click())
+      shiny::req(peak_info(peak_table(), which_peak()))
+      out <- peak_info(peak_table(), scan_table(), which_peak(), plotly_click())
       stable_peak(out)
       out
     })
@@ -83,8 +92,8 @@ scanlyServer <- function(id, main_par, scan_list, peak_table) {
       ordered_peaks$marker[1]
     })
     max_peak <- shiny::reactive({
-      shiny::req(peak_info(peak_table(), scan_list$table(), which_peak()))
-      out <- peak_info(peak_table(), scan_list$table(), which_peak())
+      shiny::req(peak_info(peak_table(), which_peak()))
+      out <- peak_info(peak_table(), scan_table(), which_peak())
       stable_peak(out)
       out
     })

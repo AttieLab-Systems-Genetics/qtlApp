@@ -4,6 +4,7 @@
 \alias{downloadApp}
 \alias{downloadServer}
 \alias{downloadInput}
+\alias{downloadUI}
 \alias{downloadOutput}
 \title{Download App}
 \usage{
@@ -12,6 +13,8 @@ downloadApp(id)
 downloadServer(id, download_list)
 
 downloadInput(id)
+
+downloadUI(id)
 
 downloadOutput(id)
 }
