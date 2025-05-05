@@ -18,8 +18,10 @@ scanApp <- function() {
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"), # "selected_dataset", "LOD_thr"
-      mainParUI("main_par")),    # "which_trait", "selected_chr"
+      mainParInput("main_par"),    # "selected_dataset", "LOD_thr"
+      mainParUI("main_par"),       # "which_trait", "selected_chr"
+      downloadInput("download"),   # downloadButton, filename
+      downloadOutput("download")), # plot_table, inputs for Plots or Tables
     bslib::card(
       bslib::card_header("LOD profile"),
       scanOutput("scan_list")),
@@ -31,6 +33,12 @@ scanApp <- function() {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
       scan_list <- scanServer("scan_list", main_par, import)
+      peak_table <- peakServer("peak_table", main_par, import)
+      download_list <- scan_list
+      ## ** Want something like this,
+      ## but get peak_table() reduced to selected_chr and which_trait
+      ## download_list$tables$scan <- peak_table
+      downloadServer("download", download_list)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
@@ -98,19 +106,24 @@ scanServer <- function(id, main_par, import) {
         threshold = 10, maxpoints = 1, addDist = TRUE)
       dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
     })
-    # Return
+    # The `file_name()` is used in `downloadServer()` for plot and table file names.
+    file_name <- shiny::reactive({
+      instanceID <- shiny::req(main_par$which_trait)
+      if(shiny::req(main_par$selected_chr) != "All") {
+        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr)
+      }
+      paste("scan", instanceID, sep = "_")
+    })
+    # Return `scan_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
+    # The tables and plots are reactiveValues with reactives `scan_table_chr` and `scan_plot`.
+    # Access `file_name()` as `scan_list$filename()` and `scan_plot()` as `scan_list$plots$scan()`.
+    # View plot names as `names(scan_list$plots)`.
     shiny::reactiveValues(
-      panel = shiny::reactive("scan"),
-      postfix = shiny::reactive({
-        postfix <- shiny::req(main_par$which_trait)
-        if(shiny::req(main_par$selected_chr) != "All") {
-          postfix <- paste0(postfix, "_chr", main_par$selected_chr)
-        }
-        postfix
-      }),
-      height = shiny::reactive(6), # needs to be set
-      table = scan_table_chr,
-      plot  = scan_plot
+      filename = file_name,
+      tables = shiny::reactiveValues(
+        scan = scan_table_chr),
+      plots  = shiny::reactiveValues(
+        scan = scan_plot)
     )
   })
 }
