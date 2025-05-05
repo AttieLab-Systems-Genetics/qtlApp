@@ -14,7 +14,6 @@
 #' @importFrom bslib card card_header layout_columns page_sidebar sidebar
 #' @export
 downloadApp <- function(id) {
-  source("R/plot_null.R")
   ui <- bslib::page_sidebar(
     title = "Test Download",
     sidebar = bslib::sidebar("side_panel", width = 400,

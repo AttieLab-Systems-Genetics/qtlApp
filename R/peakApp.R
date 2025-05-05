@@ -17,11 +17,13 @@
 #' @export
 peakApp <- function() {
   ui <- bslib::page_sidebar(
-    title = "Test Scan",
+    title = "Test Peak",
     sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"), # "selected_dataset", "LOD_thr"
-      mainParUI("main_par"),    # "which_trait"
-      peakInput("peak")),       # "which_peak"
+      mainParInput("main_par"),    # "selected_dataset", "LOD_thr"
+      mainParUI("main_par"),       # "which_trait"
+      peakInput("peak"),           # "which_peak"
+      downloadInput("download"),   # downloadButton, filename
+      downloadOutput("download")), # plot_table, inputs for Plots or Tables
     bslib::card(
       bslib::card_header("Peaks"),
       peakOutput("peak")),
@@ -32,7 +34,8 @@ peakApp <- function() {
   server <- function(input, output, session) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      peakServer("peak", main_par, import)
+      peak_list <- peakServer("peak", main_par, import)
+      downloadServer("download", peak_list)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
@@ -93,16 +96,34 @@ peakServer <- function(id, main_par, import) {
     })
     # Show allele effects.------------------------------------------------------
     output$allele_effects <- renderUI({
-      shiny::req(peak_table(), input$which_peak)
-      peak <- pivot_peaks(peak_table(), input$which_peak)
-      plot_alleles <- ggplot_alleles(peak)
       shiny::renderPlot({
-        print(plot_alleles) |>
-          shinycssloaders::withSpinner(color="#0dc5c1")
+        # ** Error: `ui_element` must be a Shiny tag. **
+        print(shiny::req(allele_plot()))# |>
+          #shinycssloaders::withSpinner(color="#0dc5c1")
       })
     })
-    # Return
-    peak_table
+    allele_plot <- shiny::reactive({
+      shiny::req(peak_table(), input$which_peak)
+      peak <- pivot_peaks(peak_table(), input$which_peak)
+      ggplot_alleles(peak)
+    })
+    file_name <- shiny::reactive({
+      instanceID <- paste(shiny::req(main_par$which_trait), shiny::req(input$which_peak),
+                          sep = "_")
+      if(shiny::req(main_par$selected_chr) != "All") {
+        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr)
+      }
+      paste("peak", instanceID, sep = "_")
+    })
+    # Return `peak_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
+    shiny::reactiveValues(
+      filename = file_name,
+      tables = shiny::reactiveValues(
+        peak = peak_table),
+      plots  = shiny::reactiveValues(
+        alleles = allele_plot)
+    )
+
   })
 }
 #' @rdname peakApp

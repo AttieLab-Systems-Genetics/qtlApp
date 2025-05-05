@@ -20,6 +20,7 @@ scanApp <- function() {
     sidebar = bslib::sidebar("side_panel",
       mainParInput("main_par"),    # "selected_dataset", "LOD_thr"
       mainParUI("main_par"),       # "which_trait", "selected_chr"
+      peakInput("peak"),           # "which_peak"
       downloadInput("download"),   # downloadButton, filename
       downloadOutput("download")), # plot_table, inputs for Plots or Tables
     bslib::card(
@@ -33,12 +34,10 @@ scanApp <- function() {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
       scan_list <- scanServer("scan_list", main_par, import)
-      peak_table <- peakServer("peak_table", main_par, import)
-      download_list <- scan_list
-      ## ** Want something like this,
-      ## but get peak_table() reduced to selected_chr and which_trait
-      ## download_list$tables$scan <- peak_table
-      downloadServer("download", download_list)
+      peak_list <- peakServer("peak_list", main_par, import)
+      merged_list <- mergeServer("merged_list", scan_list, peak_list)
+      # ** allele plot not working **
+      downloadServer("download", merged_list)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
