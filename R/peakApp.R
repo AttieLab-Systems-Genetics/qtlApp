@@ -123,15 +123,13 @@ peakServer <- function(id, main_par, import) {
       paste("peak", instanceID, sep = "_")
     })
     # Return `peak_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
-    # --- MODIFICATION: Return ONLY the peak_table reactive directly --- 
-    # shiny::reactiveValues(
-    #   filename = file_name,
-    #   tables = shiny::reactiveValues(
-    #     peak = peak_table),
-    #   plots  = shiny::reactiveValues(
-    #     alleles = allele_plot)
-    # )
-    return(peak_table) # Return the reactive expression
+    shiny::reactiveValues(
+      filename = file_name,
+      tables = shiny::reactiveValues(
+        peak = peak_table),
+      plots  = shiny::reactiveValues(
+        alleles = allele_plot)
+    )
     # ------------------------------------------------------------------
 
   })
