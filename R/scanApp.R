@@ -75,28 +75,16 @@ scanServer <- function(id, main_par, import) {
         scans(), main_par$which_trait, main_par$LOD_thr, import()$markers)
     })
     scan_table_chr <- shiny::reactive({
-      # Evaluate reactive before req or use
-      sel_chr <- main_par$selected_chr()
-      shiny::req(scan_table(), sel_chr)
-      if (sel_chr == "All") { 
+      shiny::req(scan_table(), main_par$selected_chr)
+      if (main_par$selected_chr == "All") {
         scan_table()
       } else {
-        # Ensure chr column exists before filtering
-        st <- scan_table()
-        if("chr" %in% colnames(st)){
-            dplyr::filter(st, .data$chr == sel_chr)
-        } else {
-            warning("scan_table_chr: 'chr' column not found in scan_table()")
-            st # Return unfiltered table if 'chr' missing
-        }
+        dplyr::filter(scan_table(), .data$chr == main_par$selected_chr)
       }
     })
     scan_plot <- shiny::reactive({
-      # Evaluate reactive before req or use
-      sel_chr <- main_par$selected_chr()
-      lod_thr <- main_par$LOD_thr()
-      shiny::req(scan_table_chr(), lod_thr, sel_chr)
-      ggplot_qtl_scan(scan_table_chr(), lod_thr, sel_chr)
+      shiny::req(scan_table_chr(), main_par$LOD_thr, main_par$selected_chr)
+      ggplot_qtl_scan(scan_table_chr(), main_par$LOD_thr, main_par$selected_chr)
     })
     output$scan_plot <- shiny::renderUI({
       shiny::req(scan_plot())
@@ -109,11 +97,9 @@ scanServer <- function(id, main_par, import) {
     })
     # See also plotly clicked_data in `scanlyApp()`.
     output$plot_click <-  DT::renderDT({
-      # Evaluate reactive before req or use
-      sel_chr <- main_par$selected_chr()
-      shiny::req(scan_plot(), scan_table_chr(), sel_chr, input$plot_click)
+      shiny::req(scan_plot(), scan_table_chr(), main_par$selected_chr, input$plot_click)
       xvar <- "position"
-      if (sel_chr == "All") xvar <- "BPcum" 
+      if (main_par$selected_chr == "All") xvar <- "BPcum"
       out <- shiny::nearPoints(scan_table_chr(), input$plot_click,
         xvar = xvar, yvar = "LOD",
         threshold = 10, maxpoints = 1, addDist = TRUE)
@@ -121,10 +107,9 @@ scanServer <- function(id, main_par, import) {
     })
     # The `file_name()` is used in `downloadServer()` for plot and table file names.
     file_name <- shiny::reactive({
-      instanceID <- shiny::req(main_par$which_trait())
-      # Evaluate selected_chr reactive before comparing
-      if(shiny::req(main_par$selected_chr()) != "All") { 
-        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr())
+      instanceID <- shiny::req(main_par$which_trait)
+      if(shiny::req(main_par$selected_chr) != "All") {
+        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr)
       }
       paste("scan", instanceID, sep = "_")
     })
@@ -132,16 +117,13 @@ scanServer <- function(id, main_par, import) {
     # The tables and plots are reactiveValues with reactives `scan_table_chr` and `scan_plot`.
     # Access `file_name()` as `scan_list$filename()` and `scan_plot()` as `scan_list$plots$scan()`.
     # View plot names as `names(scan_list$plots)`.
-    
-    # --- MODIFICATION: Return a REGULAR list containing reactives --- 
-    return_value <- list(
-      filename = file_name,           # The filename reactive
-      scan_table = scan_table_chr,    # The scan table reactive
-      scan_plot = scan_plot          # The scan plot reactive
+    shiny::reactiveValues(
+      filename = file_name,
+      tables = shiny::reactiveValues(
+        scan = scan_table_chr),
+      plots  = shiny::reactiveValues(
+        scan = scan_plot)
     )
-    message("--- scanServer returning object of class: list ---")
-    return(return_value)
-    # --------------------------------------------------------
   })
 }
 #' @rdname scanApp

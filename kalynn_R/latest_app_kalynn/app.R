@@ -37,4 +37,4 @@ source_dir_recursive("R", trace = FALSE) # Source from copied R directory
 # Set maximum file upload size (adjust as needed)
 options(shiny.maxRequestSize = 20000*1024^2) # 20 GB
 # Launch the application defined in R/qtlApp.R
-qtlApp()
+scanApp()

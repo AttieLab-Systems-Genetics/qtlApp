@@ -65,15 +65,7 @@ peakServer <- function(id, main_par, import) {
         })
     })
 
-    # --- Debug: Log the dimensions of the peak_table before returning --- 
-    observeEvent(peak_table(), {
-        pt <- peak_table()
-        message("--- Debug peakServer output ---")
-        message("peak_table class: ", class(pt)[1])
-        message("peak_table dimensions: ", paste(dim(pt), collapse="x"))
-        message("-----------------------------")
-    }, ignoreNULL = FALSE) # Log even if NULL
-    # ------------------------------------------------------------------
+   
 
     # Table ov peaks info ------------------------------------------------------
     output$peak_table <- DT::renderDT({DT::datatable(
@@ -95,18 +87,7 @@ peakServer <- function(id, main_par, import) {
       filter = 'bottom',               ## include column filters at the bottom
       rownames = TRUE)                 ##  show row numbers/names
     })
-    # Update peak selection-------------------------------------------
-    # TEMPORARY DEBUG: Remove peak_table() from req() to see if it stops the '==' error
-    shiny::observeEvent(shiny::req(main_par$LOD_thr()), { 
-      # This will likely error later if peak_table() isn't ready, but tests the req() call
-      ordered_markers <- highest_peaks(peak_table(), main_par$LOD_thr())$marker
-      if(!is.null(ordered_markers)) {
-        shiny::updateSelectizeInput(session, "which_peak",
-          choices = ordered_markers, selected = ordered_markers[1],
-          options = list(maxItems = 1, maxOptions = 5), server = TRUE)
-      }
-    })
-    # Show allele effects.------------------------------------------------------
+ 
     output$allele_effects <- renderUI({
       shiny::renderPlot({
         # ** Error: `ui_element` must be a Shiny tag. **
