@@ -11,11 +11,11 @@
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   
   # Create a more unique cache key that includes the full dataset name
-  cache_key <- paste(selected_dataset, tolower(selected_trait), sep = "_")
-  if (!is.null(trait_cache[[cache_key]])) {
-    message("Using cached data for trait: ", selected_trait, " in dataset: ", selected_dataset)
-    return(trait_cache[[cache_key]])
-  }
+  # cache_key <- paste(selected_dataset, tolower(selected_trait), sep = "_")
+  # if (!is.null(trait_cache[[cache_key]])) {
+  #   message("Using cached data for trait: ", selected_trait, " in dataset: ", selected_dataset)
+  #   return(trait_cache[[cache_key]])
+  # }
   message("Searching for trait: ", selected_trait, " in dataset: ", selected_dataset)
   # Filter the file directory for the selected dataset and scan type
   file_dir <- subset(file_dir, group == selected_dataset & file_type == "scans")
@@ -108,7 +108,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   message("Total rows in combined data: ", nrow(combined_data))
 
   # Cache the result
-  trait_cache[[cache_key]] <- combined_data
+  # trait_cache[[cache_key]] <- combined_data
   return(combined_data)
 }
  
