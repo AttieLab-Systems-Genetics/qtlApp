@@ -48,43 +48,43 @@ scanServer <- function(id, main_par, import) {
     ns <- session$ns
     # Find selected_trait; special handling for `genes` or `isoforms`.
     selected_trait <- shiny::reactive({
-      shiny::req(import(), main_par$selected_dataset)
-      trait <- shiny::req(main_par$which_trait)
+      shiny::req(import(), main_par$selected_dataset())
+      trait <- shiny::req(main_par$which_trait())
       # if gene or isoform then trait is `symbol_id``.
-      trait_type <- get_trait_type(import(), main_par$selected_dataset)
+      trait_type <- get_trait_type(import(), main_par$selected_dataset())
       if(trait_type %in% c("genes", "isoforms")) {
-        trait <- stringr::str_remove(main_par$which_trait, "_.*")
+        trait <- stringr::str_remove(main_par$which_trait(), "_.*")
       }
       trait
     })
     scans <- shiny::reactive({
-      shiny::req(main_par$selected_dataset, selected_trait())
+      shiny::req(main_par$selected_dataset(), selected_trait())
       scans <- shiny::withProgress(
         message = paste("scan of", selected_trait(), "in progress"),
         value = 0, {
           shiny::setProgress(1)
           suppressMessages(
             trait_scan(import()$file_directory,
-              main_par$selected_dataset, selected_trait()))
+              main_par$selected_dataset(), selected_trait()))
         }
       )
     })
     scan_table <- shiny::reactive({
-      shiny::req(scans(), main_par$which_trait, main_par$LOD_thr)
+      shiny::req(scans(), main_par$which_trait(), main_par$LOD_thr())
       QTL_plot_visualizer(
-        scans(), main_par$which_trait, main_par$LOD_thr, import()$markers)
+        scans(), main_par$which_trait(), main_par$LOD_thr(), import()$markers)
     })
     scan_table_chr <- shiny::reactive({
-      shiny::req(scan_table(), main_par$selected_chr)
-      if (main_par$selected_chr == "All") {
+      shiny::req(scan_table(), main_par$selected_chr())
+      if (main_par$selected_chr() == "All") {
         scan_table()
       } else {
-        dplyr::filter(scan_table(), .data$chr == main_par$selected_chr)
+        dplyr::filter(scan_table(), .data$chr == main_par$selected_chr())
       }
     })
     scan_plot <- shiny::reactive({
-      shiny::req(scan_table_chr(), main_par$LOD_thr, main_par$selected_chr)
-      ggplot_qtl_scan(scan_table_chr(), main_par$LOD_thr, main_par$selected_chr)
+      shiny::req(scan_table_chr(), main_par$LOD_thr(), main_par$selected_chr())
+      ggplot_qtl_scan(scan_table_chr(), main_par$LOD_thr(), main_par$selected_chr())
     })
     output$scan_plot <- shiny::renderUI({
       shiny::req(scan_plot())
@@ -97,9 +97,9 @@ scanServer <- function(id, main_par, import) {
     })
     # See also plotly clicked_data in `scanlyApp()`.
     output$plot_click <-  DT::renderDT({
-      shiny::req(scan_plot(), scan_table_chr(), main_par$selected_chr, input$plot_click)
+      shiny::req(scan_plot(), scan_table_chr(), main_par$selected_chr(), input$plot_click)
       xvar <- "position"
-      if (main_par$selected_chr == "All") xvar <- "BPcum"
+      if (main_par$selected_chr() == "All") xvar <- "BPcum"
       out <- shiny::nearPoints(scan_table_chr(), input$plot_click,
         xvar = xvar, yvar = "LOD",
         threshold = 10, maxpoints = 1, addDist = TRUE)
@@ -107,9 +107,9 @@ scanServer <- function(id, main_par, import) {
     })
     # The `file_name()` is used in `downloadServer()` for plot and table file names.
     file_name <- shiny::reactive({
-      instanceID <- shiny::req(main_par$which_trait)
-      if(shiny::req(main_par$selected_chr) != "All") {
-        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr)
+      instanceID <- shiny::req(main_par$which_trait())
+      if(shiny::req(main_par$selected_chr()) != "All") {
+        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr())
       }
       paste("scan", instanceID, sep = "_")
     })
