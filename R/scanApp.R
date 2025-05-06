@@ -21,20 +21,25 @@ scanApp <- function() {
       mainParInput("main_par"),    # "selected_dataset", "LOD_thr"
       mainParUI("main_par"),       # "which_trait", "selected_chr"
       peakInput("peak"),           # "which_peak"
+      peakUI("peak"),              # MOVED: UI for the allele effects plot
       downloadInput("download"),   # downloadButton, filename
       downloadOutput("download")), # plot_table, inputs for Plots or Tables
     bslib::card(
       bslib::card_header("LOD profile"),
       scanOutput("scan_list")),
+    bslib::card( # Card for the peaks table
+      bslib::card_header("Peaks Table"),
+      peakOutput("peak")       # ADDED: UI for the peaks datatable
+    ),
     bslib::card(
-      bslib::card_header("Clicked Peak"),
+      bslib::card_header("Clicked Peak on Scan"), 
       scanUI("scan_list"))
   )
   server <- function(input, output, session) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
       scan_list <- scanServer("scan_list", main_par, import)
-      peak_list <- peakServer("peak_list", main_par, import)
+      peak_list <- peakServer("peak", main_par, import)
       merged_list <- mergeServer("merged_list", scan_list, peak_list)
       # ** allele plot not working **
       downloadServer("download", merged_list)
