@@ -9,17 +9,17 @@
 peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
   # Create a unique cache key that includes the dataset
       # Ensure peaks_cache exists in the global environment
-    if (!exists("peaks_cache", envir = .GlobalEnv)) {
-      warning("peaks_cache not found in .GlobalEnv, creating it now.")
-      assign("peaks_cache", new.env(parent = emptyenv()), envir = .GlobalEnv)
-    }
-  cache_key <- if (is.null(selected_trait)) {
-    selected_dataset  # Include full dataset name
-  } else {
-    paste(selected_dataset, tolower(selected_trait), sep = "_")  # Include full dataset name
-  }
+    # if (!exists("peaks_cache", envir = .GlobalEnv)) {
+    #   warning("peaks_cache not found in .GlobalEnv, creating it now.")
+    #   assign("peaks_cache", new.env(parent = emptyenv()), envir = .GlobalEnv)
+    # }
+  # cache_key <- if (is.null(selected_trait)) {
+  #   selected_dataset  # Include full dataset name
+  # } else {
+  #   paste(selected_dataset, tolower(selected_trait), sep = "_")  # Include full dataset name
+  # }
   # Check if we already have this data in cache
-  if (is.null(peaks_cache[[cache_key]])) {
+  # if (is.null(peaks_cache[[cache_key]])) {
     message("Loading peaks data for dataset: ", selected_dataset)
     empty_peaks <- create_empty_peaks()
     # Filter the file directory for the selected dataset and peaks files
@@ -28,7 +28,7 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
     if (nrow(file_dir) == 0) {
       warning("No peaks files found for dataset: ", selected_dataset)
       # Return empty data frame with correct structure
-      peaks_cache[[cache_key]] <- empty_peaks
+      # peaks_cache[[cache_key]] <- empty_peaks
       return(empty_peaks)
     }
     # We now have a single consolidated peaks file
@@ -36,9 +36,11 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
     csv_path <- file_dir$File_path[1]
     if (!file.exists(csv_path)) {
       warning("Peaks file does not exist: ", csv_path)
-      peaks_cache[[cache_key]] <- empty_peaks
+      # peaks_cache[[cache_key]] <- empty_peaks
       return(empty_peaks)
     }
+    # Initialize peaks_data to empty_peaks to ensure it's returned on error
+    peaks_data_to_return <- empty_peaks
     tryCatch({
       # Read the consolidated CSV file - this might be large, so use data.table for efficiency
       message("Reading peaks file: ", basename(csv_path), " for dataset: ", selected_dataset)
@@ -56,6 +58,12 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
         # We'll keep original column and add a trait column
         peaks_data$trait <- peaks_data[[phenotype_col]]
         message("Added trait column based on phenotype column")
+        # Add new message to inspect the created 'trait' column
+        if ("trait" %in% colnames(peaks_data)) {
+          message(paste("peak_finder: First few unique values in created 'trait' column:", paste(head(unique(peaks_data$trait), 20), collapse=", "))) # Show up to 20 unique values
+        } else {
+          message("peak_finder: 'trait' column was NOT created after checking lodcolumn/phenotype.")
+        }
       }
       # Filter for the specific trait if provided (case-insensitive)
       if (!is.null(selected_trait)) {
@@ -110,9 +118,8 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
       if (!all(required_cols %in% colnames(peaks_data))) {
         missing_cols <- required_cols[!(required_cols %in% colnames(peaks_data))]
         warning("Missing required columns in peaks file: ", paste(missing_cols, collapse=", "))
-        # Return empty data frame
-        peaks_cache[[cache_key]] <- empty_peaks
-        return(empty_peaks)
+        # Return empty data frame (already initialized as peaks_data_to_return)
+        return(peaks_data_to_return)
       }
       # Print final column names for debug
       message("Final peaks data columns: ", paste(colnames(peaks_data), collapse=", "))
@@ -123,19 +130,19 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
       # Round off numeric columns to 5 significant digits
       peaks_data <- dplyr::mutate(peaks_data,
         dplyr::across(dplyr::where(is.numeric), function(x) signif (x, 5)))
-      # Cache the result
-      peaks_cache[[cache_key]] <- peaks_data
+      # Assign to the variable to be returned
+      peaks_data_to_return <- peaks_data
           
     }, error = function(e) {
       warning("Error reading peaks file ", csv_path, ": ", e$message)
-      # Return empty data frame
-      peaks_cache[[cache_key]] <- empty_peaks
+      # Return empty data frame (already initialized as peaks_data_to_return)
     })
-  } else {
-    message("Using cached peaks data for ",
-      if (is.null(selected_trait)) selected_dataset else paste(selected_trait, "in", selected_dataset))
-  }
-  return(peaks_cache[[cache_key]])
+  # } else {
+  #   message("Using cached peaks data for ",
+  #     if (is.null(selected_trait)) selected_dataset else paste(selected_trait, "in", selected_dataset))
+  # }
+  # return(peaks_cache[[cache_key]])
+  return(peaks_data_to_return)
 }
 create_empty_peaks <- function() {
   data.frame(
