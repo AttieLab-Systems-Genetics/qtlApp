@@ -13,7 +13,7 @@ scanlyApp()
 
 \item{scan_list}{reactive list from scanServer}
 
-\item{peak_table}{reactive dataframe from peakServer}
+\item{peak_list}{reactive list from peakServer}
 }
 \description{
 This app has a point-click feature not yet implemented.
