@@ -63,12 +63,17 @@ scanlyServer <- function(id, main_par, scan_list, peak_table) {
       scan_list$plots$scan()
     })
     scanly_plot <- shiny::reactive({
-      shiny::req(peak_table(), main_par$selected_chr)
-      scan_object <- list(plot = shiny::req(scan_plot()), table = shiny::req(scan_table()))
-      ggplotly_qtl_scan(scan_object, peak_table(), main_par$selected_chr, "scanly_plot")
+      shiny::req(scan_plot())
+      p <- scan_plot() |> 
+        plotly::ggplotly(tooltip = "text", 
+          source = "scanly_plot")
+      p <- plotly::event_register(p, 'plotly_click')
+      p <- plotly::event_register(p, 'plotly_doubleclick')
+      p
     })
     output$render_plot <- plotly::renderPlotly({
-      req(scanly_plot())
+      shiny::req(scanly_plot())
+      scanly_plot()
     })
     # Peak information based on plotly click.
     # `stable_peak()` stores the stable peak information for table display.
@@ -87,7 +92,8 @@ scanlyServer <- function(id, main_par, scan_list, peak_table) {
       out
     })
     which_peak <- shiny::reactive({
-      shiny::req(peak_table(), main_par$LOD_thr)
+      # Evaluate reactives before using them in req() or functions
+       shiny::req(peak_table(), main_par$LOD_thr)
       ordered_peaks <- highest_peaks(peak_table(), main_par$LOD_thr)
       ordered_peaks$marker[1]
     })

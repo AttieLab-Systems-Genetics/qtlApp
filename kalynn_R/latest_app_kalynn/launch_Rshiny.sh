@@ -4,12 +4,19 @@ docker stop mini-viewer-image_v2
 
 docker rm mini-viewer-image_v2
 
-# Change to the directory containing the Dockerfile
-cd "$(dirname "$0")" || exit 1
+# Change to the GRANDPARENT directory (qtlApp root) containing the Dockerfile's context
+# cd "$(dirname "$0")" || exit 1
+# cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/../.." || exit 1
 
-# Remove --no-cache to allow using cached layers for faster builds
-# Add --no-cache to force a rebuild without using cache
-docker build --no-cache --build-arg LOCAL_DATA=/data/dev/miniViewer_3.0 -t mini-viewer-image_v2 .
+# DEBUG: List directory contents before building to confirm context
+pwd
+echo "Listing contents of build context directory:"
+ls -al
+echo "---------------------------------------------"
+
+# Build using the parent directory as context and specify Dockerfile path
+docker build --build-arg LOCAL_DATA=/data/dev/miniViewer_3.0 -t mini-viewer-image_v2 -f kalynn_R/latest_app_kalynn/Dockerfile .
 
 # Change back to the original directory (optional, but good practice)
 cd -

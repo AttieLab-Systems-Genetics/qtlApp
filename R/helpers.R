@@ -1,9 +1,11 @@
 #' @export
 create_cache <- function(caches = c("peaks", "trait")) {
-  for(cache_name in caches) {
-    assign(paste0(cache_name, "_cache"), new.env(parent = emptyenv()),
-      pos = globalenv())
-  }
+  # Do nothing - caches are handled within modules or passed explicitly
+  # Original code assigned to globalenv(), causing issues in Shiny modules.
+  # for(cache_name in caches) {
+  #   assign(paste0(cache_name, "_cache"), new.env(parent = emptyenv()),
+  #     pos = globalenv())
+  # }
 }
 #' @export
 get_trait_choices <- function(import, selected_dataset = NULL) {

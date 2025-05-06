@@ -8,6 +8,11 @@
 #' @export
 peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
   # Create a unique cache key that includes the dataset
+      # Ensure peaks_cache exists in the global environment
+    if (!exists("peaks_cache", envir = .GlobalEnv)) {
+      warning("peaks_cache not found in .GlobalEnv, creating it now.")
+      assign("peaks_cache", new.env(parent = emptyenv()), envir = .GlobalEnv)
+    }
   cache_key <- if (is.null(selected_trait)) {
     selected_dataset  # Include full dataset name
   } else {
