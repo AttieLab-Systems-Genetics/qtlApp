@@ -7,7 +7,7 @@
 #' @param id shiny identifier
 #' @param main_par reactive list with selected_dataset, LOD_thr and which_trait
 #' @param scan_list reactive list from scanServer
-#' @param peak_table reactive dataframe from peakServer
+#' @param peak_list reactive list from peakServer
 #'
 #' @importFrom DT datatable DTOutput renderDT
 #' @importFrom shiny actionButton h4 moduleServer nearPoints NS plotOutput
@@ -38,14 +38,14 @@ scanlyApp <- function() {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
       scan_list <- scanServer("scan_list", main_par, import)
-      peak_table <- peakServer("peak_table", main_par, import)
-      scanlyServer("scanly", main_par, scan_list, peak_table)
+      peak_list <- peakServer("peak_list", main_par, import)
+      scanlyServer("scanly", main_par, scan_list, peak_list)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
 #' @rdname scanApp
 #' @export
-scanlyServer <- function(id, main_par, scan_list, peak_table) {
+scanlyServer <- function(id, main_par, scan_list, peak_list) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
     # Plotly plot
@@ -62,8 +62,12 @@ scanlyServer <- function(id, main_par, scan_list, peak_table) {
       shiny::req(scan_list$plots$scan())
       scan_list$plots$scan()
     })
+    peak_table <- shiny::reactive({
+      shiny::req(peak_list$tables$peak())
+      peak_list$tables$peak()
+    })
     scanly_plot <- shiny::reactive({
-      shiny::req(peak_table(), main_par$selected_chr)
+      shiny::req(main_par$selected_chr)
       scan_object <- list(plot = shiny::req(scan_plot()), table = shiny::req(scan_table()))
       ggplotly_qtl_scan(scan_object, peak_table(), main_par$selected_chr, "scanly_plot")
     })
@@ -110,6 +114,7 @@ scanlyServer <- function(id, main_par, scan_list, peak_table) {
     })
     output$high_peak <- shiny::renderUI({
       list(
+        shiny::renderPrint(paste(dim(stable_peak()), collapse = " ")),
         shiny::renderPrint({
           if(shiny::isTruthy(plotly_click())) {
             paste("Clicked point: x =", plotly_click()$x, ", y =", plotly_click()$y)

@@ -1,6 +1,6 @@
 Package: qtlApp
-Version: 0.4.8
-Date: 2025-05-05
+Version: 0.4.9
+Date: 2025-05-06
 Title: Shiny app for QTL visualization
 Description: Tools to build Shiny Apps for QTL analysis and visualization.
 Authors@R: c(person("Brian S Yandell",
