@@ -6,7 +6,7 @@
 #'
 #' @importFrom DT DTOutput renderDT
 #' @importFrom shiny actionButton h4 moduleServer nearPoints NS plotOutput
-#'             reactive renderPlot renderUI req setProgress shinyApp
+#'             reactive reactiveValues renderPlot renderUI req setProgress shinyApp
 #'             uiOutput withProgress
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
@@ -18,19 +18,26 @@ scanApp <- function() {
   ui <- bslib::page_sidebar(
     title = "Test Scan",
     sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par"), # "selected_dataset", "LOD_thr"
-      mainParUI("main_par")),    # "which_trait", "selected_chr"
+      mainParInput("main_par"),    # "selected_dataset", "LOD_thr"
+      mainParUI("main_par"),       # "which_trait", "selected_chr"
+      peakInput("peak"),           # "which_peak"
+      downloadInput("download"),   # downloadButton, filename
+      downloadOutput("download")), # plot_table, inputs for Plots or Tables
     bslib::card(
       bslib::card_header("LOD profile"),
-      scanOutput("scan_table")),
+      scanOutput("scan_list")),
     bslib::card(
       bslib::card_header("Clicked Peak"),
-      scanUI("scan_table"))
+      scanUI("scan_list"))
   )
   server <- function(input, output, session) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      scan_object <- scanServer("scan_table", main_par, import)
+      scan_list <- scanServer("scan_list", main_par, import)
+      peak_list <- peakServer("peak_list", main_par, import)
+      merged_list <- mergeServer("merged_list", scan_list, peak_list)
+      # ** allele plot not working **
+      downloadServer("download", merged_list)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
@@ -98,12 +105,25 @@ scanServer <- function(id, main_par, import) {
         threshold = 10, maxpoints = 1, addDist = TRUE)
       dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
     })
-    # Return
-    shiny::reactive({
-      list(
-        table = shiny::req(scan_table_chr()),
-        plot  = shiny::req(scan_plot()))
+    # The `file_name()` is used in `downloadServer()` for plot and table file names.
+    file_name <- shiny::reactive({
+      instanceID <- shiny::req(main_par$which_trait)
+      if(shiny::req(main_par$selected_chr) != "All") {
+        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr)
+      }
+      paste("scan", instanceID, sep = "_")
     })
+    # Return `scan_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
+    # The tables and plots are reactiveValues with reactives `scan_table_chr` and `scan_plot`.
+    # Access `file_name()` as `scan_list$filename()` and `scan_plot()` as `scan_list$plots$scan()`.
+    # View plot names as `names(scan_list$plots)`.
+    shiny::reactiveValues(
+      filename = file_name,
+      tables = shiny::reactiveValues(
+        scan = scan_table_chr),
+      plots  = shiny::reactiveValues(
+        scan = scan_plot)
+    )
   })
 }
 #' @rdname scanApp

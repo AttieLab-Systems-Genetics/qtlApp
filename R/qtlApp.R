@@ -28,9 +28,9 @@ qtlServer <- function(id) {
       ns <- session$ns
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
-      scan_object <- scanServer("scan_object", main_par, import)
+      scan_list <- scanServer("scan_list", main_par, import)
       peak_table <- peakServer("peak_table", main_par, import)
-      scanlyServer("scanly", main_par, scan_object, peak_table)
+      scanlyServer("scanly", main_par, scan_list, peak_table)
   })
 }
 #' @rdname qtlApp

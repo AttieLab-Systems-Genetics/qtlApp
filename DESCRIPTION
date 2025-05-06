@@ -1,6 +1,6 @@
 Package: qtlApp
-Version: 0.4.5
-Date: 2025-04-25
+Version: 0.4.8
+Date: 2025-05-05
 Title: Shiny app for QTL visualization
 Description: Tools to build Shiny Apps for QTL analysis and visualization.
 Authors@R: c(person("Brian S Yandell",
@@ -15,8 +15,8 @@ Authors@R: c(person("Brian S Yandell",
 Depends:
     R (>= 4.2.0)
 Imports:
-    bslib, data.table, dplyr, DT, fst, ggplot2, reshape2, shiny, shinycssloaders,
-    shinyjs, stringr
+    bslib, data.table, dplyr, DT, fst, ggplot2, grDevices, reshape2, shiny,
+    shinycssloaders, shinyjs, stringr, utils
 License: GPL-3
 Encoding: UTF-8
 RoxygenNote: 7.3.2

@@ -4,21 +4,32 @@
 \alias{downloadApp}
 \alias{downloadServer}
 \alias{downloadInput}
-\title{Download App Module}
+\alias{downloadUI}
+\alias{downloadOutput}
+\title{Download App}
 \usage{
-downloadApp()
+downloadApp(id)
 
-downloadServer(id, main_par, peak_table, scan_table, plot_result)
+downloadServer(id, download_list)
 
-downloadInput(id, main_par, import)
+downloadInput(id)
+
+downloadUI(id)
+
+downloadOutput(id)
 }
 \arguments{
-\item{id}{shiny identifier}
+\item{id}{identifier for shiny reactive}
 
-\item{import}{reactive list with file_directory and annotation_list}
+\item{download_list}{reactiveValues with  postfix,plot,table}
 
-\item{trait_type}{character string as reactive object}
+\item{prefix}{static prefix for filename}
+
+\item{main_par}{input parameters from calling routine}
+}
+\value{
+nothing
 }
 \description{
-Download App Module
+Download App
 }
