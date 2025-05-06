@@ -18,7 +18,7 @@ scanUI(id)
 
 scanOutput(id)
 
-scanlyServer(id, main_par, scan_object, peak_table)
+scanlyServer(id, main_par, scan_list, peak_table)
 
 scanlyUI(id)
 
