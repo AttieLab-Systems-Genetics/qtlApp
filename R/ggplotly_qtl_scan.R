@@ -13,8 +13,13 @@ ggplotly_qtl_scan <- function(scan_object, peak_table,
                               selected_chr = "All",
                               source = "scanly_plot",
                               plot_width = 900, plot_height = 600) {
-  if (is.null(scan_object) || !nrow(scan_object$table)
-    || is.null(peak_table) || !nrow(peak_table)) return(ggplot2::ggplot())
+  # More robust check for valid inputs
+  if (is.null(scan_object) || !is.data.frame(scan_object$table) || nrow(scan_object$table) == 0
+    || is.null(peak_table) || !is.data.frame(peak_table) || nrow(peak_table) == 0) {
+      warning("Invalid input to ggplotly_qtl_scan, returning empty plot.")
+      # Return a blank ggplot object instead of NULL
+      return(ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::ggtitle("Data not available or invalid"))
+  }
   scan_table <- scan_object$table
   scan_plot <- scan_object$plot
   # Create formatted trait text for plot title using the trait name.

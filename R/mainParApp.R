@@ -44,13 +44,23 @@ mainParServer <- function(id, import) {
     })
     # Show returned values.
     output$returns <- shiny::renderPrint({
+      # Use input values directly for display if needed
       cat("selected_dataset =", input$selected_dataset,
           "\nwhich_trait =", input$which_trait,
           "\nselected_chr =", input$selected_chr,
           "\nLOD_thr =", input$LOD_thr)
     })
-    # Return.
-    input
+    
+    # Return reactive expressions for inputs
+    return(
+      list(
+        selected_dataset = shiny::reactive(input$selected_dataset),
+        which_trait = shiny::reactive(input$which_trait),
+        selected_chr = shiny::reactive(input$selected_chr),
+        LOD_thr = shiny::reactive(input$LOD_thr)
+        # Add other inputs if they need to be returned reactively
+      )
+    )
   })
 }
 #' @rdname mainParApp

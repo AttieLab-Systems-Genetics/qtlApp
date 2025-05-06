@@ -30,8 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install R packages using the script (will modify script next)
-COPY install_packages.R /tmp/install_packages.R
+# Install R packages using the script
+# Specify the path relative to the new build context (qtlApp root)
+COPY kalynn_R/latest_app_kalynn/install_packages.R /tmp/install_packages.R
 RUN Rscript /tmp/install_packages.R && rm /tmp/install_packages.R
 
 # Removed as qtl2 is now included above
@@ -44,8 +45,13 @@ RUN mkdir -p /data
 RUN chmod -R 777 /data
 
 # Copy your Shiny app to the image
-COPY app.R /srv/shiny-server/app.R
-COPY R/ /srv/shiny-server/R/
+# Specify the path relative to the new build context (qtlApp root)
+COPY kalynn_R/latest_app_kalynn/app.R /srv/shiny-server/app.R
+# COPY kalynn_R/latest_app_kalynn/mainApp.R /srv/shiny-server/mainApp.R # No longer needed
+# Explicitly remove the target file first in case of caching issues
+RUN rm -f /srv/shiny-server/R/scanlyApp.R
+# Copy the TOP-LEVEL R directory from the build context into the image
+COPY R /srv/shiny-server/R/
 RUN chown -R shiny:shiny /srv/shiny-server
 
 # Expose the port

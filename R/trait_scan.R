@@ -9,6 +9,7 @@
 #' @importFrom data.table rbindlist setnames
 #' @export
 trait_scan <- function(file_dir, selected_dataset, selected_trait) {
+  
   # Create a more unique cache key that includes the full dataset name
   cache_key <- paste(selected_dataset, tolower(selected_trait), sep = "_")
   if (!is.null(trait_cache[[cache_key]])) {
@@ -22,6 +23,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   if (nrow(file_dir) == 0) {
     stop("No matching files found for the selected dataset: ", selected_dataset)
   }
+  
   # Initialize list to store data from each file
   all_data <- list()
   # Process each FST file (one per chromosome)
@@ -30,8 +32,9 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
     chr_num <- file_dir$ID_code[i]
     fst_path <- file_dir$File_path[i]
 
+    # No longer strictly necessary, but keep as a safeguard
     if (!file.exists(fst_path)) {
-      warning("File does not exist: ", fst_path)
+      warning("File check consistency error, skipping: ", fst_path)
       next
     }
     # Ensure we are working with an FST file
@@ -108,3 +111,4 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   trait_cache[[cache_key]] <- combined_data
   return(combined_data)
 }
+ 

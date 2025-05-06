@@ -65,6 +65,16 @@ peakServer <- function(id, main_par, import) {
         })
     })
 
+    # --- Debug: Log the dimensions of the peak_table before returning --- 
+    observeEvent(peak_table(), {
+        pt <- peak_table()
+        message("--- Debug peakServer output ---")
+        message("peak_table class: ", class(pt)[1])
+        message("peak_table dimensions: ", paste(dim(pt), collapse="x"))
+        message("-----------------------------")
+    }, ignoreNULL = FALSE) # Log even if NULL
+    # ------------------------------------------------------------------
+
     # Table ov peaks info ------------------------------------------------------
     output$peak_table <- DT::renderDT({DT::datatable(
       peak_table(),
@@ -86,8 +96,10 @@ peakServer <- function(id, main_par, import) {
       rownames = TRUE)                 ##  show row numbers/names
     })
     # Update peak selection-------------------------------------------
-    shiny::observeEvent(shiny::req(peak_table(), main_par$LOD_thr), {
-      ordered_markers <- highest_peaks(peak_table(), main_par$LOD_thr)$marker
+    # TEMPORARY DEBUG: Remove peak_table() from req() to see if it stops the '==' error
+    shiny::observeEvent(shiny::req(main_par$LOD_thr()), { 
+      # This will likely error later if peak_table() isn't ready, but tests the req() call
+      ordered_markers <- highest_peaks(peak_table(), main_par$LOD_thr())$marker
       if(!is.null(ordered_markers)) {
         shiny::updateSelectizeInput(session, "which_peak",
           choices = ordered_markers, selected = ordered_markers[1],
@@ -108,21 +120,38 @@ peakServer <- function(id, main_par, import) {
       ggplot_alleles(peak)
     })
     file_name <- shiny::reactive({
-      instanceID <- paste(shiny::req(main_par$which_trait), shiny::req(input$which_peak),
-                          sep = "_")
-      if(shiny::req(main_par$selected_chr) != "All") {
-        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr)
+      # Evaluate which_trait reactive
+      trait_val <- shiny::req(main_par$which_trait())
+      peak_val <- shiny::req(input$which_peak)
+      instanceID <- paste(trait_val, peak_val, sep = "_") 
+      
+      # Debug before comparison
+      sel_chr_val <- main_par$selected_chr()
+      
+      # Defensive check before comparison
+      if (is.atomic(sel_chr_val) && is.character(sel_chr_val) && length(sel_chr_val) == 1) {
+        # Evaluate selected_chr reactive and compare                        
+        if(shiny::req(sel_chr_val) != "All") { 
+          # Evaluate selected_chr reactive for paste
+          instanceID <- paste0(instanceID, "_chr", sel_chr_val)
+        }
+      } else {
+        warning("peakServer file_name: sel_chr_val is not a single character string!")
       }
+      
       paste("peak", instanceID, sep = "_")
     })
     # Return `peak_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
-    shiny::reactiveValues(
-      filename = file_name,
-      tables = shiny::reactiveValues(
-        peak = peak_table),
-      plots  = shiny::reactiveValues(
-        alleles = allele_plot)
-    )
+    # --- MODIFICATION: Return ONLY the peak_table reactive directly --- 
+    # shiny::reactiveValues(
+    #   filename = file_name,
+    #   tables = shiny::reactiveValues(
+    #     peak = peak_table),
+    #   plots  = shiny::reactiveValues(
+    #     alleles = allele_plot)
+    # )
+    return(peak_table) # Return the reactive expression
+    # ------------------------------------------------------------------
 
   })
 }

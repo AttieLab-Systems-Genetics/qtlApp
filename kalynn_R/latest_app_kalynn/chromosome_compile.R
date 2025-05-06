@@ -2,9 +2,6 @@
 
 # Script to compile data from gz files into separate FST files for each chromosome
 
-
-
-
 # Load required libraries
 library(dplyr)
 library(data.table)
@@ -35,7 +32,7 @@ if (!dir.exists(OUTPUT_DIR)) {
 
 # Define all chromosomes
 #CHROMOSOMES <- c(1:19, "X", "Y", "M")
-CHROMOSOMES <- c(5:9)
+CHROMOSOMES <- c(16:19, "X", "Y", "M")
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
