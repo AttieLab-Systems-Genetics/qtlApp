@@ -111,4 +111,3 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait) {
   # trait_cache[[cache_key]] <- combined_data
   return(combined_data)
 }
- 

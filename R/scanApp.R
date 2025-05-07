@@ -33,7 +33,9 @@ scanApp <- function() {
     ),
     bslib::card(
       bslib::card_header("Clicked Peak on Scan"), 
-      scanUI("scan_list"))
+      scanUI("scan_list"),
+      max_height = "150px" # Set a maximum height for this card
+    )
   )
   server <- function(input, output, session) {
       import <- importServer("import")
@@ -105,10 +107,22 @@ scanServer <- function(id, main_par, import) {
       shiny::req(scan_plot(), scan_table_chr(), main_par$selected_chr(), input$plot_click)
       xvar <- "position"
       if (main_par$selected_chr() == "All") xvar <- "BPcum"
-      out <- shiny::nearPoints(scan_table_chr(), input$plot_click,
+      out_data <- shiny::nearPoints(scan_table_chr(), input$plot_click,
         xvar = xvar, yvar = "LOD",
         threshold = 10, maxpoints = 1, addDist = TRUE)
-      dplyr::mutate(out, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+      
+      # Ensure data is a data.frame before passing to datatable
+      if (!is.data.frame(out_data) || nrow(out_data) == 0) {
+        # Return an empty datatable if no points are found or data is not a frame
+        return(DT::datatable(data.frame(), options = list(dom = 't')))
+      }
+      
+      out_data <- dplyr::mutate(out_data, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+      
+      DT::datatable(out_data, 
+                    options = list(dom = 't', paging = FALSE),
+                    rownames = FALSE,
+                    selection = 'none')
     })
     # The `file_name()` is used in `downloadServer()` for plot and table file names.
     file_name <- shiny::reactive({
