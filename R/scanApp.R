@@ -4,14 +4,15 @@
 #' @param main_par reactive list with selected_dataset, LOD_thr and which_trait
 #' @param import reactive list with file_directory and markers
 #'
-#' @importFrom DT DTOutput renderDT
-#' @importFrom shiny actionButton h4 moduleServer nearPoints NS plotOutput
-#'             reactive reactiveValues renderPlot renderUI req setProgress shinyApp
+#' @importFrom DT DTOutput renderDT datatable
+#' @importFrom shiny actionButton h4 moduleServer NS plotOutput reactive reactiveVal
+#'             reactiveValues renderPlot renderUI req setProgress shinyApp selectInput
 #'             uiOutput withProgress div downloadButton numericInput tagList
-#'             selectInput plotOutput downloadHandler
+#'             observeEvent updateNumericInput downloadHandler
+#' @importFrom plotly plotlyOutput renderPlotly ggplotly event_data layout config
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
-#' @importFrom dplyr across mutate where filter
+#' @importFrom dplyr across mutate where filter select
 #' @importFrom stringr str_split str_remove
 #' @importFrom ggplot2 ggsave
 #'
@@ -131,38 +132,29 @@ scanServer <- function(id, main_par, import) {
     plot_width_rv <- shiny::reactiveVal(1000)
     plot_height_rv <- shiny::reactiveVal(600)
     use_alternating_colors_rv <- shiny::reactiveVal(TRUE)
+    clicked_plotly_point_details_rv <- shiny::reactiveVal(NULL)
 
-    shiny::observeEvent(input$plot_width, { plot_width_rv(input$plot_width) })
-    shiny::observeEvent(input$plot_height, { plot_height_rv(input$plot_height) })
+    shiny::observeEvent(input$plot_width, { plot_width_rv(input$plot_width) }, ignoreNULL = TRUE)
+    shiny::observeEvent(input$plot_height, { plot_height_rv(input$plot_height) }, ignoreNULL = TRUE)
 
     shiny::observeEvent(input$preset_1to1, {
-      plot_width_rv(800)
-      plot_height_rv(800)
       shiny::updateNumericInput(session, "plot_width", value = 800)
       shiny::updateNumericInput(session, "plot_height", value = 800)
     })
     shiny::observeEvent(input$preset_3to2, {
-      plot_width_rv(900)
-      plot_height_rv(600)
       shiny::updateNumericInput(session, "plot_width", value = 900)
       shiny::updateNumericInput(session, "plot_height", value = 600)
     })
     shiny::observeEvent(input$preset_16to9, {
-      plot_width_rv(1280) # Common 16:9, or use 1600x900 from app2
-      plot_height_rv(720)
       shiny::updateNumericInput(session, "plot_width", value = 1280)
       shiny::updateNumericInput(session, "plot_height", value = 720)
     })
 
     shiny::observeEvent(input$color_toggle, {
-      # For checkboxInput, input$color_toggle is TRUE/FALSE
-      # For create_lever_switch, it's a timestamp, so toggle on any change
       if(is.logical(input$color_toggle)){
         use_alternating_colors_rv(input$color_toggle)
       } else {
         use_alternating_colors_rv(!use_alternating_colors_rv())
-        # Optionally, update lever switch visual state if using JS
-        # shinyjs::runjs(sprintf("document.getElementById('%s').classList.toggle('active');", ns("color_toggle")))
       }
     })
     
@@ -193,10 +185,22 @@ scanServer <- function(id, main_par, import) {
     
     scan_table_chr <- shiny::reactive({
       shiny::req(scan_table(), main_par$selected_chr())
-      if (main_par$selected_chr() == "All") {
-        scan_table()
+      current_scan_table <- scan_table()
+      # Ensure current_scan_table$chr is numeric for filtering if selected_chr is numeric
+      # QTL_plot_visualizer should ensure $chr is numeric
+      selected_chromosome <- main_par$selected_chr()
+      if (selected_chromosome == "All") {
+        current_scan_table
       } else {
-        dplyr::filter(scan_table(), chr == main_par$selected_chr())
+        # Convert selected_chromosome to numeric to match chr column type (X=20, Y=21, M=22)
+        # This conversion should ideally happen in mainParServer or selected_chr reactive
+        sel_chr_num <- selected_chromosome 
+        if(selected_chromosome == "X") sel_chr_num <- 20
+        if(selected_chromosome == "Y") sel_chr_num <- 21
+        if(selected_chromosome == "M") sel_chr_num <- 22
+        sel_chr_num <- as.numeric(sel_chr_num)
+
+        dplyr::filter(current_scan_table, chr == sel_chr_num)
       }
     })
     
@@ -212,46 +216,92 @@ scanServer <- function(id, main_par, import) {
       ggplot_qtl_scan(scan_table_chr(), main_par$LOD_thr(), main_par$selected_chr())
     })
 
-    output$scan_plot <- shiny::renderUI({
+    output$scan_plot_ui_render <- shiny::renderUI({
       shiny::req(current_scan_plot_gg())
       # Use reactive width and height for the plotOutput
-      shiny::plotOutput(ns("render_plot"), 
-                        click = ns("plot_click"), 
+      plotly::plotlyOutput(ns("render_plotly_plot"), 
                         width = paste0(plot_width_rv(), "px"), 
                         height = paste0(plot_height_rv(), "px")) |>
         shinycssloaders::withSpinner(type = 8, color = "#3498db")
     })
     
-    output$render_plot <- shiny::renderPlot({
+    output$render_plotly_plot <- plotly::renderPlotly({
       shiny::req(current_scan_plot_gg())
-      current_scan_plot_gg()
-    }, 
-    # Make renderPlot itself aware of dynamic dimensions. 
-    # This is an alternative to setting width/height in plotOutput if plotOutput is not in renderUI
-    # width = function() plot_width_rv(), 
-    # height = function() plot_height_rv()
-    res = 96 # Standard resolution
-    )
-    
-    output$plot_click <-  DT::renderDT({
-      shiny::req(current_scan_plot_gg(), scan_table_chr(), main_par$selected_chr(), input$plot_click)
-      xvar <- "position"
-      if (main_par$selected_chr() == "All") xvar <- "BPcum"
-      out_data <- shiny::nearPoints(scan_table_chr(), input$plot_click,
-        xvar = xvar, yvar = "LOD",
-        threshold = 10, maxpoints = 1, addDist = TRUE)
-      if (!is.data.frame(out_data) || nrow(out_data) == 0) {
-        return(DT::datatable(data.frame(), options = list(dom = 't')))
+      plt <- plotly::ggplotly(current_scan_plot_gg(), 
+                              source = ns("qtl_scan_plotly"), 
+                              tooltip = c("x", "y", "chr")) # Basic tooltip, can be customized
+      
+      plt <- plt %>%
+        plotly::layout(
+          dragmode = "zoom", # Enables box zoom by default dragging
+          hovermode = "closest",
+          title = list( # Keep title minimal or remove if already handled by card header
+            text = NULL 
+          ),
+          xaxis = list(title = current_scan_plot_gg()$labels$x), # Get x-axis label from ggplot
+          yaxis = list(title = current_scan_plot_gg()$labels$y)  # Get y-axis label from ggplot
+        ) %>%
+        plotly::config(
+          displaylogo = FALSE,
+          # Plotly modebar by default includes zoom tools. Removing some less used ones.
+          modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", 
+                                     "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud")
+        )
+      plt
+    })
+
+    shiny::observeEvent(plotly::event_data("plotly_click", source = ns("qtl_scan_plotly")), {
+      ev_data <- plotly::event_data("plotly_click", source = ns("qtl_scan_plotly"))
+      if (!is.null(ev_data) && length(ev_data) > 0) {
+        # pointNumber is 0-indexed for the trace clicked
+        # We need to ensure scan_table_chr() is available and gg_data is derived correctly
+        # ggplotly can restructure data, so mapping back can be tricky if multiple traces exist
+        # For a single trace plot, pointNumber directly maps to the row index (0-indexed)
+        
+        # Simplistic approach assuming pointNumber is reliable and plot data matches scan_table_chr()
+        # This might need refinement if aes(color=chr) creates multiple traces in ggplotly
+        clicked_idx <- ev_data$pointNumber[1] + 1 
+        
+        current_data <- scan_table_chr()
+        if(clicked_idx <= nrow(current_data)){
+          selected_point_df <- current_data[clicked_idx, , drop = FALSE]
+          
+          # Select relevant columns for display, similar to nearPoints output
+          # Ensure 'markers', 'chr', 'position', 'LOD' exist
+          cols_to_select <- c("markers", "chr", "position", "LOD")
+          # Filter out missing columns before selecting
+          cols_to_select <- cols_to_select[cols_to_select %in% names(selected_point_df)]
+          
+          if(length(cols_to_select) > 0){
+            selected_point_df <- dplyr::select(selected_point_df, dplyr::all_of(cols_to_select))
+            selected_point_df <- dplyr::mutate(selected_point_df, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+            clicked_plotly_point_details_rv(selected_point_df)
+          } else {
+            clicked_plotly_point_details_rv(data.frame(Info = "Selected point data columns not found."))
+          }
+        } else {
+           clicked_plotly_point_details_rv(data.frame(Info = "Clicked point index out of bounds."))
+        }
+      } else {
+        clicked_plotly_point_details_rv(NULL)
       }
-      out_data <- dplyr::mutate(out_data, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
-      DT::datatable(out_data, options = list(dom = 't', paging = FALSE), rownames = FALSE, selection = 'none')
+    })
+    
+    output$plot_click_dt <- DT::renderDT({
+      details <- clicked_plotly_point_details_rv()
+      if (is.null(details) || nrow(details) == 0) {
+        return(DT::datatable(data.frame(Info = "Click on the plot to see point details."), 
+                             options = list(dom = 't'), rownames = FALSE))
+      }
+      DT::datatable(details, options = list(dom = 't', paging = FALSE), rownames = FALSE, selection = 'none')
     })
 
     # Download handlers for QTL plot
     output$download_qtl_plot_png <- shiny::downloadHandler(
       filename = function() {
+        trait_name <- main_par$which_trait() %||% "plot"
         chr_suffix <- if(main_par$selected_chr() != "All") paste0("_chr", main_par$selected_chr()) else ""
-        paste0("lod_plot_", main_par$which_trait(), chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".png")
+        paste0("lod_plot_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".png")
       },
       content = function(file) {
         shiny::req(current_scan_plot_gg())
@@ -265,8 +315,9 @@ scanServer <- function(id, main_par, import) {
 
     output$download_qtl_plot_pdf <- shiny::downloadHandler(
       filename = function() {
+        trait_name <- main_par$which_trait() %||% "plot"
         chr_suffix <- if(main_par$selected_chr() != "All") paste0("_chr", main_par$selected_chr()) else ""
-        paste0("lod_plot_", main_par$which_trait(), chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".pdf")
+        paste0("lod_plot_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".pdf")
       },
       content = function(file) {
         shiny::req(current_scan_plot_gg())
@@ -278,13 +329,18 @@ scanServer <- function(id, main_par, import) {
     )
     
     file_name_reactive <- shiny::reactive({
-      instanceID <- shiny::req(main_par$which_trait())
-      if(shiny::req(main_par$selected_chr()) != "All") {
-        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr())
+      trait_name <- main_par$which_trait() %||% "scan"
+      instanceID <- trait_name
+      selected_chromosome <- main_par$selected_chr()
+      if(!is.null(selected_chromosome) && selected_chromosome != "All") {
+        instanceID <- paste0(instanceID, "_chr", selected_chromosome)
       }
       paste("scan", instanceID, sep = "_")
     })
     
+    # `%||%` operator for cleaner NULL coalescing
+    `%||%` <- function(a, b) if (!is.null(a)) a else b
+
     shiny::reactiveValues(
       filename = file_name_reactive, # For existing downloadApp module if it uses this
       tables = shiny::reactiveValues(scan = scan_table_chr),
@@ -295,10 +351,10 @@ scanServer <- function(id, main_par, import) {
 
 scanUI <- function(id) {
   ns <- shiny::NS(id)
-  DT::DTOutput(ns("plot_click"))
+  DT::DTOutput(ns("plot_click_dt"))
 }
 
 scanOutput <- function(id) {
   ns <- shiny::NS(id)
-  shiny::uiOutput(ns("scan_plot"))
+  shiny::uiOutput(ns("scan_plot_ui_render"))
 }
