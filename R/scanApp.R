@@ -120,20 +120,32 @@ scanApp <- function() {
     )
   )
   server <- function(input, output, session) {
+      # Initialize Cache Environments
+      trait_cache <- new.env(parent = emptyenv())
+      peaks_cache <- new.env(parent = emptyenv())
+
       import <- importServer("import")
-      main_par <- mainParServer("main_par", import)
-      scan_list_server_output <- scanServer("scan_list", main_par, import)
-      peak_list <- peakServer("peak", main_par, import)
+      main_par <- mainParServer("main_par", import) 
+      
+      # Clear caches when dataset changes
+      shiny::observeEvent(main_par$selected_dataset(), {
+          message("Dataset changed, clearing caches.")
+          rm(list = ls(envir = trait_cache), envir = trait_cache)
+          rm(list = ls(envir = peaks_cache), envir = peaks_cache)
+      })
+
+      # Pass caches to modules that need them
+      scan_list_server_output <- scanServer("scan_list", main_par, import, trait_cache)
+      peak_list <- peakServer("peak", main_par, import, peaks_cache)
       merged_list <- mergeServer("merged_list", scan_list_server_output, peak_list)
       downloadServer("download", merged_list)
-      # Call the server logic for the new cis/trans plot module
-      cisTransPlotServer("cis_trans", import_reactives = import)
+      cisTransPlotServer("cis_trans", import_reactives = import, peaks_cache)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
 
 # Server logic for scan related inputs and plot
-scanServer <- function(id, main_par, import) {
+scanServer <- function(id, main_par, import, trait_cache) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -182,7 +194,7 @@ scanServer <- function(id, main_par, import) {
         message = paste("scan of", selected_trait(), "in progress"), value = 0, {
           shiny::setProgress(1)
           suppressMessages(
-            trait_scan(import()$file_directory, main_par$selected_dataset(), selected_trait()))
+            trait_scan(import()$file_directory, main_par$selected_dataset(), selected_trait(), cache_env = trait_cache))
         })
     })
     

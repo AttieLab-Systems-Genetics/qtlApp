@@ -41,7 +41,7 @@ peakApp <- function() {
 }
 #' @rdname peakApp
 #' @export
-peakServer <- function(id, main_par, import) {
+peakServer <- function(id, main_par, import_data, peaks_cache) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -49,7 +49,7 @@ peakServer <- function(id, main_par, import) {
       message("--- peakServer Debug ---")
       message(paste("Selected Dataset (from main_par):", shiny::isolate(main_par$selected_dataset())))
       message(paste("Which Trait (from main_par):", shiny::isolate(main_par$which_trait())))
-      imp_data <- shiny::isolate(import())
+      imp_data <- shiny::isolate(import_data())
       if(!is.null(imp_data) && !is.null(imp_data$file_directory)){
         message(paste("Imported file_directory rows:", nrow(imp_data$file_directory)))
       } else {
@@ -59,9 +59,9 @@ peakServer <- function(id, main_par, import) {
     })
 
     chosen_trait <- shiny::reactive({
-      shiny::req(import(), main_par$which_trait(), main_par$selected_dataset()) 
+      shiny::req(import_data(), main_par$which_trait(), main_par$selected_dataset()) 
       # Get selected trait and log it
-      trait_val <- get_selected_trait(import(),
+      trait_val <- get_selected_trait(import_data(),
                          main_par$which_trait(), main_par$selected_dataset())
       message(paste("peakServer chosen_trait_reactive: Calculated chosen_trait as:", trait_val))
       trait_val
@@ -74,8 +74,8 @@ peakServer <- function(id, main_par, import) {
       current_chosen_trait <- chosen_trait()
       message(paste("peak_table_reactive: Attempting peak_finder for trait '", current_chosen_trait, "' in dataset '", current_dataset, "'"))
       
-      # Call peak_finder (temporarily remove suppressMessages for debugging)
-      found_peaks <- peak_finder(import()$file_directory, current_dataset) 
+      # Call peak_finder, passing the peaks_cache environment
+      found_peaks <- peak_finder(import_data()$file_directory, current_dataset, cache_env = peaks_cache)
       message(paste("peak_table_reactive: peak_finder returned", nrow(found_peaks), "total peaks for dataset before trait subset."))
       
       # Subset for the chosen trait

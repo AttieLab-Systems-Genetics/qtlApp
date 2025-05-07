@@ -22,22 +22,22 @@ ggplot_alleles <- function(peak, colors = NULL) {
       return(create_null_allele_plot())
     } else {
       return(ggplot2::ggplot() +
-        ggplot2::theme_void() +
-        ggplot2::labs(title = "No data to plot"))
-    }
+      ggplot2::theme_void() +
+      ggplot2::labs(title = "No data to plot"))
+  }
   }
   
   # Define modern strain colors if not provided
   if (is.null(colors)) {
     colors <- c(
-      "AJ" = "#000000",
-      "B6" = "#96989A",
-      "129" = "#E69F00",
-      "NOD" = "#0072B2",
-      "NZO" = "#619BFF",
-      "CAST" = "#009E73",
-      "PWK" = "#D55E00",
-      "WSB" = "#CC79A7")
+    "AJ" = "#000000",
+    "B6" = "#96989A",
+    "129" = "#E69F00",
+    "NOD" = "#0072B2",
+    "NZO" = "#619BFF",
+    "CAST" = "#009E73",
+    "PWK" = "#D55E00",
+    "WSB" = "#CC79A7")
   }
   
   # Create plot with modern styling
@@ -58,10 +58,10 @@ ggplot_alleles <- function(peak, colors = NULL) {
   } else {
     # Fallback to enhanced classic theme
     p <- p + ggplot2::theme_bw() +
-      ggplot2::theme(
-        panel.border = ggplot2::element_blank(),
-        panel.grid.major.x = ggplot2::element_blank(),
-        panel.grid.minor.x = ggplot2::element_blank(),
+    ggplot2::theme(
+      panel.border = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.minor.x = ggplot2::element_blank(),
         axis.line = ggplot2::element_line(colour = "#2c3e50", size = 0.5),
         axis.text = ggplot2::element_text(size = 12, color = "#2c3e50"),
         axis.title = ggplot2::element_text(size = 14, face = "bold", color = "#2c3e50"),

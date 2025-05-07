@@ -48,13 +48,13 @@ qtlApp <- function() {
     
   } else {
     # Fallback to default styling if modern UI functions aren't available
-    ui <- bslib::page_sidebar(
-      title = "Pre-scanned QTL visualizer, implemented for Diet DO study",
-      shinyjs::useShinyjs(),
-      sidebar = bslib::sidebar("side_panel",
-        qtlInput("qtl")),
-      qtlOutput("qtl")
-    )
+  ui <- bslib::page_sidebar(
+    title = "Pre-scanned QTL visualizer, implemented for Diet DO study",
+    shinyjs::useShinyjs(),
+    sidebar = bslib::sidebar("side_panel",
+      qtlInput("qtl")),
+    qtlOutput("qtl")
+  )
   }
   
   server <- function(input, output, session) {

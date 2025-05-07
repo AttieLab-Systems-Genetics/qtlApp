@@ -82,12 +82,12 @@ mainParInput <- function(id) {
         min = 4, max = 20, value = 7.5, step = 0.5)
     )
   } else {
-    list(
-      shiny::uiOutput(ns("selected_dataset")),
-      shiny::sliderInput(ns("LOD_thr"),
-        label = "LOD threshold for evaluation",
+  list(
+    shiny::uiOutput(ns("selected_dataset")),
+    shiny::sliderInput(ns("LOD_thr"),
+      label = "LOD threshold for evaluation",
         min = 4, max = 20, value = 7.5, step = 0.5)
-    )
+  )
   }
 }
 #' @rdname mainParApp
@@ -123,11 +123,11 @@ mainParUI <- function(id) {
         width = "150px")
     )
   } else {
-    list(
-      shiny::selectizeInput(ns("which_trait"),
-        label = "Choose the trait",
-        choices = NULL,
-        multiple = FALSE,
+  list(
+    shiny::selectizeInput(ns("which_trait"),
+      label = "Choose the trait",
+      choices = NULL,
+      multiple = FALSE,
         options = list(
           placeholder = 'Search gene symbol...',
           maxItems = 1,
@@ -135,11 +135,11 @@ mainParUI <- function(id) {
         )),
       shiny::selectInput(ns("selected_chr"), 
         label = "Zoom to Chromosome:",
-        choices = c("All",
+      choices = c("All",
                   "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
                   "11", "12", "13", "14", "15", "16", "17", "18", "19",
                   "X", "Y", "M"),
-        selected = "All",
+      selected = "All",
         width = "150px")
     )
   }
