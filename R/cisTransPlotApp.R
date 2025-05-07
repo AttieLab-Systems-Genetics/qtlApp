@@ -140,29 +140,37 @@ cisTransPlotServer <- function(id, import_reactives) {
       p_data <- plot_data()
       shiny::req(p_data)
       if (nrow(p_data) == 0) {
-        return(plot_null(msg = "No peaks to plot with selected filters."))
+        # Ensure plot_null is available (it should be if sourced by app.R)
+        if (exists("plot_null", mode = "function")) {
+            return(plot_null(msg = "No peaks to plot with selected filters."))
+        } else {
+            return(ggplot2::ggplot() + ggplot2::labs(title="No peaks to plot with selected filters.") + ggplot2::theme_void())
+        }
       }
 
-      # Create the plot
-      p <- ggplot2::ggplot(p_data, ggplot2::aes(x = .data$qtl_pos / 1e6, y = .data$gene_pos_y / 1e6, color = .data$type)) +
-        ggplot2::geom_point(alpha = 0.7) +
+      # Create the plot - NO FACETING
+      p <- ggplot2::ggplot(p_data, ggplot2::aes(x = .data$qtl_pos / 1e6, 
+                                                y = .data$gene_pos_y / 1e6, 
+                                                color = .data$type,
+                                                text = paste("QTL Marker:", .data$marker,
+                                                             "<br>QTL Chr:", .data$qtl_chr_f, "@", round(.data$qtl_pos/1e6,1), "Mb",
+                                                             "<br>Gene:", .data$gene_id_from_peak, 
+                                                             "<br>Gene Chr:", .data$gene_chr_f, "@", round(.data$gene_pos_y/1e6,1), "Mb",
+                                                             "<br>LOD:", .data$lod))) + 
+        ggplot2::geom_point(alpha = 0.6, size = 2) + 
         ggplot2::scale_color_manual(values = c("cis" = "red", "trans" = "blue")) +
-        ggplot2::facet_grid(gene_chr_f ~ qtl_chr_f, scales = "free", space = "free") +
-        # Add diagonal line for cis panels
-        ggplot2::geom_abline(data = . %>% dplyr::filter(.data$type == "cis"), 
-                             ggplot2::aes(intercept = 0, slope = 1), 
-                             color = "grey50", linetype = "dashed") +
         ggplot2::labs(
           title = paste("Cis/Trans eQTL Plot for Dataset:", input$dataset_select),
-          x = "QTL Position (Mb)",
-          y = "Gene Start Position (Mb)",
+          x = "QTL Position (Mb on its chromosome)",
+          y = "Gene Start Position (Mb on its chromosome)",
           color = "QTL Type"
         ) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, size=7),
-                       axis.text.y = ggplot2::element_text(size=7),
-                       strip.text = ggplot2::element_text(size=8))
+        ggplot2::theme_minimal(base_size = 11) + # Set a base font size
+        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1), 
+                       legend.position = "top")
       
+      # For interactivity later, you would convert to plotly here:
+      # return(plotly::ggplotly(p, tooltip="text"))
       p
     }, res = 96)
 
