@@ -6,7 +6,7 @@
 #' @importFrom DT datatable DTOutput renderDT
 #' @importFrom shiny moduleServer NS observeEvent plotOutput reactive renderPlot
 #'             renderText req selectizeInput setProgress shinyApp textOutput
-#'             updateSelectizeInput withProgress
+#'             updateSelectizeInput withProgress h4 div
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom stringr str_split
@@ -210,22 +210,63 @@ peakServer <- function(id, main_par, import) {
 #' @rdname peakApp
 #' @export
 peakInput <- function(id) {
+  # Source UI styling functions if not already loaded
+  if (!exists("create_select_input", mode = "function")) {
+    source("R/ui_styles.R")
+  }
+  
   ns <- shiny::NS(id)
-  list(
-    shiny::helpText("Choose a peak to see the strain effects.",
-      "This only applies to the additive scans."),
-    shiny::selectInput(ns("which_peak"),
-      label = "Choose peak (selectInput Test)",
-      choices = character(0),
-      multiple = FALSE
+  
+  # Use modern styling if available, otherwise use standard controls
+  if (exists("create_select_input", mode = "function")) {
+    create_well_panel(
+      h4("Strain Effects", style = "color: #2c3e50; margin-bottom: 15px;"),
+      div(style = "color: #7f8c8d; margin-bottom: 15px;",
+        "Select a peak to see strain effects (Only for additive scans)."
+      ),
+      div(style = "margin-bottom: 20px; position: relative; z-index: 2;",
+        create_select_input(ns("which_peak"),
+          label = NULL,
+          choices = NULL,
+          multiple = FALSE,
+          options = list(
+            placeholder = 'Select a peak...',
+            onInitialize = I('function() { this.setValue(""); }')
+          )
+        )
+      )
     )
-  )
+  } else {
+    list(
+      shiny::helpText("Choose a peak to see the strain effects.",
+        "This only applies to the additive scans."),
+      shiny::selectInput(ns("which_peak"),
+        label = "Choose peak",
+        choices = character(0),
+        multiple = FALSE
+      )
+    )
+  }
 }
 #' @rdname peakApp
 #' @export
 peakUI <- function(id) {
+  # Source UI styling functions if not already loaded
+  if (!exists("create_plot_output", mode = "function")) {
+    source("R/ui_styles.R")
+  }
+  
   ns <- shiny::NS(id)
-  shiny::plotOutput(ns("allele_effects_plot"))
+  
+  # Use modern styling if available, otherwise use standard output
+  if (exists("create_plot_output", mode = "function")) {
+    div(style = "margin-top: 20px; position: relative; z-index: 0;",
+      shiny::plotOutput(ns("allele_effects_plot"), height = "400px") %>%
+        shinycssloaders::withSpinner(type = 8, color = "#3498db", proxy.height = "400px")
+    )
+  } else {
+    shiny::plotOutput(ns("allele_effects_plot"))
+  }
 }
 #' @rdname peakApp
 #' @export
