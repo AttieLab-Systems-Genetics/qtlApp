@@ -72,7 +72,7 @@ scanApp <- function() {
           )
         ),
         # Row for plot dimension controls and color toggle
-        shiny::div(style = "display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;",
+        shiny::div(style = "display: flex; gap: 10px; align-items: center; margin-bottom: 5px; flex-wrap: wrap;",
           # Plot dimensions
           shiny::div(style = "display: flex; align-items: center; gap: 10px;",
             if (exists("create_numeric_input", mode = "function")) {

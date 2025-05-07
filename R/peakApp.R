@@ -146,22 +146,23 @@ peakServer <- function(id, main_par, import) {
     # Table ov peaks info ------------------------------------------------------
     output$peak_table <- DT::renderDT({DT::datatable(
       peak_table(),
-      options = list(paging = TRUE,    ## paginate the output
-                     pageLength = 5,   ## number of rows to output for each page
-                     scrollX = TRUE,   ## enable scrolling on X axis
-                     scrollY = TRUE,   ## enable scrolling on Y axis
-                     autoWidth = TRUE, ## use smart column width handling
-                     server = TRUE,    ## use client-side processing
-                     dom = 'Bfrtip',
-                     buttons = c('csv', 'excel'),
+      options = list(paging = FALSE,    # Disable pagination
+                     scrollX = TRUE,
+                     scrollY = TRUE,
+                     autoWidth = TRUE,
+                     dom = 'Bt',       # Show Buttons and Table, no other controls like search or pagination info
+                     buttons = list(
+                       list(extend = 'csv', className = 'btn-sm'),
+                       list(extend = 'excel', className = 'btn-sm')
+                     ),
                      columnDefs = list(
                        list(targets = '_all', className = 'dt-center'),
                        list(targets = c(0, 8, 9), visible = FALSE))
       ),
       extensions = 'Buttons',
-      selection = 'single',            ## enable selection of a single row
-      filter = 'bottom',               ## include column filters at the bottom
-      rownames = TRUE)                 ##  show row numbers/names
+      selection = 'single',
+      filter = 'none',                 # Remove column filters
+      rownames = TRUE)
     })
  
     output$allele_effects_plot <- shiny::renderPlot({
