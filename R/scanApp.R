@@ -35,13 +35,29 @@ scanApp <- function() {
       downloadOutput("download")
     ),
     bslib::card(
-      bslib::card_header("LOD Profile Controls"),
+      bslib::card_header("LOD Plot"),
       bslib::card_body(
-        # Row for plot title and download buttons
-        shiny::div(style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;",
-          shiny::h4("LOD Score Plot", style = "margin: 0; color: #2c3e50; font-weight: 600;"),
-          shiny::div(style = "display: flex; gap: 10px;",
-            # Use ui_styles.R helpers if available, otherwise standard buttons
+        # Row for plot title, download buttons, and preset buttons
+        shiny::div(style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap;",
+          shiny::h4("LOD Score Plot", style = "margin: 0 15px 0 0; color: #2c3e50; font-weight: 600;"),
+          shiny::div(style = "display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-end;",
+            # Preset Aspect Ratio Buttons
+            shiny::div(style = "display: flex; gap: 5px; margin-right: 15px;",
+              if (exists("create_button", mode = "function")) {
+                tagList(
+                  create_button(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm btn-light"),
+                  create_button(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm btn-light"),
+                  create_button(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm btn-light")
+                )
+              } else {
+                tagList(
+                  shiny::actionButton(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm"),
+                  shiny::actionButton(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm"),
+                  shiny::actionButton(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm")
+                )
+              }
+            ),
+            # Download Buttons
             if (exists("create_download_button", mode = "function")) {
               tagList(
                 create_download_button(shiny::NS("scan_list", "download_qtl_plot_png"), "PNG", class = "btn-sm"),
@@ -56,12 +72,7 @@ scanApp <- function() {
           )
         ),
         # Row for plot dimension controls and color toggle
-        shiny::div(style = "display: flex; gap: 20px; align-items: center; margin-bottom: 20px; flex-wrap: wrap;",
-          # Chromosome selector (from mainParUI, not namespaced here directly in scanApp)
-          # This is typically part of mainParUI("main_par") which is in the sidebar.
-          # If it needs to be here, it should be shiny::uiOutput(shiny::NS("main_par", "selected_chr_ui_placeholder"))
-          # For now, assuming mainParUI handles chr selection in the sidebar.
-          
+        shiny::div(style = "display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;",
           # Plot dimensions
           shiny::div(style = "display: flex; align-items: center; gap: 10px;",
             if (exists("create_numeric_input", mode = "function")) {
@@ -75,22 +86,7 @@ scanApp <- function() {
               shiny::numericInput(shiny::NS("scan_list", "plot_height"), "Height:", value = 600, min = 300, max = 1200, step = 50, width = "100px")
             }
           ),
-          shiny::div(style = "display: flex; gap: 5px;",
-            if (exists("create_button", mode = "function")) {
-              tagList(
-                create_button(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm btn-light"),
-                create_button(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm btn-light"),
-                create_button(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm btn-light")
-              )
-            } else {
-              tagList(
-                shiny::actionButton(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm"),
-                shiny::actionButton(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm"),
-                shiny::actionButton(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm")
-              )
-            }
-          ),
-          # Color toggle switch
+          # Color toggle switch (No longer includes preset buttons here)
           if (exists("create_lever_switch", mode = "function")) {
             create_lever_switch(shiny::NS("scan_list", "color_toggle"))
           } else {
