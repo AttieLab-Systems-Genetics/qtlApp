@@ -83,22 +83,22 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All") {
   } else {
     # Fallback to enhanced classic theme
     p <- p + ggplot2::theme_bw() +
-      ggplot2::theme(
-        legend.position = "none",
-        panel.border = ggplot2::element_blank(),
-        panel.grid.major.x = ggplot2::element_blank(),
-        panel.grid.minor.x = ggplot2::element_blank(),
+    ggplot2::theme(
+      legend.position = "none",
+      panel.border = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.minor.x = ggplot2::element_blank(),
         axis.line = ggplot2::element_line(colour = "#2c3e50", size = 0.5),
         axis.text = ggplot2::element_text(size = 12, color = "#2c3e50"),
         axis.title = ggplot2::element_text(size = 14, face = "bold", color = "#2c3e50"),
-        axis.text.x = ggplot2::element_text(
+      axis.text.x = ggplot2::element_text(
           angle = 0,           # Keep labels straight for better readability
           hjust = 0.5,         # Center labels
           vjust = 0.5,         # Center vertically
-          margin = ggplot2::margin(t = 10)  # Add margin at top of labels
-        ),
+        margin = ggplot2::margin(t = 10)  # Add margin at top of labels
+      ),
         # Add more bottom margin to accommodate labels
-        plot.margin = ggplot2::margin(b = 40, l = 20, r = 20, t = 20, unit = "pt")
+      plot.margin = ggplot2::margin(b = 40, l = 20, r = 20, t = 20, unit = "pt")
       )
   }
   
