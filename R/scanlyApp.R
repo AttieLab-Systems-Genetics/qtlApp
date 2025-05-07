@@ -94,7 +94,7 @@ scanlyServer <- function(id, main_par, scan_list, peak_list) {
     })
     which_peak <- shiny::reactive({
       # Evaluate reactives before using them in req() or functions
-       shiny::req(peak_table(), main_par$LOD_thr)
+      shiny::req(peak_table(), main_par$LOD_thr)
       ordered_peaks <- highest_peaks(peak_table(), main_par$LOD_thr)
       ordered_peaks$marker[1]
     })
