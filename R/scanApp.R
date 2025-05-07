@@ -65,9 +65,9 @@ scanApp <- function() {
           # Plot dimensions
           shiny::div(style = "display: flex; align-items: center; gap: 10px;",
             if (exists("create_numeric_input", mode = "function")) {
-              create_numeric_input(shiny::NS("scan_list", "plot_width"), "Width:", value = 1000, min = 400, max = 2000, step = 50, width = "100px")
+              create_numeric_input(shiny::NS("scan_list", "plot_width"), "Width:", value = 1200, min = 400, max = 2000, step = 50, width = "100px")
             } else {
-              shiny::numericInput(shiny::NS("scan_list", "plot_width"), "Width:", value = 1000, min = 400, max = 2000, step = 50, width = "100px")
+              shiny::numericInput(shiny::NS("scan_list", "plot_width"), "Width:", value = 1200, min = 400, max = 2000, step = 50, width = "100px")
             },
             if (exists("create_numeric_input", mode = "function")) {
               create_numeric_input(shiny::NS("scan_list", "plot_height"), "Height:", value = 600, min = 300, max = 1200, step = 50, width = "100px")
@@ -129,7 +129,7 @@ scanServer <- function(id, main_par, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    plot_width_rv <- shiny::reactiveVal(1000)
+    plot_width_rv <- shiny::reactiveVal(1200)
     plot_height_rv <- shiny::reactiveVal(600)
     use_alternating_colors_rv <- shiny::reactiveVal(TRUE)
     clicked_plotly_point_details_rv <- shiny::reactiveVal(NULL)
