@@ -8,9 +8,9 @@
 #' @importFrom shiny actionButton h4 moduleServer NS plotOutput reactive reactiveVal
 #'             reactiveValues renderPlot renderUI req setProgress shinyApp selectInput
 #'             uiOutput withProgress div downloadButton numericInput tagList
-#'             observeEvent updateNumericInput downloadHandler
+#'             observeEvent updateNumericInput downloadHandler tabsetPanel tabPanel
 #' @importFrom plotly plotlyOutput renderPlotly ggplotly event_data layout config
-#' @importFrom bslib card card_header page_sidebar sidebar
+#' @importFrom bslib card card_header page_sidebar sidebar layout_columns navset_tab nav_panel
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr across mutate where filter select
 #' @importFrom stringr str_split str_remove
@@ -34,88 +34,100 @@ scanApp <- function() {
       downloadInput("download"),
       downloadOutput("download")
     ),
-    bslib::card(
-      bslib::card_header("LOD Plot"),
-      bslib::card_body(
-        # Row for plot title, download buttons, and preset buttons
-        shiny::div(style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap;",
-          shiny::h4("LOD Score Plot", style = "margin: 0 15px 0 0; color: #2c3e50; font-weight: 600;"),
-          shiny::div(style = "display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-end;",
-            # Preset Aspect Ratio Buttons
-            shiny::div(style = "display: flex; gap: 5px; margin-right: 15px;",
-              if (exists("create_button", mode = "function")) {
-                tagList(
-                  create_button(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm btn-light"),
-                  create_button(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm btn-light"),
-                  create_button(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm btn-light")
-                )
-              } else {
-                tagList(
-                  shiny::actionButton(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm"),
-                  shiny::actionButton(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm"),
-                  shiny::actionButton(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm")
-                )
-              }
+    # Use navset_tab for main content area
+    bslib::navset_tab(
+      id = "main_tabs", # Use a simple string ID, removed ns()
+      bslib::nav_panel("LOD Plot",
+        bslib::card(
+          bslib::card_header("LOD Plot"),
+          bslib::card_body(
+            # Row for plot title, download buttons, and preset buttons
+            shiny::div(style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap;",
+              shiny::h4("LOD Score Plot", style = "margin: 0 15px 0 0; color: #2c3e50; font-weight: 600;"),
+              shiny::div(style = "display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-end;",
+                # Preset Aspect Ratio Buttons
+                shiny::div(style = "display: flex; gap: 5px; margin-right: 15px;",
+                  if (exists("create_button", mode = "function")) {
+                    tagList(
+                      create_button(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm btn-light"),
+                      create_button(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm btn-light"),
+                      create_button(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm btn-light")
+                    )
+                  } else {
+                    tagList(
+                      shiny::actionButton(shiny::NS("scan_list", "preset_1to1"), "1:1", class = "btn-sm"),
+                      shiny::actionButton(shiny::NS("scan_list", "preset_3to2"), "3:2", class = "btn-sm"),
+                      shiny::actionButton(shiny::NS("scan_list", "preset_16to9"), "16:9", class = "btn-sm")
+                    )
+                  }
+                ),
+                # Download Buttons
+                if (exists("create_download_button", mode = "function")) {
+                  tagList(
+                    create_download_button(shiny::NS("scan_list", "download_qtl_plot_png"), "PNG", class = "btn-sm"),
+                    create_download_button(shiny::NS("scan_list", "download_qtl_plot_pdf"), "PDF", class = "btn-sm")
+                  )
+                } else {
+                  tagList(
+                    shiny::downloadButton(shiny::NS("scan_list", "download_qtl_plot_png"), "PNG", class = "btn-sm"),
+                    shiny::downloadButton(shiny::NS("scan_list", "download_qtl_plot_pdf"), "PDF", class = "btn-sm")
+                  )
+                }
+              )
             ),
-            # Download Buttons
-            if (exists("create_download_button", mode = "function")) {
-              tagList(
-                create_download_button(shiny::NS("scan_list", "download_qtl_plot_png"), "PNG", class = "btn-sm"),
-                create_download_button(shiny::NS("scan_list", "download_qtl_plot_pdf"), "PDF", class = "btn-sm")
-              )
-            } else {
-              tagList(
-                shiny::downloadButton(shiny::NS("scan_list", "download_qtl_plot_png"), "PNG", class = "btn-sm"),
-                shiny::downloadButton(shiny::NS("scan_list", "download_qtl_plot_pdf"), "PDF", class = "btn-sm")
-              )
-            }
+            # Row for plot dimension controls and color toggle
+            shiny::div(style = "display: flex; gap: 10px; align-items: center; margin-bottom: 5px; flex-wrap: wrap;",
+              shiny::div(style = "display: flex; align-items: center; gap: 10px;",
+                if (exists("create_numeric_input", mode = "function")) {
+                  create_numeric_input(shiny::NS("scan_list", "plot_width"), "Width:", value = 1200, min = 400, max = 2000, step = 50, width = "100px")
+                } else {
+                  shiny::numericInput(shiny::NS("scan_list", "plot_width"), "Width:", value = 1200, min = 400, max = 2000, step = 50, width = "100px")
+                },
+                if (exists("create_numeric_input", mode = "function")) {
+                  create_numeric_input(shiny::NS("scan_list", "plot_height"), "Height:", value = 600, min = 300, max = 1200, step = 50, width = "100px")
+                } else {
+                  shiny::numericInput(shiny::NS("scan_list", "plot_height"), "Height:", value = 600, min = 300, max = 1200, step = 50, width = "100px")
+                }
+              ),
+              if (exists("create_lever_switch", mode = "function")) {
+                create_lever_switch(shiny::NS("scan_list", "color_toggle"))
+              } else {
+                shiny::checkboxInput(shiny::NS("scan_list", "color_toggle"), "Alt Colors", value = TRUE)
+              }
+            )
           )
         ),
-        # Row for plot dimension controls and color toggle
-        shiny::div(style = "display: flex; gap: 10px; align-items: center; margin-bottom: 5px; flex-wrap: wrap;",
-          # Plot dimensions
-          shiny::div(style = "display: flex; align-items: center; gap: 10px;",
-            if (exists("create_numeric_input", mode = "function")) {
-              create_numeric_input(shiny::NS("scan_list", "plot_width"), "Width:", value = 1200, min = 400, max = 2000, step = 50, width = "100px")
-            } else {
-              shiny::numericInput(shiny::NS("scan_list", "plot_width"), "Width:", value = 1200, min = 400, max = 2000, step = 50, width = "100px")
-            },
-            if (exists("create_numeric_input", mode = "function")) {
-              create_numeric_input(shiny::NS("scan_list", "plot_height"), "Height:", value = 600, min = 300, max = 1200, step = 50, width = "100px")
-            } else {
-              shiny::numericInput(shiny::NS("scan_list", "plot_height"), "Height:", value = 600, min = 300, max = 1200, step = 50, width = "100px")
-            }
-          ),
-          # Color toggle switch (No longer includes preset buttons here)
-          if (exists("create_lever_switch", mode = "function")) {
-            create_lever_switch(shiny::NS("scan_list", "color_toggle"))
-          } else {
-            shiny::checkboxInput(shiny::NS("scan_list", "color_toggle"), "Alt Colors", value = TRUE)
-          }
+        # The plot itself
+        scanOutput("scan_list"), # This is uiOutput(ns("scan_plot"))
+        # Clicked Peak on Scan info below plot
+        bslib::card(
+          bslib::card_header("Clicked Peak on Scan"), 
+          scanUI("scan_list"),
+          max_height = "150px"
         )
       ),
-      # The plot itself
-      scanOutput("scan_list") # This is uiOutput(ns("scan_plot"))
-    ),
-    bslib::card( # Card for the peaks table
-      bslib::card_header("Peaks Table"),
-      peakOutput("peak")
-    ),
-    bslib::card(
-      bslib::card_header("Clicked Peak on Scan"), 
-      scanUI("scan_list"),
-      max_height = "150px"
+      bslib::nav_panel("Peaks Table",
+         bslib::card(
+            # No header needed if tab name is sufficient
+            # bslib::card_header("Peaks Table"),
+            peakOutput("peak")
+         )
+      ),
+      bslib::nav_panel("Cis/Trans Plot",
+         cisTransPlotInput("cis_trans"),
+         cisTransPlotUI("cis_trans")
+      )
     )
   )
   server <- function(input, output, session) {
       import <- importServer("import")
-      main_par <- mainParServer("main_par", import) # Provides selected_chr among others
+      main_par <- mainParServer("main_par", import)
       scan_list_server_output <- scanServer("scan_list", main_par, import)
       peak_list <- peakServer("peak", main_par, import)
-      # Pass the plot from scan_list_server_output to downloadServer if needed
-      # For now, downloadServer uses merged_list which has scan_list_server_output$plots$scan
       merged_list <- mergeServer("merged_list", scan_list_server_output, peak_list)
       downloadServer("download", merged_list)
+      # Call the server logic for the new cis/trans plot module
+      cisTransPlotServer("cis_trans", import_reactives = import)
   }
   shiny::shinyApp(ui = ui, server = server)
 }
