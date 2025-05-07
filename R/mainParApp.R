@@ -66,31 +66,83 @@ mainParServer <- function(id, import) {
 #' @rdname mainParApp
 #' @export
 mainParInput <- function(id) {
+  # Source UI styling functions if not already loaded
+  if (!exists("create_slider_input", mode = "function")) {
+    source("R/ui_styles.R")
+  }
+  
   ns <- shiny::NS(id)
-  list(
-    shiny::uiOutput(ns("selected_dataset")),
-    shiny::sliderInput(ns("LOD_thr"),
-      label = "LOD threshold for evaluation",
-      min = 4, max = 20, value = 7.5, round = TRUE)
-  )
+  
+  # Use modern styling if available, otherwise use standard controls
+  if (exists("create_slider_input", mode = "function")) {
+    list(
+      shiny::uiOutput(ns("selected_dataset")),
+      create_slider_input(ns("LOD_thr"),
+        label = "LOD threshold for evaluation",
+        min = 4, max = 20, value = 7.5, step = 0.5)
+    )
+  } else {
+    list(
+      shiny::uiOutput(ns("selected_dataset")),
+      shiny::sliderInput(ns("LOD_thr"),
+        label = "LOD threshold for evaluation",
+        min = 4, max = 20, value = 7.5, step = 0.5)
+    )
+  }
 }
 #' @rdname mainParApp
 #' @export
 mainParUI <- function(id) {
+  # Source UI styling functions if not already loaded
+  if (!exists("create_select_input", mode = "function")) {
+    source("R/ui_styles.R")
+  }
+  
   ns <- shiny::NS(id)
-  list(
-    shiny::selectizeInput(ns("which_trait"),
-      label = "Choose the trait",
-      choices = NULL,
-      multiple = FALSE,
-      options = list(placeholder = 'Search...')),
-    shiny::selectInput(ns("selected_chr"), "Zoom to Chromosome:",
-      choices = c("All",
+  
+  # Use modern styling if available, otherwise use standard controls
+  if (exists("create_select_input", mode = "function")) {
+    list(
+      create_select_input(ns("which_trait"),
+        label = "Choose the trait",
+        choices = NULL,
+        selected = NULL,
+        multiple = FALSE,
+        options = list(
+          placeholder = 'Search gene symbol...',
+          maxItems = 1,
+          maxOptions = 7
+        )),
+      create_select_input(ns("selected_chr"), 
+        label = "Zoom to Chromosome:",
+        choices = c("All",
                   "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
                   "11", "12", "13", "14", "15", "16", "17", "18", "19",
                   "X", "Y", "M"),
-      selected = "All",
-      width = "150px"))
+        selected = "All",
+        width = "150px")
+    )
+  } else {
+    list(
+      shiny::selectizeInput(ns("which_trait"),
+        label = "Choose the trait",
+        choices = NULL,
+        multiple = FALSE,
+        options = list(
+          placeholder = 'Search gene symbol...',
+          maxItems = 1,
+          maxOptions = 7
+        )),
+      shiny::selectInput(ns("selected_chr"), 
+        label = "Zoom to Chromosome:",
+        choices = c("All",
+                  "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+                  "11", "12", "13", "14", "15", "16", "17", "18", "19",
+                  "X", "Y", "M"),
+        selected = "All",
+        width = "150px")
+    )
+  }
 }
 #' @rdname mainParApp
 #' @export
