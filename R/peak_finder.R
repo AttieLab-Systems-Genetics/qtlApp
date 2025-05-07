@@ -52,19 +52,23 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL) {
         # We'll keep lodcolumn as is but also add a trait column for compatibility
         peaks_data$trait <- peaks_data$lodcolumn
         message("Added trait column based on lodcolumn")
+        message(paste("peak_finder: First few unique values in original 'lodcolumn':", paste(head(unique(peaks_data$lodcolumn), 10), collapse=", ")))
       }
       if (any(grepl("phenotype", tolower(colnames(peaks_data))))) {
         phenotype_col <- grep("phenotype", tolower(colnames(peaks_data)), value = TRUE)[1]
         # We'll keep original column and add a trait column
         peaks_data$trait <- peaks_data[[phenotype_col]]
         message("Added trait column based on phenotype column")
-        # Add new message to inspect the created 'trait' column
-        if ("trait" %in% colnames(peaks_data)) {
-          message(paste("peak_finder: First few unique values in created 'trait' column:", paste(head(unique(peaks_data$trait), 20), collapse=", "))) # Show up to 20 unique values
-        } else {
-          message("peak_finder: 'trait' column was NOT created after checking lodcolumn/phenotype.")
-        }
+        message(paste("peak_finder: First few unique values in 'trait' after phenotype check:", paste(head(unique(peaks_data$trait), 10), collapse=", ")))
       }
+      
+      # Add a message here to show the state of the 'trait' column before it might be further filtered by selected_trait
+      if ("trait" %in% colnames(peaks_data)) {
+        message(paste("peak_finder: Final unique values in 'trait' column before trait-specific filtering (if any):", paste(head(unique(peaks_data$trait), 20), collapse=", ")))
+      } else {
+        message("peak_finder: 'trait' column was NOT created from lodcolumn or phenotype.")
+      }
+
       # Filter for the specific trait if provided (case-insensitive)
       if (!is.null(selected_trait)) {
         message("Filtering for trait: ", selected_trait, " in dataset: ", selected_dataset)

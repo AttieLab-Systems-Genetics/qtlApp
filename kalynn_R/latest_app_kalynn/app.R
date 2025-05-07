@@ -23,18 +23,35 @@ library(shinyFiles)  # Added based on potential dependencies
 library(spsComps)    # Added based on potential dependencies
 library(DT)          # Added based on potential dependencies
 library(reshape2)    # Added based on potential dependencies
-# Function to source all R files in a directory recursively
-source_dir_recursive <- function(path, trace = TRUE, ...) {
-  for (nm in list.files(path, pattern = "\\.[RrSsQq]$", recursive = TRUE, full.names = TRUE)) {
-    if(trace) cat(basename(nm),":")
-    source(nm, ...)
-    if(trace) cat("\n")
-  }
-}
-# Source shared R files from the R directory relative to the Docker build context
-# (assuming Dockerfile copies the top-level R into the container's R directory)
-source_dir_recursive("R", trace = FALSE) # Source from copied R directory
-# Set maximum file upload size (adjust as needed)
+
+# Source files in specific order
+source("R/helpers.R")
+source("R/importApp.R")
+source("R/mainParApp.R")
+source("R/scanApp.R")
+source("R/peakApp.R")
+source("R/scanlyApp.R") # Might not be used if qtlApp calls scanApp, but good to keep
+source("R/qtlApp.R") # Source qtlApp itself
+source("R/mergeApp.R") # Source mergeApp
+source("R/downloadApp.R") # Source downloadApp
+source("R/cisTransPlotApp.R") # Source the new module
+source("R/ui_styles.R") # Source styles
+source("R/plot_enhancements.R") # Source plot enhancements
+source("R/plot_null.R") # Source plot null
+source("R/data_handling.R") # Source data handling
+source("R/peak_finder.R") # Source peak finder
+source("R/trait_scan.R") # Source trait scan
+source("R/ggplot_alleles.R") # Source ggplot alleles
+source("R/ggplot_qtl_scan.R") # Source ggplot qtl scan
+source("R/peak_info.R") # Source peak info
+source("R/QTL_plot_visualizer.R") # Source plot visualizer
+source("R/csv2fst.R") # Source csv2fst
+source("R/fst_rows.R") # Source fst_rows
+source("R/traitApp.R") # Source traitApp
+source("R/traitTypeApp.R") # Source traitTypeApp
+
+# Set maximum file upload size
 options(shiny.maxRequestSize = 20000*1024^2) # 20 GB
-# Launch the application defined in R/qtlApp.R
+
+# Launch the application (assuming scanApp is the desired main app for now)
 scanApp()
