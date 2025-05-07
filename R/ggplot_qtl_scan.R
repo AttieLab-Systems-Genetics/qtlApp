@@ -60,7 +60,7 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All") {
     ggplot2::scale_x_continuous(
       label = axisdf$order, 
       breaks = axisdf$center,
-      expand = ggplot2::expansion(mult = 0.15)  # Increased padding
+      expand = ggplot2::expansion(mult = c(0.01, 0.01))  # Reduced padding to 1% on each side
     ) +
     ggplot2::ylim(0, max(scan_table$LOD, na.rm=TRUE) * 1.25)
   
