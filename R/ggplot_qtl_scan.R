@@ -11,28 +11,16 @@
 #' @importFrom rlang .data
 #' @export
 ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All") {
-  # Source plot enhancement functions if not already loaded
   if (!exists("create_modern_theme", mode = "function")) {
     source("R/plot_enhancements.R")
   }
   
-  # If no data, return a null plot
-  if(is.null(scan_table) || !nrow(scan_table)) {
-    # Use the null plot function if available
-    if (exists("create_null_plot", mode = "function")) {
-      source("R/plot_null.R")
-      return(create_null_scan_plot())
-    } else {
-      return(ggplot2::ggplot())
-    }
-  }
   
   # Set x variable based on chromosome selection
   if (selected_chr == "All") {
     xvar = "BPcum"
   } else {
     xvar = "position"
-    # `scan_table` is probably already filtered by chromosome, but make sure.
     scan_table <- dplyr::filter(scan_table, .data$chr == selected_chr)
   }
   

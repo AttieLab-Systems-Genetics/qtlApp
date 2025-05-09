@@ -36,8 +36,7 @@ mainParServer <- function(id, import) {
     })
     # Update trait choices.
     shiny::observeEvent(shiny::req(input$selected_dataset), {
-      # If no dataset is selected, set the first one as default.
-      # Update the trait choices based on the selected dataset.
+     
       choices <- get_trait_choices(import(), input$selected_dataset)
       shiny::updateSelectizeInput(session, "which_trait",
         choices = choices, options = list(maxItems = 1, maxOptions = 5), server = TRUE)

@@ -1,11 +1,6 @@
 #' @export
 create_cache <- function(caches = c("peaks", "trait")) {
-  # Do nothing - caches are handled within modules or passed explicitly
-  # Original code assigned to globalenv(), causing issues in Shiny modules.
-  # for(cache_name in caches) {
-  #   assign(paste0(cache_name, "_cache"), new.env(parent = emptyenv()),
-  #     pos = globalenv())
-  # }
+  
 }
 #' @export
 get_trait_choices <- function(import, selected_dataset = NULL) {
@@ -15,7 +10,7 @@ get_trait_choices <- function(import, selected_dataset = NULL) {
   }
   trait_id <- get_trait_id(trait_type)
   trait_list = get_trait_list(import, trait_type)
-  # Choices come from elements of `import$annotation_list`
+  
   annotation_list <- import$annotation_list
   if(!(trait_type %in% c("genes", "isoforms"))) {
     choices <- annotation_list[[trait_type]][[trait_id]]
@@ -29,13 +24,9 @@ get_trait_choices <- function(import, selected_dataset = NULL) {
 join_symbol_id <- function(annotation_list,
                            trait_type = c("genes","isoforms"),
                            trait_id = get_trait_id(trait_type)) {
-  # `trait_type` should be "genes" or "isoforms"
-  # trait_id should be "gene.id" or "transcript.id"
+  
   trait_type <- match.arg(trait_type)
-  # Remove "ENSMUSG" (genes) or "ENSMUST" (transcripts)
-  # and leading zeros from the trait ID
-  # and create choices by combining the symbol and simplified ID
-  # e.g. "A1bg_1".
+  
   id <- stringr::str_remove(annotation_list[[trait_type]][[trait_id]],
                             pattern = "ENSMUS[GT]0+")
   paste(annotation_list[[trait_type]]$symbol, id, sep = "_")
@@ -52,10 +43,7 @@ highest_peaks <- function(peak_table, LOD_thr) {
 #' @importFrom stringr str_split
 #' @export
 get_selected_trait <- function(import, which_trait, selected_dataset) {
-  # Split the trait string by "_" to separate the symbol and ID.
-  # Useful for gene or transcript names and IDs.
-  # Caution: symbols may not be unique.
-  # Caution: some clinical or other traits may have "_" in name.
+ 
   trait_type <- get_trait_type(import, selected_dataset)
   if(trait_type %in% c("genes", "isoforms")) {
     which_trait <- stringr::str_split(which_trait, pattern="_")[[1]][1]
@@ -65,10 +53,10 @@ get_selected_trait <- function(import, which_trait, selected_dataset) {
 #' @importFrom reshape2 melt
 #' @export
 pivot_peaks <- function(peaks, which_peak) {
-  # Check if scan data exists and is additive
+  
   if (peaks$intcovar[1] == "none") {
     # set peaks
-    peak <- subset(peaks, marker == which_peak)  # Changed from marker.id to marker
+    peak <- subset(peaks, marker == which_peak)  
     # Check if we have data after filtering
     if (nrow(peak) > 0) {
       # Select and rename columns
@@ -78,7 +66,7 @@ pivot_peaks <- function(peaks, which_peak) {
       peak <- reshape2::melt(peak, id.vars = "marker")
     }
   } else {
-    # If not additive, return NULL
+    
     peak <- NULL
   }
   return(peak)
@@ -105,7 +93,7 @@ get_trait_id <- function(trait_type) {
 }
 chr_XYM <- function(chr) {
   if(is.null(chr)) return(NA)
-  # Convert chromosome number to X, Y, or M
+  
   if (chr %in% c(20, 21, 22)) {
     c("X", "Y", "M")[chr - 19]
   } else {

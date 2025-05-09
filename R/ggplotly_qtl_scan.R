@@ -22,14 +22,13 @@ ggplotly_qtl_scan <- function(scan_object, peak_table,
   }
   scan_table <- scan_object$table
   scan_plot <- scan_object$plot
-  # Create formatted trait text for plot title using the trait name.
+
   trait_text <- paste0("<b style='font-size: 24px;'>", peak_table$trait, "</b>")
   if (selected_chr == "All") {
     xvar = "BPcum"
   } else {
     xvar = "position"
-    # `scan_plot` and `scan_table` are already filtered by chromosome
-    # so we need to filter `peak_table`.
+  
     peak_table <- peak_table |>
       dplyr::filter(chr == selected_chr)
   }
@@ -40,7 +39,6 @@ ggplotly_qtl_scan <- function(scan_object, peak_table,
   if (nrow(peak_table)) {
     peak_point <- scan_table |>
       dplyr::filter(markers == peak_table$marker)
-    # Add red diamond at the peak
     scan_plot <- scan_plot +
       ggplot2::geom_point(data = peak_point,
         ggplot2::aes(x = .data[[xvar]], y = .data$LOD),
@@ -84,10 +82,7 @@ ggplotly_qtl_scan <- function(scan_object, peak_table,
         bordercolor = "#95a5a6"
       ),
       hovermode = "closest" #,
-      # ** there does not seem to be a way to set the double click event
-      # ** to reset the zoom level in plotly
-      # Add double click event to reset to full view
-      #doubleclick = if (selected_chr != "All") TRUE else FALSE
+      
     ) |>
     # Remove unwanted modebar buttons
     plotly::config(

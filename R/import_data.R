@@ -72,24 +72,7 @@ import_data <- function() {
                                   ""))
   message("Created group identifier in file directory.")
 
-  # --- Removed old logic relying on import.csv --- 
-  # import <- read.csv(system.file("data/import.csv", package = "qtlApp"))
-  # out <- list()
-  # for (i in 1:nrow(import)) {
-  #   ext <- tools::file_ext(import$filename[i])
-  #   switch(ext,
-  #     csv =   out[[import$object[i]]] <- read.csv(import$filename[i]),
-  #     rds =   out[[import$object[i]]] <- readRDS(import$filename[i]),
-  #     xlsx =  out[[import$object[i]]] <- readxl::read_excel(import$filename[i])
-  #   )
-  # }
-  # out$file_directory$group <- paste0(out$file_directory$diet, " ", 
-  #   out$file_directory$trait_compartment, " ",
-  #   out$file_directory$trait_type, ", ", 
-  #   out$file_directory$scan_type)
-  # -----------------------------------------------
   
-  # Return a list containing all loaded data objects
   out <- list(
     file_directory = file_directory,
     annotation_list = annotation_list,

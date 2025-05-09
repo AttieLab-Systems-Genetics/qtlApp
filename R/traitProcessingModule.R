@@ -39,8 +39,7 @@ traitProcessingServer <- function(id, trait_selected, file_dir, gene_symbols) {
         trait_info$path
       })
 
-      # Observer: Update peak threshold when trait (via trait_info) changes
-      # Triggering based on trait_selected directly might be cleaner
+     
       observeEvent(trait_selected(), {
          req(trait_selected())
          # Ensure trait exists before trying to get info
@@ -85,5 +84,3 @@ traitProcessingServer <- function(id, trait_selected, file_dir, gene_symbols) {
     }
   )
 }
-
-# Note: No UI function is needed if this module only provides reactive outputs. 

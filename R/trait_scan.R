@@ -18,18 +18,18 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
     return(cache_env[[cache_key]])
   }
   message("Searching for trait: ", selected_trait, " in dataset: ", selected_dataset)
-  # Filter the file directory for the selected dataset and scan type
+  
   file_dir <- subset(file_dir, group == selected_dataset & file_type == "scans")
   # Check if we found any matching files
   if (nrow(file_dir) == 0) {
     stop("No matching files found for the selected dataset: ", selected_dataset)
   }
   
-  # Initialize list to store data from each file
+  
   all_data <- list()
   # Process each FST file (one per chromosome)
   for (i in 1:nrow(file_dir)) {
-    # Extract chromosome number from ID_code
+   
     chr_num <- file_dir$ID_code[i]
     fst_path <- file_dir$File_path[i]
 
@@ -38,7 +38,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
       warning("File check consistency error, skipping: ", fst_path)
       next
     }
-    # Ensure we are working with an FST file
+    
     if (!stringr::str_detect(fst_path, "fst$")) {
       fst_path <- stringr::str_replace(fst_path, "csv$", "fst")
       if (!file.exists(fst_path)) {
@@ -100,15 +100,15 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
       warning("Error processing chromosome ", chr_num, ": ", e$message)
     })
   }
-  # Check if we found any data
+  
   if (length(all_data) == 0) {
     stop("Trait '", selected_trait, "' not found in any chromosome for dataset: ", selected_dataset)
   }
-  # Combine all data
+  
   combined_data <- data.table::rbindlist(all_data, fill = TRUE)
   message("Total rows in combined data: ", nrow(combined_data))
 
-  # Cache the result only if cache_env is provided
+  
   if (!is.null(cache_env)) {
     cache_env[[cache_key]] <- combined_data
   }
