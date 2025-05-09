@@ -20,7 +20,7 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_isoforms/liver_isoforms_all_mice_sex_interactive/output"
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/clinical_traits/clinical_traits_all_mice_additive/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0/"
 
 options(datatable.tmpdir = my_temp_dir)

@@ -70,21 +70,45 @@ mainParServer <- function(id, import) {
     # Update trait choices (existing logic)
     shiny::observeEvent(shiny::req(input$selected_dataset), {
       shiny::req(import())
-      choices <- get_trait_choices(import(), input$selected_dataset)
-      # Using selectizeInput for traits as it supports placeholder and server-side updates better
+      current_ds <- input$selected_dataset
+      message(paste("mainParServer: observeEvent for trait update. Dataset:", current_ds)) # DEBUG
+      
+      # Freeze input$which_trait while we update it to prevent premature reactions
+      shiny::freezeReactiveValue(input, "which_trait")
+      message("mainParServer: Froze input$which_trait.") # DEBUG
+
+      # First, clear the existing selection
+      shiny::updateSelectizeInput(session, "which_trait", choices = character(0), selected = character(0), 
+                                  options = list(placeholder = 'Loading traits...')) 
+      message("mainParServer: Cleared which_trait via updateSelectizeInput.") # DEBUG
+
+      choices <- get_trait_choices(import(), current_ds)
+      message(paste("mainParServer: Generated trait choices for", current_ds, ":", paste(head(choices), collapse=", "))) # DEBUG 
+      
+      new_selected_trait <- NULL
+      if (!is.null(choices) && length(choices) > 0) {
+        new_selected_trait <- choices[1] 
+        message(paste("mainParServer: For dataset", current_ds, ", new_selected_trait will be:", new_selected_trait)) # DEBUG
+      } else {
+        message(paste("mainParServer: No trait choices found for dataset", current_ds))
+      }
+      
+      # Update with new choices and select the first one
+      # No need to freeze again if this is the last update to which_trait in this observer block
       shiny::updateSelectizeInput(session, "which_trait",
         choices = choices, 
-        selected = if(length(choices) > 0) choices[1] else NULL, # Auto-select first trait
-        options = list(placeholder = 'Search gene symbol...', maxItems = 1, maxOptions = 7), 
-        server = TRUE # Keep server=TRUE if choices can be very long
+        selected = new_selected_trait, 
+        options = list(placeholder = 'Search or select trait...', maxItems = 1, maxOptions = 10), 
+        server = TRUE 
       )
+      message(paste("mainParServer: updateSelectizeInput for 'which_trait' called. Choices sent:", paste(head(choices),collapse=", "), "Attempted to select:", new_selected_trait)) # DEBUG
     })
 
     # Show returned values.
     output$returns <- shiny::renderPrint({
       cat("dataset_category =", input$dataset_category,
           "\nselected_dataset =", input$selected_dataset,
-          "\nwhich_trait =", input$which_trait,
+          "\nwhich_trait =", input$which_trait, # Directly show input$which_trait for debugging output
           "\nselected_chr =", input$selected_chr,
           "\nLOD_thr =", input$LOD_thr)
     })
@@ -94,7 +118,12 @@ mainParServer <- function(id, import) {
       list(
         dataset_category = shiny::reactive(input$dataset_category),
         selected_dataset = shiny::reactive(input$selected_dataset),
-        which_trait = shiny::reactive(input$which_trait),
+        which_trait = shiny::reactive({ # This reactive will now directly reflect input$which_trait
+          # It relies on the observeEvent to ensure input$which_trait is valid.
+          # Downstream req(main_par$which_trait()) will handle moments when it might be NULL or empty during updates.
+          message(paste("mainParServer: main_par$which_trait() is returning direct input$which_trait:", input$which_trait)) # DEBUG
+          input$which_trait
+        }),
         selected_chr = shiny::reactive(input$selected_chr),
         LOD_thr = shiny::reactive(input$LOD_thr)
       )

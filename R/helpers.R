@@ -77,9 +77,23 @@ get_trait_type <- function(import, selected_dataset = NULL) {
     return(NULL)
   }
   file_directory <- import$file_directory
-  file_directory <- subset(file_directory, group == selected_dataset)
-  trait_type <- tolower(file_directory$trait_type[1])
-  trait_type
+  # Filter for the selected dataset
+  file_directory_subset <- subset(file_directory, group == selected_dataset)
+  
+  if(nrow(file_directory_subset) == 0) {
+    warning(paste("No entry found for dataset:", selected_dataset, "in file directory. Cannot determine trait_type."))
+    return(NULL)
+  }
+  
+  # Get trait_type from the first entry of the subset and convert to lowercase
+  trait_type_from_file <- tolower(file_directory_subset$trait_type[1])
+  
+  # Standardize "clinical traits" to "clinical"
+  if (trait_type_from_file == "clinical traits") {
+    return("clinical")
+  }
+  
+  return(trait_type_from_file)
 }
 get_trait_list <- function(import, trait_type) {
   annotation_list <- import$annotation_list
