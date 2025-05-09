@@ -31,18 +31,67 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
   for (i in 1:nrow(file_dir)) {
    
     chr_num <- file_dir$ID_code[i]
-    fst_path <- file_dir$File_path[i]
+    original_fst_path <- file_dir$File_path[i] # Path from file_index.csv
+    
+    # Get trait_type for this specific file row and convert to lowercase
+    file_specific_trait_type_from_file <- tolower(file_dir$trait_type[i]) 
 
-    # No longer strictly necessary, but keep as a safeguard
+    # Standardize "clinical traits" to "clinical" for consistent logic
+    processed_trait_type <- file_specific_trait_type_from_file
+    if (file_specific_trait_type_from_file == "clinical traits") {
+      processed_trait_type <- "clinical"
+    }
+
+    corrected_fst_path <- original_fst_path
+
+    if (!is.na(processed_trait_type) && processed_trait_type != "") {
+        if (processed_trait_type == "clinical") {
+            if (grepl("_with_symbols\\.fst$", original_fst_path)) {
+                corrected_fst_path <- sub("_with_symbols\\.fst$", "_processed.fst", original_fst_path)
+                message(paste("Clinical type for file '", basename(original_fst_path), "', adjusted path to: '", basename(corrected_fst_path), "'"))
+            } else if (!grepl("_processed\\.fst$", original_fst_path)) {
+                # If it's clinical and not _processed and not _with_symbols, assume it's a base name and add _processed.fst
+                corrected_fst_path <- paste0(tools::file_path_sans_ext(original_fst_path), "_processed.fst")
+                message(paste("Clinical type for file '", basename(original_fst_path), "', assumed base, adjusted path to: '", basename(corrected_fst_path), "'"))
+            }
+        } else if (processed_trait_type %in% c("genes", "isoforms")) {
+            if (grepl("_processed\\.fst$", original_fst_path)) {
+                corrected_fst_path <- sub("_processed\\.fst$", "_with_symbols.fst", original_fst_path)
+                message(paste("Gene/Isoform type for file '", basename(original_fst_path), "', adjusted path to: '", basename(corrected_fst_path), "'"))
+            } else if (!grepl("_with_symbols\\.fst$", original_fst_path)) {
+                # If it's gene/isoform and not _with_symbols and not _processed, assume it's a base name and add _with_symbols.fst
+                corrected_fst_path <- paste0(tools::file_path_sans_ext(original_fst_path), "_with_symbols.fst")
+                message(paste("Gene/Isoform type for file '", basename(original_fst_path), "', assumed base, adjusted path to: '", basename(corrected_fst_path), "'"))
+            }
+        } else {
+            message(paste("Unknown or unspecified trait_type ('", processed_trait_type, "') for file '", basename(original_fst_path), "'. Using original path."))
+        }
+    } else {
+        warning(paste("Missing or empty trait_type for file '", basename(original_fst_path), "'. Using original path. Please check file_index.csv."))
+    }
+
+    fst_path <- corrected_fst_path # Use the corrected (or original if no correction applied) path
+
+    # Safeguard: Check if the (potentially corrected) file exists
     if (!file.exists(fst_path)) {
-      warning("File check consistency error, skipping: ", fst_path)
+      warning("File check consistency error or corrected path invalid, skipping: ", fst_path, " (Original was: ", original_fst_path, ")")
       next
     }
     
+    # This check for .fst extension might be redundant if corrections ensure .fst, but kept for safety
     if (!stringr::str_detect(fst_path, "fst$")) {
-      fst_path <- stringr::str_replace(fst_path, "csv$", "fst")
-      if (!file.exists(fst_path)) {
-        warning("FST file not found: ", fst_path)
+      # Attempt to replace .csv with .fst only if it's a .csv, otherwise log a warning
+      if (stringr::str_detect(fst_path, "csv$")){
+        fst_path_csv_replaced <- stringr::str_replace(fst_path, "csv$", "fst")
+        if (!file.exists(fst_path_csv_replaced)) {
+            warning("Original path was not FST, and replacing .csv with .fst also not found: ", fst_path_csv_replaced, " (Original non-FST path was: ", fst_path, ")")
+            next
+        } else {
+            message("Path was CSV, switched to FST: ", fst_path_csv_replaced)
+            fst_path <- fst_path_csv_replaced
+        }
+      } else {
+        warning("File path does not end with .fst and is not .csv, skipping: ", fst_path)
         next
       }
     }
