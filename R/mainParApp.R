@@ -26,25 +26,64 @@ mainParApp <- function(id) {
 mainParServer <- function(id, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    # Select `selected_dataset` = `group`.
+
+    # Populate Dataset Category choices
+    output$dataset_category <- shiny::renderUI({
+      shiny::req(import(), import()$file_directory)
+      # Assuming file_directory now has a 'dataset_category' column
+      if (!("dataset_category" %in% colnames(import()$file_directory))){
+        warning("mainParServer: 'dataset_category' column missing in file_directory.")
+        return(shiny::selectInput(ns("dataset_category"), label = "Dataset Category:", choices = "Error: category column missing"))
+      }
+      categories <- sort(unique(import()$file_directory$dataset_category))
+      selected_category <- if (length(categories) > 0) categories[1] else NULL
+      
+      if (exists("create_select_input", mode = "function")) {
+        create_select_input(ns("dataset_category"), label = "Dataset Category:", 
+                            choices = categories, selected = selected_category, multiple = FALSE)
+      } else {
+        shiny::selectInput(ns("dataset_category"), label = "Dataset Category:", 
+                           choices = categories, selected = selected_category, multiple = FALSE)
+      }
+    })
+
+    # Populate Dataset choices based on selected category
     output$selected_dataset <- shiny::renderUI({
-      shiny::req(import())
-      choices <- unique(import()$file_directory$group)
-      selected <- choices[1]
-      shiny::selectizeInput(ns("selected_dataset"), label = "Choose a dataset",
-        choices = choices, selected = selected, multiple = FALSE)
+      shiny::req(import(), import()$file_directory, input$dataset_category)
+      if (!("dataset_category" %in% colnames(import()$file_directory)) || !("group" %in% colnames(import()$file_directory))){
+         warning("mainParServer: Required columns missing for dataset filtering.")
+         return(shiny::selectInput(ns("selected_dataset"), label = "Choose a dataset:", choices = "Error: columns missing"))
+      }
+      filtered_files <- dplyr::filter(import()$file_directory, .data$dataset_category == input$dataset_category)
+      choices <- sort(unique(filtered_files$group))
+      selected <- if (length(choices) > 0) choices[1] else NULL
+      
+      if (exists("create_select_input", mode = "function")) {
+        create_select_input(ns("selected_dataset"), label = "Choose a dataset:",
+                            choices = choices, selected = selected, multiple = FALSE)
+      } else {
+        shiny::selectInput(ns("selected_dataset"), label = "Choose a dataset:",
+                           choices = choices, selected = selected, multiple = FALSE)
+      }
     })
-    # Update trait choices.
+
+    # Update trait choices (existing logic)
     shiny::observeEvent(shiny::req(input$selected_dataset), {
-     
+      shiny::req(import())
       choices <- get_trait_choices(import(), input$selected_dataset)
+      # Using selectizeInput for traits as it supports placeholder and server-side updates better
       shiny::updateSelectizeInput(session, "which_trait",
-        choices = choices, options = list(maxItems = 1, maxOptions = 5), server = TRUE)
+        choices = choices, 
+        selected = if(length(choices) > 0) choices[1] else NULL, # Auto-select first trait
+        options = list(placeholder = 'Search gene symbol...', maxItems = 1, maxOptions = 7), 
+        server = TRUE # Keep server=TRUE if choices can be very long
+      )
     })
+
     # Show returned values.
     output$returns <- shiny::renderPrint({
-      # Use input values directly for display if needed
-      cat("selected_dataset =", input$selected_dataset,
+      cat("dataset_category =", input$dataset_category,
+          "\nselected_dataset =", input$selected_dataset,
           "\nwhich_trait =", input$which_trait,
           "\nselected_chr =", input$selected_chr,
           "\nLOD_thr =", input$LOD_thr)
@@ -53,11 +92,11 @@ mainParServer <- function(id, import) {
     # Return reactive expressions for inputs
     return(
       list(
+        dataset_category = shiny::reactive(input$dataset_category),
         selected_dataset = shiny::reactive(input$selected_dataset),
         which_trait = shiny::reactive(input$which_trait),
         selected_chr = shiny::reactive(input$selected_chr),
         LOD_thr = shiny::reactive(input$LOD_thr)
-        # Add other inputs if they need to be returned reactively
       )
     )
   })
@@ -72,21 +111,22 @@ mainParInput <- function(id) {
   
   ns <- shiny::NS(id)
   
-  # Use modern styling if available, otherwise use standard controls
-  if (exists("create_slider_input", mode = "function")) {
+  if (exists("create_select_input", mode = "function")) {
     list(
-      shiny::uiOutput(ns("selected_dataset")),
+      shiny::uiOutput(ns("dataset_category")), # UI for new category dropdown
+      shiny::uiOutput(ns("selected_dataset")), # Existing dataset dropdown
       create_slider_input(ns("LOD_thr"),
         label = "LOD threshold for evaluation",
         min = 4, max = 20, value = 7.5, step = 0.5)
     )
   } else {
-  list(
-    shiny::uiOutput(ns("selected_dataset")),
-    shiny::sliderInput(ns("LOD_thr"),
-      label = "LOD threshold for evaluation",
+    list(
+      shiny::uiOutput(ns("dataset_category")),
+      shiny::uiOutput(ns("selected_dataset")), 
+      shiny::sliderInput(ns("LOD_thr"),
+        label = "LOD threshold for evaluation",
         min = 4, max = 20, value = 7.5, step = 0.5)
-  )
+    )
   }
 }
 #' @rdname mainParApp
