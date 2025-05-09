@@ -189,19 +189,6 @@ create_plot_error_bar <- function(color = "#2c3e50", width = 1, thickness = 1) {
   )
 }
 
-# Modern strain colors for QTL plots
-create_strain_colors <- function() {
-  c(
-    "AJ" = "#000000",    # Black
-    "B6" = "#96989A",    # Gray
-    "129" = "#E69F00",   # Orange
-    "NOD" = "#0072B2",   # Blue
-    "NZO" = "#619BFF",   # Light Blue
-    "CAST" = "#009E73",  # Green
-    "PWK" = "#D55E00",   # Dark Orange
-    "WSB" = "#CC79A7"    # Pink
-  )
-}
 
 # Function to customize chromosome plot appearance
 customize_chromosome_plot <- function(p, selected_chr = "All") {
@@ -212,7 +199,7 @@ customize_chromosome_plot <- function(p, selected_chr = "All") {
     panel.grid.minor.x = element_blank()
   )
   
-  # Set appropriate x-axis label based on view
+  # Set appropriate x-ßaxis label based on view
   x_label <- if(selected_chr == "All") "Chromosome" else paste("Position on Chr", selected_chr, "(Mb)")
   p <- p + labs(x = x_label, y = "LOD Score")
   

@@ -89,13 +89,13 @@ process_allele_effects <- function(allele_path, id_to_symbol) {
 # Main execution
 main <- function() {
     # Read gene annotations
-    gene_data <- read_gene_annotations("/mnt/rdrive/mkeller3/General/main_directory/files_for_cross_object_v5/gene_annotations.csv")
+    gene_data <- read_gene_annotations("/mnt/rdrive/mkeller3/General/main_directory/files_for_cross_object/gene_annotations.csv")
     
     # Define input directory
     input_dir <- "/data/dev/miniViewer_3.0"
     
     # Process allele effects file
-    allele_file <- file.path(input_dir, "consolidate_allele_effects_v5_simple_scan_genes_additive_female_mice.csv")
+    allele_file <- file.path(input_dir, "consolidate_allele_effects_liver_isoforms_all_mice_sex_interactive.csv")
     new_allele_path <- process_allele_effects(allele_file, gene_data$id_to_symbol)
     
     message("Allele effects processing complete")

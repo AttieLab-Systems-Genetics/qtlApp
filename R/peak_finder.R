@@ -25,13 +25,6 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, cache
           if(!is.null(selected_trait)) paste("(for trait:", selected_trait, ")") else "(all traits)")
   empty_peaks <- create_empty_peaks()
   
-  # Filter file_dir for the peaks file for the selected dataset
-  # IMPORTANT: peak_finder should read the WHOLE dataset's peaks file, 
-  #            filtering by selected_trait happens LATER if needed (e.g., in peakServer)
-  #            OR if selected_trait is passed explicitly to peak_finder for that purpose.
-  #            The current logic reads the whole file if selected_trait=NULL (correct for cisTransPlot) 
-  #            or if caching is off/misses.
-  #            If selected_trait is provided AND cache is off/misses, it reads the whole file then filters.
   
   file_dir_filtered <- subset(file_dir, group == selected_dataset & file_type == "peaks")
   
@@ -109,7 +102,7 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, cache
           }
         }
       }
-      # Check if we have all required columns
+      
       if (!all(required_cols %in% colnames(peaks_data))) {
         missing_cols <- required_cols[!(required_cols %in% colnames(peaks_data))]
         warning("Missing required columns in peaks file: ", paste(missing_cols, collapse=", "))
