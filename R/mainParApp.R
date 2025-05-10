@@ -104,11 +104,43 @@ mainParServer <- function(id, import) {
       message(paste("mainParServer: updateSelectizeInput for 'which_trait' called. Choices sent:", paste(head(choices),collapse=", "), "Attempted to select:", new_selected_trait)) # DEBUG
     })
 
+    # Reactive for currently selected trait based on UI input, but validated against current dataset
+    current_selected_trait <- shiny::reactive({
+      shiny::req(input$selected_dataset) # Require selected_dataset first
+      
+      current_ds <- input$selected_dataset
+      current_trait_input <- input$which_trait # Value from UI
+      
+      message(paste("mainParServer: current_selected_trait CALC START. Dataset:", current_ds, "UI which_trait:", current_trait_input)) # DEBUG
+
+      valid_choices <- get_trait_choices(import(), current_ds)
+      message(paste("mainParServer: current_selected_trait valid_choices for", current_ds, ":", paste(head(valid_choices), collapse=", "))) # DEBUG
+
+      final_trait_to_return <- NULL
+
+      if (!is.null(valid_choices) && length(valid_choices) > 0) {
+        if (!is.null(current_trait_input) && current_trait_input %in% valid_choices) {
+          final_trait_to_return <- current_trait_input
+          message(paste("mainParServer: UI which_trait (", current_trait_input, ") is VALID. Returning it.")) # DEBUG
+        } else {
+          final_trait_to_return <- valid_choices[1] # Default to first valid choice
+          message(paste("mainParServer: UI which_trait (", current_trait_input, ") is INVALID or NULL. Defaulting to first valid choice:", final_trait_to_return)) # DEBUG
+        }
+      } else {
+        message(paste("mainParServer: No valid_choices for dataset", current_ds, ". Returning NULL from current_selected_trait.")) # DEBUG
+      }
+      
+      # This req ensures we don't proceed with a NULL trait if no valid options exist.
+      shiny::req(final_trait_to_return, cancelOutput = TRUE) # cancelOutput will prevent downstream errors if this is NULL
+      message(paste("mainParServer: current_selected_trait CALC END. Returning:", final_trait_to_return)) # DEBUG
+      return(final_trait_to_return)
+    })
+
     # Show returned values.
     output$returns <- shiny::renderPrint({
       cat("dataset_category =", input$dataset_category,
           "\nselected_dataset =", input$selected_dataset,
-          "\nwhich_trait =", input$which_trait, # Directly show input$which_trait for debugging output
+          "\nwhich_trait =", input$which_trait,
           "\nselected_chr =", input$selected_chr,
           "\nLOD_thr =", input$LOD_thr)
     })
@@ -118,12 +150,7 @@ mainParServer <- function(id, import) {
       list(
         dataset_category = shiny::reactive(input$dataset_category),
         selected_dataset = shiny::reactive(input$selected_dataset),
-        which_trait = shiny::reactive({ # This reactive will now directly reflect input$which_trait
-          # It relies on the observeEvent to ensure input$which_trait is valid.
-          # Downstream req(main_par$which_trait()) will handle moments when it might be NULL or empty during updates.
-          message(paste("mainParServer: main_par$which_trait() is returning direct input$which_trait:", input$which_trait)) # DEBUG
-          input$which_trait
-        }),
+        which_trait = current_selected_trait, # Use the new validated reactive
         selected_chr = shiny::reactive(input$selected_chr),
         LOD_thr = shiny::reactive(input$LOD_thr)
       )

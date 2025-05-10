@@ -149,12 +149,22 @@ main <- function() {
         stop("Input directory not found: ", input_dir)
     }
     
-    # Example: Process a specific clinical allele effects file
-    clinical_allele_file <- file.path(input_dir, "consolidate_allele_effects_clinical_traits_all_mice_additive.csv")
-    if (file.exists(clinical_allele_file)) {
-        process_allele_effects(clinical_allele_file, gene_data$id_to_symbol)
+    # Process the ADDITIVE clinical allele effects file
+    additive_allele_file <- file.path(input_dir, "consolidate_allele_effects_clinical_traits_all_mice_additive.csv")
+    if (file.exists(additive_allele_file)) {
+        message("\nProcessing ADDITIVE clinical allele file: ", basename(additive_allele_file))
+        process_allele_effects(additive_allele_file, gene_data$id_to_symbol)
     } else {
-        warning("Clinical allele file not found: ", clinical_allele_file)
+        warning("ADDITIVE Clinical allele file not found: ", additive_allele_file)
+    }
+
+    # Process the DIET INTERACTIVE clinical allele effects file
+    interactive_allele_file <- file.path(input_dir, "consolidate_allele_effects_clinical_traits_all_mice_diet_interactive.csv")
+    if (file.exists(interactive_allele_file)) {
+        message("\nProcessing DIET INTERACTIVE clinical allele file: ", basename(interactive_allele_file))
+        process_allele_effects(interactive_allele_file, gene_data$id_to_symbol)
+    } else {
+        warning("DIET INTERACTIVE Clinical allele file not found: ", interactive_allele_file)
     }
 
     # Example: Process a specific gene/isoform allele effects file (replace with actual filename if you have one)
@@ -165,7 +175,7 @@ main <- function() {
     #     warning("Gene/isoform allele file not found: ", gene_allele_file)
     # }
     
-    message("\nAllele effects processing attempt complete.")
+    message("\nAllele effects processing attempt complete for specified files.")
     message("Please check messages above for status of each file.")
 }
 
