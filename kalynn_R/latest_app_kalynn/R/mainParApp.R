@@ -38,10 +38,28 @@ mainParUI <- function(id) {
                  multiple = FALSE,
                  options = list(
                      placeholder = 'Search gene symbol (e.g., Gnai3)',
+                     # valueField = 'value', # Removed - using simple choices vector
+                     # labelField = 'label', # Removed
+                     # searchField = 'label', # Removed
                      maxOptions = 7,
-                     # create = FALSE, # Allow creation? Example had it FALSE
-                     maxItems = 1
-                 )),
+                     maxItems = 1,
+                     # Custom rendering functions (JavaScript)
+                     render = I(paste0( # Use paste0 to build the string explicitly
+                        "({\n", # Start parenthesis and object
+                        "  option: function(item, escape) {\n",
+                        "    if (item.value !== item.label) {\n",
+                        "      return '<div>' + escape(item.label) + ' <span style=\"color: #888;\">(ID: ' + escape(item.value.split('_').pop()) + ')</span></div>'\n", 
+                        "    } else {\n",
+                        "      return '<div>' + escape(item.label) + '</div>';\n",
+                        "    }\n",
+                        "  },\n", # Comma between functions
+                        "  item: function(item, escape) {\n",
+                        "    return '<div>' + escape(item.label) + '</div>';\n",
+                        "  }\n",
+                        "})")) # End object and parenthesis
+                 )
+                 ),
+
     # Chromosome Selector (moved from app.R LOD Plot tab)
     shiny::selectInput(ns("selected_chr"), "Zoom to Chromosome:",
                 choices = c("All", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
@@ -100,17 +118,18 @@ mainParServer <- function(id, import_data) {
       
       # Get initial subset for display if choices are numerous
       # This mirrors the behavior in the original app.R
-      display_choices <- if (length(trait_choices) > 100) {
-          utils::head(trait_choices, 100)
-      } else {
-          trait_choices
-      }
+      # display_choices <- if (length(trait_choices) > 100) {
+      #     utils::head(trait_choices, 100)
+      # } else {
+      #     trait_choices
+      # }
 
       # Update the selectize input for traits
+      # Pass all choices to the client and disable server-side processing
       shiny::updateSelectizeInput(session, "which_trait",
-                                  choices = display_choices, 
+                                  choices = trait_choices, # Pass all choices
                                   selected = "", # Clear selection when dataset changes
-                                  server = TRUE) # Enable server-side searching if many options
+                                  server = FALSE) # Use client-side filtering
                                   
        message("Updated trait choices for dataset: ", input$selected_dataset)
     }, ignoreNULL = TRUE, ignoreInit = TRUE) # ignoreNULL ensures it runs on first selection, ignoreInit prevents run on startup before UI exists

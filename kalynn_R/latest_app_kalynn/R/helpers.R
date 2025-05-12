@@ -5,13 +5,20 @@
 #' @param caches A character vector specifying which caches to create (default: c("peaks", "trait")).
 #' @export
 create_cache <- function(caches = c("peaks", "trait")) {
+  message("--- Running create_cache() ---")
   for(cache_name in caches) {
-    env_name <- paste0(cache_name, "_cache")
-    if (!exists(env_name, envir = .GlobalEnv)) {
-      assign(env_name, new.env(parent = emptyenv()), envir = .GlobalEnv)
-      message("Created ", env_name, " environment.")
+    cache_obj_name <- paste0(cache_name, "_cache")
+    message("  Assigning ", cache_obj_name, " to globalenv()")
+    assign(cache_obj_name, new.env(parent = emptyenv()),
+      pos = globalenv())
+    # Verify assignment
+    if(exists(cache_obj_name, envir = globalenv())){
+        message("  Verified: ", cache_obj_name, " exists in globalenv()")
+    } else {
+        warning("  Verification FAILED: ", cache_obj_name, " NOT found in globalenv() after assign()")
     }
   }
+  message("--- Finished create_cache() ---")
 }
 
 #' Get Trait Type from Selected Dataset
@@ -115,15 +122,20 @@ get_trait_choices <- function(file_directory, annotation_list, selected_dataset 
   trait_id <- get_trait_id(trait_type)
   
   if(!(trait_type %in% c("genes", "isoforms"))) {
+      # For non-gene/isoform types, use the ID directly
       if(!(trait_id %in% colnames(trait_list_df))){
           warning("Trait ID column ", trait_id, " not found in annotation for type: ", trait_type)
           return(NULL)
       }
-    choices <- trait_list_df[[trait_id]]
+    choices <- unique(trait_list_df[[trait_id]])
+    # Removed explicit list structure
   } else { # "genes", "isoforms"
+    # For genes/isoforms, create Symbol_ID for value using helper
     choices <- join_symbol_id(annotation_list, trait_type, trait_id)
+    # Removed explicit list structure
   }
-  sort(unique(choices))
+  
+  sort(unique(choices)) # Return sorted unique vector
 }
 
 #' Get Selected Trait Symbol/Name
