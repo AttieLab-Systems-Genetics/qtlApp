@@ -71,8 +71,8 @@ qtlServer <- function(id) {
       import <- importServer("import")
       main_par <- mainParServer("main_par", import)
       scan_list <- scanServer("scan_list", main_par, import)
-      peak_table <- peakServer("peak_table", main_par, import)
-      scanlyServer("scanly", main_par, scan_list, peak_table)
+      peak_list <- peakServer("peak_list", main_par, import)
+      scanlyServer("scanly", main_par, scan_list, peak_list)
   })
 }
 #' @rdname qtlApp
@@ -83,7 +83,7 @@ qtlInput <- function(id) {
     shiny::helpText("Select your dataset, trait to show, and other options"),
     mainParInput(ns("main_par")), # "group", "LOD_thr"
     mainParUI(ns("main_par")),    # "which_trait", "selected_chr"
-    peakInput(ns("peak_table")))  # "which_peak", "alleles" actionButton
+    peakInput(ns("peak_list")))  # "which_peak", "alleles" actionButton
 }
 #' @rdname qtlApp
 #' @export
@@ -92,6 +92,7 @@ qtlOutput <- function(id) {
   list(
     scanlyOutput(ns("scanly")),
     scanlyUI(ns("scanly")),
-    peakOutput(ns("peak_table"))
+    peakUI(ns("peak_list")),
+    peakOutput(ns("peak_list"))
   )
 }
