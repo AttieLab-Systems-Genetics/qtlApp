@@ -82,12 +82,14 @@ scanlyServer <- function(id, main_par, scan_list, peak_list) {
     # `stable_peak()` changes when `max_peak()` or `plotly_click()` changes.
     # `max_peak()` has maximum peak when reactives change.
     # `plotly_click()` has click event data from plotly.
+    # ** want stable_peak() to include existing peak table and clicked point **
+    # ** want to show table at start and when selected_chr change **
     stable_peak <- shiny::reactiveVal(NULL)
     plotly_click <- shiny::reactive({
       plotly::event_data("plotly_click", source = "scanly_plot")
     })
     shiny::observeEvent(shiny::req(plotly_click()), {
-      shiny::req(peak_info(peak_table(), which_peak()))
+      shiny::req(peak_table(), scan_table(), which_peak())
       out <- peak_info(peak_table(), scan_table(), which_peak(), plotly_click())
       stable_peak(out)
       out
@@ -99,13 +101,14 @@ scanlyServer <- function(id, main_par, scan_list, peak_list) {
       ordered_peaks$marker[1]
     })
     max_peak <- shiny::reactive({
-      shiny::req(peak_info(peak_table(), which_peak()))
+      shiny::req(peak_table(), scan_table(), which_peak(), main_par$selected_chr)
       out <- peak_info(peak_table(), scan_table(), which_peak())
       stable_peak(out)
       out
     })
     output$clicked_point_info <- DT::renderDT({
-      shiny::req(max_peak(), plotly_click())
+      shiny::req(stable_peak(), scan_plot(), scan_table(), which_peak(), plotly_click(),
+        main_par$selected_chr)
       DT::datatable(
         stable_peak(),
         options = list(dom = 't', ordering = FALSE, pageLength = 1),
@@ -117,7 +120,6 @@ scanlyServer <- function(id, main_par, scan_list, peak_list) {
     })
     output$high_peak <- shiny::renderUI({
       list(
-        shiny::renderPrint(paste(dim(stable_peak()), collapse = " ")),
         shiny::renderPrint({
           if(shiny::isTruthy(plotly_click())) {
             paste("Clicked point: x =", plotly_click()$x, ", y =", plotly_click()$y)
