@@ -348,7 +348,7 @@ scanServer <- function(id, main_par, import, trait_cache) {
       }
     )
     
-    file_name_isolate <- shiny::isolate({
+    file_name_reactive <- shiny::reactive({
       trait_name <- main_par$which_trait() %||% "scan"
       instanceID <- trait_name
       selected_chromosome <- main_par$selected_chr()
@@ -362,7 +362,7 @@ scanServer <- function(id, main_par, import, trait_cache) {
     `%||%` <- function(a, b) if (!is.null(a)) a else b
 
     shiny::reactiveValues(
-      filename = file_name_isolate, # For existing downloadApp module if it uses this
+      filename = shiny::isolate(file_name_reactive()), # For existing downloadApp module if it uses this
       no_download = "tables_scan",
       tables = shiny::reactiveValues(scan = scan_table_chr),
       plots  = shiny::reactiveValues(scan = current_scan_plot_gg) # Ensure this is the plot with dynamic sizing

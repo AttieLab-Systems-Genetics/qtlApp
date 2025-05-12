@@ -174,7 +174,7 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
       peak <- pivot_peaks(peak_table(), input$which_peak)
       ggplot_alleles(peak)
     })
-    file_name <- shiny::isolate({
+    file_name <- shiny::reactive({
       # Evaluate which_trait reactive
       trait_val <- shiny::req(main_par$which_trait())
       peak_val <- shiny::req(input$which_peak)
@@ -198,7 +198,7 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
     })
     # Return `peak_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
     shiny::reactiveValues(
-      filename = file_name,
+      filename = shiny::isolate(file_name()),
       tables = shiny::reactiveValues(
         peak = peak_table),
       plots  = shiny::reactiveValues(
