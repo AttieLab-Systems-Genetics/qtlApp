@@ -28,59 +28,26 @@ importApp <- function() {
 #' @export
 importServer <- function(id) {
   shiny::moduleServer(id, function(input, output, session) {
-    ns <- session$ns
-    # Create caches for other apps.
+    # Call the updated import_data function to load all necessary data
+    loaded_data <- import_data()
+    
+    # Create caches - Call the (now empty) create_cache function 
+    # just in case other code expects it to be called, though it does nothing.
     create_cache()
-    # Import data from "data/import.csv".
-    import <- import_data()
-    annots <- names(import$annotation_list)
-    output$import_data <- shiny::renderUI({
-      shiny::selectInput(ns("import_data"),
-        label = "Choose a filename",
-        choices = names(import))
-      })
-    output$annots <- shiny::renderUI({
-      if (shiny::req(input$import_data) == 'annotation_list') {
-        shiny::selectInput(ns("annotation_list"),
-          label = "Choose a dataset",
-          choices = annots)
-        }
-    })
-    output$show_data <- DT::renderDT({
-        object <- shiny::req(input$import_data)
-        if (object == 'annotation_list') {
-          df <- import[[object]][[shiny::req(input$annotation_list)]]
-        } else {
-          df <- import[[object]]
-        }
-        df
-      }, 
-      options = list(paging = TRUE,    ## paginate the output
-        pageLength = 5,  ## number of rows to output for each page
-        lengthMenu = c(5, 10, 25, 50, 100), ## number of rows to display
-        autoWidth = TRUE,
-        scrollX = TRUE,
-        scrollY = "400px",
-        searching = FALSE,
-        ordering = FALSE,
-        columnDefs = list(list(className = 'dt-center', targets = "_all"))
-      )
-    )
-    # Return
-    shiny::reactive(import)
+    
+    # Return the loaded data list wrapped in a reactive
+    shiny::reactive(loaded_data)
   })
 }
 #' @rdname importApp
 #' @export
 importUI <- function(id) {
-  ns <- shiny::NS(id)
-  list(
-    shiny::uiOutput(ns("import_data")),
-    shiny::uiOutput(ns("annots")))
+  # Return empty list as UI is handled by mainApp
+  list()
 }
 #' @rdname importApp
 #' @export
 importOutput <- function(id) {
-  ns <- shiny::NS(id)
-  DT::DTOutput(ns('show_data'))
+  # Return empty list as output is handled by mainApp
+  list()
 }

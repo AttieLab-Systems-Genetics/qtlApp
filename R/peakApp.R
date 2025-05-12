@@ -6,7 +6,7 @@
 #' @importFrom DT datatable DTOutput renderDT
 #' @importFrom shiny moduleServer NS observeEvent plotOutput reactive renderPlot
 #'             renderText req selectizeInput setProgress shinyApp textOutput
-#'             updateSelectizeInput withProgress
+#'             updateSelectizeInput withProgress h4 div
 #' @importFrom bslib card card_header page_sidebar sidebar
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom stringr str_split
@@ -41,66 +41,133 @@ peakApp <- function() {
 }
 #' @rdname peakApp
 #' @export
-peakServer <- function(id, main_par, import) {
+peakServer <- function(id, main_par, import_data, peaks_cache) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # ** new version uses marker not trait **
+    shiny::observe({
+      message("--- peakServer Debug ---")
+      message(paste("Selected Dataset (from main_par):", shiny::isolate(main_par$selected_dataset())))
+      message(paste("Which Trait (from main_par):", shiny::isolate(main_par$which_trait())))
+      imp_data <- shiny::isolate(import_data())
+      if(!is.null(imp_data) && !is.null(imp_data$file_directory)){
+        message(paste("Imported file_directory rows:", nrow(imp_data$file_directory)))
+      } else {
+        message("Imported file_directory is NULL or not fully available yet.")
+      }
+      message("------------------------")
+    })
 
     chosen_trait <- shiny::reactive({
-      shiny::req(import(), main_par$which_trait, main_par$selected_dataset)
-      get_selected_trait(import(),
-                         main_par$which_trait, main_par$selected_dataset)
+      shiny::req(import_data(), main_par$which_trait(), main_par$selected_dataset()) 
+      # Get selected trait and log it
+      trait_val <- get_selected_trait(import_data(),
+                         main_par$which_trait(), main_par$selected_dataset())
+      message(paste("peakServer chosen_trait_reactive: Calculated chosen_trait as:", trait_val))
+      trait_val
     })
     peak_table <- shiny::reactive({
-      shiny::req(main_par$selected_dataset, chosen_trait())
-      shiny::withProgress(
-        message = paste("peaks of", chosen_trait(), "in progress"),
-        value = 0, {
-          shiny::setProgress(1)
-          subset(
-            suppressMessages(peak_finder(import()$file_directory,
-                                         main_par$selected_dataset)),
-            trait == chosen_trait())
-        })
+      shiny::req(main_par$selected_dataset(), chosen_trait())
+      
+      # For logging
+      current_dataset <- main_par$selected_dataset()
+      current_chosen_trait <- chosen_trait()
+      message(paste("peak_table_reactive: Attempting peak_finder for trait '", current_chosen_trait, "' in dataset '", current_dataset, "'"))
+      
+      # Call peak_finder, passing the peaks_cache environment
+      found_peaks <- peak_finder(import_data()$file_directory, current_dataset, cache_env = peaks_cache)
+      message(paste("peak_table_reactive: peak_finder returned", nrow(found_peaks), "total peaks for dataset before trait subset."))
+      
+      # Subset for the chosen trait
+      # Ensure 'trait' column exists in found_peaks before subsetting
+      if("trait" %in% colnames(found_peaks)){
+        result <- subset(found_peaks, trait == current_chosen_trait)
+        message(paste("peak_table_reactive: After subsetting for trait '", current_chosen_trait, "', found", nrow(result), "peaks."))
+      } else {
+        message(paste("peak_table_reactive: 'trait' column not found in peaks returned by peak_finder. Cannot subset for trait '", current_chosen_trait, "'. Returning all found peaks for dataset."))
+        result <- found_peaks # Or an empty data frame: result <- found_peaks[0,]
+      }
+      result
     })
+
+    # Observer to update which_peak choices when peak_table changes
+    shiny::observeEvent(peak_table(), {
+      peaks <- peak_table()
+      message("--- peakApp.R: Observer for which_peak (using updateSelectInput) ---")
+      current_selected_peak <- shiny::isolate(input$which_peak) 
+
+      if (is.null(peaks)) {
+        message("peaks object is NULL. Clearing choices.")
+        shiny::updateSelectInput(session, "which_peak", label = "Choose peak (no data)", 
+                                    choices = character(0), 
+                                    selected = character(0)) 
+      } else {
+        message(paste("peaks data frame has", nrow(peaks), "rows."))
+        if (nrow(peaks) > 0) {
+          message(paste("Columns in peaks data frame:", paste(colnames(peaks), collapse=", ")))
+          if ("marker" %in% colnames(peaks) && length(peaks$marker) > 0) {
+            peak_markers <- as.character(peaks$marker)
+            choices <- stats::setNames(peak_markers, peak_markers) 
+            
+            message(paste("Generated choices for dropdown:", paste(names(choices), "=", choices, collapse="; ")))
+            
+            new_selected_value <- NULL
+            if (length(choices) > 0) {
+              if (!is.null(current_selected_peak) && current_selected_peak %in% choices) {
+                new_selected_value <- current_selected_peak
+              } else {
+                new_selected_value <- choices[[1]] 
+              }
+            }
+            message(paste("New selected value will be:", new_selected_value))
+
+            shiny::updateSelectInput(session, "which_peak", 
+                                      label = "Choose peak", 
+                                      choices = choices, 
+                                      selected = new_selected_value) 
+            message("Updated 'which_peak' dropdown with actual peak markers.")
+          } else {
+            message("'marker' column NOT FOUND or empty in peaks data frame! Clearing choices.")
+            shiny::updateSelectInput(session, "which_peak", label = "Choose peak (marker N/A)", 
+                                        choices = character(0), 
+                                        selected = character(0))
+          }
+        } else {
+          message("No peaks found (nrow is 0). Updating dropdown to 'No peaks found'.")
+          no_peaks_choice <- list("No peaks found" = "no_peaks_found_val")
+          shiny::updateSelectInput(session, "which_peak", label = "Choose peak (none found)", 
+                                      choices = no_peaks_choice, 
+                                      selected = "no_peaks_found_val")
+        }
+      }
+      message("--- End peakApp.R: Observer for which_peak ---")
+    }, ignoreNULL = FALSE, priority = 1) 
 
     # Table ov peaks info ------------------------------------------------------
     output$peak_table <- DT::renderDT({DT::datatable(
       peak_table(),
-      options = list(paging = TRUE,    ## paginate the output
-                     pageLength = 5,   ## number of rows to output for each page
-                     scrollX = TRUE,   ## enable scrolling on X axis
-                     scrollY = TRUE,   ## enable scrolling on Y axis
-                     autoWidth = TRUE, ## use smart column width handling
-                     server = TRUE,    ## use client-side processing
-                     dom = 'Bfrtip',
-                     buttons = c('csv', 'excel'),
+      options = list(paging = FALSE,    # Disable pagination
+                     scrollX = TRUE,
+                     scrollY = TRUE,
+                     autoWidth = TRUE,
+                     dom = 'Bt',       # Show Buttons and Table, no other controls like search or pagination info
+                     buttons = list(
+                       list(extend = 'csv', className = 'btn-sm'),
+                       list(extend = 'excel', className = 'btn-sm')
+                     ),
                      columnDefs = list(
                        list(targets = '_all', className = 'dt-center'),
                        list(targets = c(0, 8, 9), visible = FALSE))
       ),
       extensions = 'Buttons',
-      selection = 'single',            ## enable selection of a single row
-      filter = 'bottom',               ## include column filters at the bottom
-      rownames = TRUE)                 ##  show row numbers/names
+      selection = 'single',
+      filter = 'none',                 # Remove column filters
+      rownames = TRUE)
     })
-    # Update peak selection-------------------------------------------
-    shiny::observeEvent(shiny::req(peak_table(), main_par$LOD_thr), {
-      ordered_markers <- highest_peaks(peak_table(), main_par$LOD_thr)$marker
-      if(!is.null(ordered_markers)) {
-        shiny::updateSelectizeInput(session, "which_peak",
-          choices = ordered_markers, selected = ordered_markers[1],
-          options = list(maxItems = 1, maxOptions = 5), server = TRUE)
-      }
-    })
-    # Show allele effects.------------------------------------------------------
-    output$allele_effects <- renderUI({
-      shiny::renderPlot({
-        # ** Error: `ui_element` must be a Shiny tag. **
-        print(shiny::req(allele_plot()))# |>
-          #shinycssloaders::withSpinner(color="#0dc5c1")
-      })
+ 
+    output$allele_effects_plot <- shiny::renderPlot({
+      shiny::req(allele_plot())
+      allele_plot()
     })
     allele_plot <- shiny::reactive({
       shiny::req(peak_table(), input$which_peak)
@@ -108,11 +175,25 @@ peakServer <- function(id, main_par, import) {
       ggplot_alleles(peak)
     })
     file_name <- shiny::reactive({
-      instanceID <- paste(shiny::req(main_par$which_trait), shiny::req(input$which_peak),
-                          sep = "_")
-      if(shiny::req(main_par$selected_chr) != "All") {
-        instanceID <- paste0(instanceID, "_chr", main_par$selected_chr)
+      # Evaluate which_trait reactive
+      trait_val <- shiny::req(main_par$which_trait())
+      peak_val <- shiny::req(input$which_peak)
+      instanceID <- paste(trait_val, peak_val, sep = "_") 
+      
+      # Debug before comparison
+      sel_chr_val <- main_par$selected_chr()
+      
+      # Defensive check before comparison
+      if (is.atomic(sel_chr_val) && is.character(sel_chr_val) && length(sel_chr_val) == 1) {
+        # Evaluate selected_chr reactive and compare                        
+        if(shiny::req(sel_chr_val) != "All") { 
+          # Evaluate selected_chr reactive for paste
+          instanceID <- paste0(instanceID, "_chr", sel_chr_val)
+        }
+      } else {
+        warning("peakServer file_name: sel_chr_val is not a single character string!")
       }
+      
       paste("peak", instanceID, sep = "_")
     })
     # Return `peak_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
@@ -123,29 +204,70 @@ peakServer <- function(id, main_par, import) {
       plots  = shiny::reactiveValues(
         alleles = allele_plot)
     )
+    # ------------------------------------------------------------------
 
   })
 }
 #' @rdname peakApp
 #' @export
 peakInput <- function(id) {
+  # Source UI styling functions if not already loaded
+  if (!exists("create_select_input", mode = "function")) {
+    source("R/ui_styles.R")
+  }
+  
   ns <- shiny::NS(id)
-  list(
-    shiny::helpText("Choose a peak to see the strain effects.",
-      "This only applies to the additive scans."),
-    shiny::selectizeInput(ns("which_peak"),
-      label = "Choose peak",
-      choices = NULL,
-      multiple = TRUE,
-      options = list(
-        placeholder = 'Search...'
-      )))
+  
+  # Use modern styling if available, otherwise use standard controls
+  if (exists("create_select_input", mode = "function")) {
+    create_well_panel(
+      h4("Strain Effects", style = "color: #2c3e50; margin-bottom: 15px;"),
+      div(style = "color: #7f8c8d; margin-bottom: 15px;",
+        "Select a peak to see strain effects (Only for additive scans)."
+      ),
+      div(style = "margin-bottom: 20px; position: relative; z-index: 2;",
+        create_select_input(ns("which_peak"),
+          label = NULL,
+          choices = NULL,
+          multiple = FALSE,
+          options = list(
+            placeholder = 'Select a peak...',
+            onInitialize = I('function() { this.setValue(""); }')
+          )
+        )
+      )
+    )
+  } else {
+    list(
+      shiny::helpText("Choose a peak to see the strain effects.",
+        "This only applies to the additive scans."),
+      shiny::selectInput(ns("which_peak"),
+        label = "Choose peak",
+        choices = character(0),
+        multiple = FALSE
+      )
+    )
+  }
 }
 #' @rdname peakApp
 #' @export
 peakUI <- function(id) {
+  # Source UI styling functions if not already loaded
+  if (!exists("create_plot_output", mode = "function")) {
+    source("R/ui_styles.R")
+  }
+  
   ns <- shiny::NS(id)
-  shiny::uiOutput(ns("allele_effects"))
+  
+  # Use modern styling if available, otherwise use standard output
+  if (exists("create_plot_output", mode = "function")) {
+    div(style = "margin-top: 20px; position: relative; z-index: 0;",
+      shiny::plotOutput(ns("allele_effects_plot"), height = "400px") %>%
+        shinycssloaders::withSpinner(type = 8, color = "#3498db", proxy.height = "400px")
+    )
+  } else {
+    shiny::plotOutput(ns("allele_effects_plot"))
+  }
 }
 #' @rdname peakApp
 #' @export
