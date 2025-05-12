@@ -1,16 +1,13 @@
 #' Download App
 #'
 #' @param id identifier for shiny reactive
-#' @param prefix static prefix for filename
-#' @param main_par input parameters from calling routine
-#' @param download_list reactiveValues with  postfix,plot,table
-#' @return nothing 
+#' @param download_list reactiveValues object
 #'
 #' @importFrom shiny br downloadButton downloadHandler h5 moduleServer NS
 #'             observeEvent radioButtons reactive reactiveValues renderPlot
 #'             renderUI req shinyApp textAreaInput uiOutput updateRadioButtons
 #' @importFrom utils write.csv    
-#' @importFrom grDevices dev.off pdf
+#' @importFrom grDevices dev.off pdf png
 #' @importFrom bslib card card_header layout_columns page_sidebar sidebar
 #' @export
 downloadApp <- function(id) {
@@ -29,8 +26,10 @@ downloadApp <- function(id) {
     # Test sets
     prefix <- "Download"
     download_list <- shiny::reactiveValues(
-      filename = shiny::reactive("panelID_instanceID"),
+      filename = "panelID_instanceID",
+      no_download = "plots_skip",
       plots = shiny::reactiveValues(
+        skip = shiny::reactive(plot_null("skip")),
         none = shiny::reactive(plot_null("nothing")),
         some = shiny::reactive(plot_null("something"))),
       tables = shiny::reactiveValues(
@@ -49,7 +48,10 @@ downloadServer <- function(id, download_list) {
     output$download_list <- shiny::renderUI({
       list(
         "filename",
-        download_list$filename(),
+        download_list$filename,
+        shiny::br(),
+        "no download",
+        paste(download_list$no_download, collapse = ", "),
         shiny::br(),
         "plots",
         paste(names(download_list$plots), collapse = ", "),
@@ -57,7 +59,7 @@ downloadServer <- function(id, download_list) {
         "tables", 
         paste(names(download_list$tables), collapse = ", "),
         switch(shiny::req(input$plot_table),
-         # ** this only shows last plot **
+          # ** this only shows last plot **
           Plots  = shiny::uiOutput(ns("preview_plots")),
           Tables = DT::dataTableOutput(ns("preview_table")))
       )
@@ -108,13 +110,22 @@ downloadServer <- function(id, download_list) {
              "3to2" = 600,
              "16to9" = 900)
     })
+    choices_download <- function(type) {
+      # Choices excluding any in `no_download` vector.
+      choices = names(download_list[[type]])
+      if(shiny::isTruthy(download_list$no_download)) {
+        choices <- choices[
+          !(paste0(type, "_", choices) %in% download_list$no_download)]
+      }
+      choices
+    }
     shiny::observeEvent(shiny::req(input$plot_table, download_list$plots), {
-      choices = names(download_list$plots)
+      choices = choices_download("plots")
       shiny::updateRadioButtons(session, "Plots_choice", 
         choices = choices, selected = NULL)
     })
     shiny::observeEvent(shiny::req(input$plot_table, download_list$tables), {
-      choices = names(download_list$tables)
+      choices = choices_download("tables")
       shiny::updateRadioButtons(session, "Tables_choice",
         choices = choices, selected = NULL)
     })
@@ -123,7 +134,7 @@ downloadServer <- function(id, download_list) {
       shiny::downloadButton(ns(plot_table), plot_table)
     })
     output$filename <- renderUI({
-      filename <- paste0(shiny::req(download_list$filename()))
+      filename <- paste0(shiny::req(download_list$filename))
       # Prepend filename with Plots or Tables choice.
       filename <- paste(
         shiny::req(input[[
@@ -132,8 +143,8 @@ downloadServer <- function(id, download_list) {
       shiny::textAreaInput(ns("filename"), "File Basename:", filename)
     })
     output$Plots <- shiny::downloadHandler(
-      filename = function() paste0(shiny::req(input$filename),
-                                   ".", tolower(input$png_pdf)),
+      filename = function()
+        paste0(shiny::req(input$filename), ".", tolower(input$png_pdf)),
       content = function(file) {
         shiny::req(input$Plots_choice, input$ratio, input$png_pdf)
         switch(input$png_pdf,
@@ -151,7 +162,7 @@ downloadServer <- function(id, download_list) {
     output$Tables <- shiny::downloadHandler(
       filename = function() paste0(shiny::req(input$filename), ".csv"),
       content = function(file) {
-        table <- selected_table()
+        selected_table()
         utils::write.csv(table, file, row.names = FALSE)
       })
   })

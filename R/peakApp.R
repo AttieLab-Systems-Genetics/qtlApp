@@ -4,7 +4,7 @@
 #' @param import reactive list with file_directory
 #'
 #' @importFrom DT datatable DTOutput renderDT
-#' @importFrom shiny moduleServer NS observeEvent plotOutput reactive renderPlot
+#' @importFrom shiny isolate moduleServer NS observeEvent plotOutput reactive renderPlot
 #'             renderText req selectizeInput setProgress shinyApp textOutput
 #'             updateSelectizeInput withProgress h4 div
 #' @importFrom bslib card card_header page_sidebar sidebar
@@ -174,7 +174,7 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
       peak <- pivot_peaks(peak_table(), input$which_peak)
       ggplot_alleles(peak)
     })
-    file_name <- shiny::reactive({
+    file_name <- shiny::isolate({
       # Evaluate which_trait reactive
       trait_val <- shiny::req(main_par$which_trait())
       peak_val <- shiny::req(input$which_peak)
