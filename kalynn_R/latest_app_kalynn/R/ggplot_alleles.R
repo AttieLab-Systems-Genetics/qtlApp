@@ -27,21 +27,24 @@ ggplot_alleles <- function(peak_long, colors = NULL, trait_name = NULL, peak_mar
   }
   
   # Ensure the variable column is a factor with levels in the desired order
+  # Use intersect to handle cases where peak_long might not have all 8 strains
   ordered_strains <- intersect(names(colors), unique(peak_long$variable))
   peak_long$variable <- factor(peak_long$variable, levels = ordered_strains)
   
   plot_title <- if(!is.null(peak_marker)) paste0("Strain Effects at ", peak_marker) else "Strain Effects"
   plot_subtitle <- if(!is.null(trait_name)) paste0("Trait: ", trait_name) else NULL
 
-  p <- ggplot2::ggplot(data = peak_long, ggplot2::aes(x = variable, y = value, color = variable)) +
+  p <- ggplot2::ggplot(data = peak_long, ggplot2::aes(x = marker, y = value, color = variable)) +
     ggplot2::geom_point(size = 4, alpha = 0.8) +
-    ggplot2::scale_color_manual(values = colors, breaks = ordered_strains, name = "Strain") + # Use breaks to ensure order
+    # Use breaks in scale_color_manual to ensure correct legend order even if data is filtered
+    ggplot2::scale_color_manual(values = colors, breaks = ordered_strains, name = "Strain") + 
     ggplot2::geom_hline(yintercept = 0, color = "grey50", linetype = "dashed") +
     ggplot2::theme_minimal() +
     ggplot2::theme(
         legend.position = "right",
         legend.title = ggplot2::element_text(size = 12, face = "bold"),
-        axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, vjust = 1, size=10), # Rotate labels
+        axis.text.x = ggplot2::element_blank(), # Remove x-axis text (redundant marker ID)
+        axis.ticks.x = ggplot2::element_blank(), # Remove x-axis ticks
         axis.title.x = ggplot2::element_blank(), # Remove x-axis title
         axis.title.y = ggplot2::element_text(size = 12),
         plot.title = ggplot2::element_text(size = 14, face = "bold"),

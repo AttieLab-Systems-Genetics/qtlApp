@@ -22,11 +22,11 @@ pkgs <- c(
     # 'shiny', # Included in shiny-verse
     'shinyFiles', 'bslib', 
     'spsComps', 'DT', 'shinyjs', 'shinycssloaders', 
-    # 'data.table', # Included in shiny-verse 
-    # 'reshape2', # Included in shiny-verse
+    'data.table', 
     'plotly', 'ggiraph', 'writexl', 'fontawesome', 
     'fst', 'R.utils', 
-    'qtl2' # Bioconductor package
+    'qtl2', # Bioconductor package
+    'reshape2' # Added missing package
 )
 
 # Install packages using BiocManager

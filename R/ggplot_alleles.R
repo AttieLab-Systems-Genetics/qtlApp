@@ -8,14 +8,28 @@
 #'             theme theme_bw theme_void
 #' @importFrom rlang .data
 #' @export
-ggplot_alleles <- function(peak, colors = newClrs) {
+ggplot_alleles <- function(peak, colors = NULL) {
+  # Source plot enhancement functions if not already loaded
+  if (!exists("create_modern_theme", mode = "function")) {
+    source("R/plot_enhancements.R")
+  }
+  
+  # If no data, return a null plot with message
   if(!nrow(peak)) {
-    return(ggplot2::ggplot( ) +
+    # Use the null plot function if available
+    if (exists("create_null_plot", mode = "function")) {
+      source("R/plot_null.R")
+      return(create_null_allele_plot())
+    } else {
+      return(ggplot2::ggplot() +
       ggplot2::theme_void() +
       ggplot2::labs(title = "No data to plot"))
   }
-  # Define colors
-  newClrs <- c(
+  }
+  
+  # Define modern strain colors if not provided
+  if (is.null(colors)) {
+    colors <- c(
     "AJ" = "#000000",
     "B6" = "#96989A",
     "129" = "#E69F00",
@@ -24,19 +38,49 @@ ggplot_alleles <- function(peak, colors = newClrs) {
     "CAST" = "#009E73",
     "PWK" = "#D55E00",
     "WSB" = "#CC79A7")
-  ggplot2::ggplot(data = peak) +
+  }
+  
+  # Create plot with modern styling
+  p <- ggplot2::ggplot(data = peak) +
     ggplot2::aes(x = .data$marker, y = .data$value, color = .data$variable) +
-    ggplot2::geom_point(size = 10) +
+    ggplot2::geom_point(size = 5, alpha = 0.8) +
     ggplot2::scale_color_manual(values = colors) +
-    ggplot2::theme_bw() +
+    ggplot2::geom_hline(yintercept = 0, color = "#7f8c8d", linetype = "dashed", size = 0.5)
+  
+  # Apply modern theme if available, otherwise use enhanced classic theme
+  if (exists("create_modern_theme", mode = "function")) {
+    p <- p + create_modern_theme() +
+      ggplot2::theme(
+        legend.position = "right",
+        legend.title = ggplot2::element_text(size = 12, face = "bold"),
+        axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5)
+      )
+  } else {
+    # Fallback to enhanced classic theme
+    p <- p + ggplot2::theme_bw() +
     ggplot2::theme(
-      legend.text = ggplot2::element_text(size = 18),
       panel.border = ggplot2::element_blank(),
       panel.grid.major.x = ggplot2::element_blank(),
       panel.grid.minor.x = ggplot2::element_blank(),
-      axis.line = ggplot2::element_line(colour = "black"),
-      axis.text = ggplot2::element_text(size = 18),
-      axis.title = ggplot2::element_text(size = 20)) +
-    ggplot2::labs(x = "Marker ID", y = "Founder allele effect", color = "Strain") +
-    ggplot2::geom_hline(yintercept = 0, color = "black")
+        axis.line = ggplot2::element_line(colour = "#2c3e50", size = 0.5),
+        axis.text = ggplot2::element_text(size = 12, color = "#2c3e50"),
+        axis.title = ggplot2::element_text(size = 14, face = "bold", color = "#2c3e50"),
+        legend.position = "right",
+        legend.title = ggplot2::element_text(size = 12, face = "bold", color = "#2c3e50"),
+        legend.text = ggplot2::element_text(size = 11, color = "#2c3e50"),
+        plot.title = ggplot2::element_text(size = 16, face = "bold", color = "#2c3e50"),
+        plot.subtitle = ggplot2::element_text(size = 12, color = "#7f8c8d")
+      )
+  }
+  
+  # Add labels
+  p <- p + ggplot2::labs(
+    x = "Marker ID", 
+    y = "Founder Allele Effect", 
+    color = "Strain",
+    title = paste0("Strain Effects at ", peak$marker[1]),
+    subtitle = if("trait" %in% colnames(peak)) paste0("Trait: ", peak$trait[1]) else NULL
+  )
+  
+  return(p)
 }

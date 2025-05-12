@@ -52,23 +52,42 @@ mergeApp <- function(id) {
 mergeServer <- function(id, primary_list, secondary_list) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
     merged_plots <- shiny::isolate({
-      out <- primary_list$plots
-      for(i in names(secondary_list$plots))
-        out[[i]] <- secondary_list$plots[[i]]
+      out <- primary_list$plots # primary_list$plots is a reactiveValues
+      
+      s_plots <- secondary_list$plots # secondary_list$plots should also be a reactiveValues
+      if (!is.null(s_plots) && inherits(s_plots, "reactivevalues")) {
+        for(i in names(s_plots)) {
+          out[[i]] <- s_plots[[i]] # Assign the reactive expression from secondary to primary
+        }
+      }
       out
     })
+    
     merged_tables <- shiny::isolate({
-      out <- primary_list$tables
-      for(i in names(secondary_list$tables))
-        out[[i]] <- secondary_list$tables[[i]]
+      out <- primary_list$tables # primary_list$tables is a reactiveValues
+      s_tables <- secondary_list$tables # secondary_list$tables should also be a reactiveValues
+      if (!is.null(s_tables) && inherits(s_tables, "reactivevalues")) {
+        for(i in names(s_tables)) {
+          out[[i]] <- s_tables[[i]] # Assign the reactive expression from secondary to primary
+        }
+      }
       out
     })
+    
     merged_list <- shiny::reactiveValues(
-      filename = shiny::isolate(primary_list$filename),
+      filename = shiny::reactive({
+        if (shiny::is.reactive(primary_list$filename)) {
+          primary_list$filename()
+        } else {
+          primary_list$filename
+        }
+      }),
       plots = merged_plots,
       tables = merged_tables
     )
+    
     # Return
     merged_list
   })

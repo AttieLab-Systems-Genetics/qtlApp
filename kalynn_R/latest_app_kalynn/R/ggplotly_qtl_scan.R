@@ -7,7 +7,7 @@
 #' @param plot_data The data frame used to generate the ggplot object.
 #' @param peak_table Data frame with peak information for the selected trait.
 #' @param official_trait_symbol The official trait symbol for the title.
-#' @param selected_chr The selected chromosome view ("All" or specific chr).
+#' @param selected_chr The sselected chromosome view ("All" or specific chr).
 #' @param plot_width Width of the plot in pixels.
 #' @param plot_height Height of the plot in pixels.
 #' @param source Source ID for plotly events.
@@ -23,7 +23,19 @@ ggplotly_qtl_scan <- function(scan_plot, plot_data, peak_table,
                               plot_width = 1000, plot_height = 600,
                               source = "scanly_plot") {
   
-  if (is.null(scan_plot) || is.null(plot_data)) return(NULL)
+  message("--- Inside ggplotly_qtl_scan ---") # DEBUG
+  message("Input scan_plot class: ", class(scan_plot)) # DEBUG
+  message("Input plot_data rows: ", nrow(plot_data)) # DEBUG
+  if(nrow(plot_data)>0) message("Input plot_data cols: ", paste(colnames(plot_data), collapse=", ")) # DEBUG
+  message("Input peak_table rows: ", nrow(peak_table)) # DEBUG
+  if(!is.null(peak_table) && nrow(peak_table)>0) message("Input peak_table cols: ", paste(colnames(peak_table), collapse=", ")) # DEBUG
+  message("Official trait symbol: ", official_trait_symbol) # DEBUG
+  message("Selected Chr: ", selected_chr) # DEBUG
+  
+  if (is.null(scan_plot) || is.null(plot_data)) {
+      message("ggplotly_qtl_scan: Returning NULL due to NULL input.") # DEBUG
+      return(NULL)
+  }
   
   # Determine x-axis variable based on view
   xvar <- if (selected_chr == "All") "BPcum" else "position"
@@ -70,10 +82,25 @@ ggplotly_qtl_scan <- function(scan_plot, plot_data, peak_table,
   }
 
   # Convert ggplot to plotly
-  plt <- plotly::ggplotly(scan_plot, source = source, 
-                          width = plot_width, height = plot_height, 
-                          tooltip = c("x", "y")) %>% # Keep tooltip simple initially
-    # Add layout configuration
+  message("ggplotly_qtl_scan: Calling plotly::ggplotly") # DEBUG
+  plt <- tryCatch({
+      plotly::ggplotly(scan_plot, source = source, 
+                       width = plot_width, height = plot_height, 
+                       tooltip = c("x", "y")) # Keep tooltip simple initially
+  }, error = function(e) {
+      message("ERROR during plotly::ggplotly call: ", e$message) # DEBUG
+      return(NULL)
+  })
+  
+  if(is.null(plt)){
+      message("ggplotly_qtl_scan: ggplotly call failed or returned NULL.") # DEBUG
+      return(NULL)
+  }
+  message("ggplotly_qtl_scan: plotly::ggplotly call successful. Class: ", class(plt)) # DEBUG
+  
+  # Add layout configuration
+  message("ggplotly_qtl_scan: Applying layout configuration.") # DEBUG
+  plt <- plt %>% 
     plotly::layout(
       title = list(
         text = paste0(trait_text, '<br>', subtitle),
