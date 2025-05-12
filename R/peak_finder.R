@@ -1,153 +1,186 @@
 #' Find the peaks
 #'
-#' @param file_dir data frame with file directory information
-#' @param selected_dataset character string
-#' @param selected_trait character string
-#' @param cache_env environment to cache results (optional)
+#' @param file_dir Data frame with file directory information
+#' @param selected_dataset Character string identifying the dataset group
+#' @param selected_trait Optional character string for a specific trait (gene symbol) to subset. If NULL, return all peaks for the dataset.
+#' @param trait_type Character string indicating the type of traits (e.g., "genes", "clinical")
+#' @param cache_env Environment for caching results
+#' @param use_cache Logical, whether to use caching (default TRUE)
 #'
-#' @importFrom dplyr across mutate relocate where
+#' @importFrom data.table fread rbindlist setnames
+#' @importFrom dplyr select rename filter distinct any_of all_of
+#' @importFrom tools file_path_sans_ext
 #' @export
-peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, cache_env = NULL) {
-  cache_key <- if (is.null(selected_trait)) {
-    selected_dataset  # Key for all peaks in dataset
-  } else {
-    paste(selected_dataset, tolower(selected_trait), sep = "_") # Key for specific trait within dataset
+peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait_type = NULL, cache_env = NULL, use_cache = TRUE) {
+  
+  # Input validation
+  if (is.null(file_dir) || !is.data.frame(file_dir) || nrow(file_dir) == 0) {
+    warning("peak_finder: file_dir is missing or empty.")
+    return(data.frame())
   }
-
-  # Check cache only if cache_env is provided
-  if (!is.null(cache_env) && !is.null(cache_env[[cache_key]])) {
-     message("Using cached peaks data for ", 
-            if (is.null(selected_trait)) selected_dataset else paste(selected_trait, "in", selected_dataset))
-     return(cache_env[[cache_key]])
+  if (is.null(selected_dataset) || selected_dataset == "") {
+    warning("peak_finder: selected_dataset is missing.")
+    return(data.frame())
   }
   
-  message("Loading peaks data for dataset: ", selected_dataset, 
-          if(!is.null(selected_trait)) paste("(for trait:", selected_trait, ")") else "(all traits)")
-  empty_peaks <- create_empty_peaks()
+  file_dir_subset_for_path <- dplyr::filter(file_dir, 
+                                     .data$group == selected_dataset & 
+                                     .data$file_type == "peaks")
   
-  
-  file_dir_filtered <- subset(file_dir, group == selected_dataset & file_type == "peaks")
-  
-  if (nrow(file_dir_filtered) == 0) {
-    warning("No peaks files found for dataset: ", selected_dataset)
-    # Cache the empty result if cache_env is provided
-    if (!is.null(cache_env)) cache_env[[cache_key]] <- empty_peaks 
-    return(empty_peaks)
-  }
-  
-  csv_path <- file_dir_filtered$File_path[1]
-  if (!file.exists(csv_path)) {
-    warning("Peaks file does not exist: ", csv_path)
-    if (!is.null(cache_env)) cache_env[[cache_key]] <- empty_peaks
-    return(empty_peaks)
-  }
-  
-  peaks_data_to_return <- empty_peaks
-  tryCatch({
-      message("Reading peaks file: ", basename(csv_path), " for dataset: ", selected_dataset)
-      peaks_data <- data.table::fread(csv_path)
-      message("Original peaks file columns: ", paste(colnames(peaks_data), collapse=", "))
-      
-      # Check for required columns and standardize names
-      if ("lodcolumn" %in% colnames(peaks_data)) {
-        peaks_data$trait <- peaks_data$lodcolumn
-        message("Added trait column based on lodcolumn")
-        message(paste("peak_finder: First few unique values in original 'lodcolumn':", paste(head(unique(peaks_data$lodcolumn), 10), collapse=", ")))
-      }
-      if (any(grepl("phenotype", tolower(colnames(peaks_data))))) {
-        phenotype_col <- grep("phenotype", tolower(colnames(peaks_data)), value = TRUE)[1]
-        peaks_data$trait <- peaks_data[[phenotype_col]]
-        message("Added trait column based on phenotype column")
-        message(paste("peak_finder: First few unique values in 'trait' after phenotype check:", paste(head(unique(peaks_data$trait), 10), collapse=", ")))
-      }
-      
-      # Add a message here to show the state of the 'trait' column before it might be further filtered by selected_trait
-      if ("trait" %in% colnames(peaks_data)) {
-        message(paste("peak_finder: Final unique values in 'trait' column before trait-specific filtering (if any):", paste(head(unique(peaks_data$trait), 20), collapse=", ")))
+  peaks_file_path_for_warning <- "[Unknown CSV - file_dir_subset empty or path not found]"
+  if (nrow(file_dir_subset_for_path) > 0) {
+      temp_path <- file_dir_subset_for_path$File_path[1]
+      if (file.exists(temp_path)) {
+          peaks_file_path_for_warning <- temp_path
       } else {
-        message("peak_finder: 'trait' column was NOT created from lodcolumn or phenotype.")
+          potential_paths_for_warning <- c(
+              temp_path,
+              paste0(tools::file_path_sans_ext(temp_path), ".csv"),
+              paste0(tools::file_path_sans_ext(temp_path), ".fst")
+          )
+          found_for_warning <- FALSE
+          for(p_warn in potential_paths_for_warning){
+              if(file.exists(p_warn)){
+                  peaks_file_path_for_warning <- p_warn
+                  found_for_warning <- TRUE
+                  break
+              }
+          }
+          if(!found_for_warning){
+              peaks_file_path_for_warning <- paste("[File not found for warning: ", temp_path, "]")
+          }
       }
+  } else {
+      peaks_file_path_for_warning <- "[No 'peaks' entry in file_index for this dataset]"
+  }
 
-      # Filter for the specific trait ONLY if selected_trait was provided to this function call
-      if (!is.null(selected_trait)) {
-          message("Filtering for trait: ", selected_trait, " in dataset: ", selected_dataset)
-          rows_to_keep <- rep(FALSE, nrow(peaks_data))
-          if ("trait" %in% colnames(peaks_data)) { rows_to_keep <- rows_to_keep | (tolower(peaks_data$trait) == tolower(selected_trait)) }
-          if ("lodcolumn" %in% colnames(peaks_data)) { rows_to_keep <- rows_to_keep | (tolower(peaks_data$lodcolumn) == tolower(selected_trait)) }
-          phenotype_cols <- grep("phenotype", tolower(colnames(peaks_data)), value = TRUE)
-          for (col in phenotype_cols) { rows_to_keep <- rows_to_keep | (tolower(peaks_data[[col]]) == tolower(selected_trait)) }
-          peaks_data <- peaks_data[rows_to_keep]
-          message("Found ", nrow(peaks_data), " peaks for specific trait: ", selected_trait)
-      } 
-      # Ensure we have all required columns
-      # Check and rename columns if needed
-      col_mapping <- list(
-        marker = c("marker", "markers", "id", "snp", "SNP"),
-        chr = c("chr", "chrom", "chromosome"),
-        pos = c("pos", "position", "bp", "location"),
-        lod = c("lod", "LOD", "score", "pvalue")
-      )
-      required_cols <- names(col_mapping)
-      # Try to map columns
-      for (req_col in required_cols) {
-        if (!(req_col %in% colnames(peaks_data))) {
-          # Try to find a matching column
-          for (alt_name in col_mapping[[req_col]]) {
-            if (alt_name %in% colnames(peaks_data)) {
-              # Rename the column
-              message("Renaming column '", alt_name, "' to '", req_col, "'")
-              data.table::setnames(peaks_data, alt_name, req_col)
-              break
+  cache_key <- selected_dataset
+  
+  if (use_cache && !is.null(cache_env) && !is.null(cache_env[[cache_key]])) {
+    all_peaks_for_dataset <- cache_env[[cache_key]]
+  } else {
+    
+    file_dir_subset <- file_dir_subset_for_path 
+                                     
+    if (nrow(file_dir_subset) == 0) {
+      warning("peak_finder: No 'peaks' file found for dataset: ", selected_dataset)
+      return(data.frame())
+    }
+    
+    peaks_file_path_to_load <- file_dir_subset$File_path[1]
+    actual_file_to_load <- NULL
+    if (file.exists(peaks_file_path_to_load)) {
+        actual_file_to_load <- peaks_file_path_to_load
+    } else {
+        potential_paths_to_load <- c(
+            peaks_file_path_to_load,
+            paste0(tools::file_path_sans_ext(peaks_file_path_to_load), ".csv"),
+            paste0(tools::file_path_sans_ext(peaks_file_path_to_load), ".fst")
+        )
+        for(p_load in potential_paths_to_load){
+            if(file.exists(p_load)){
+                actual_file_to_load <- p_load
+                break
             }
+        }
+    }
+    if(is.null(actual_file_to_load)){
+         warning("peak_finder: Could not find peaks file to load after checking common extensions for: ", peaks_file_path_to_load)
+         return(data.frame())
+    }
+    
+    all_peaks_for_dataset <- data.frame()
+
+    tryCatch({
+      all_peaks_for_dataset_raw <- data.table::fread(actual_file_to_load, stringsAsFactors = FALSE)
+      
+      current_colnames <- colnames(all_peaks_for_dataset_raw)
+      
+      column_map <- c(
+        chr = "qtl_chr", pos = "qtl_pos", lod = "qtl_lod", marker = "marker", cis = "cis",
+        ci_lo = "qtl_ci_lo", ci_hi = "qtl_ci_hi", A = "A", B = "B", C = "C", D = "D", 
+        E = "E", F = "F", G = "G", H = "H"
+      )
+      essential_old_names <- c("qtl_chr", "qtl_pos", "qtl_lod", "marker")
+      if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
+        column_map["gene_symbol"] <- "gene_symbol"
+        column_map["gene_id"]     <- "gene_id"
+        column_map["trait"]       <- "phenotype"
+        essential_old_names <- c(essential_old_names, "phenotype", "gene_symbol", "gene_id")
+      } else { 
+        column_map["trait"] <- "phenotype"
+        essential_old_names <- c(essential_old_names, "phenotype")
+      }
+      rename_vec <- c()
+      for (new_name_app in names(column_map)) {
+        old_name_csv <- column_map[new_name_app]
+        if (old_name_csv %in% current_colnames) {
+          rename_vec[new_name_app] <- old_name_csv
+        } else {
+          if (old_name_csv %in% essential_old_names) { 
+            warning("peak_finder: Essential original column '", old_name_csv, "' for mapping to '", new_name_app, "' not found in CSV.") 
           }
         }
       }
-      
-      if (!all(required_cols %in% colnames(peaks_data))) {
-        missing_cols <- required_cols[!(required_cols %in% colnames(peaks_data))]
-        warning("Missing required columns in peaks file: ", paste(missing_cols, collapse=", "))
-        warning("Missing required columns... returning empty peaks.")
-        if (!is.null(cache_env)) cache_env[[cache_key]] <- empty_peaks
-        return(empty_peaks)
+      successfully_mapped_essential_old_names <- intersect(essential_old_names, unname(rename_vec))
+      missing_essential_mappings <- setdiff(essential_old_names, successfully_mapped_essential_old_names)
+      if(length(missing_essential_mappings) > 0){
+          warning("peak_finder: Missing or unmappable ESSENTIAL original columns in CSV for type '", trait_type, "': ", paste(missing_essential_mappings, collapse=", "), ". Cannot proceed.")
+          stop("Essential columns missing, stopping processing in tryCatch.")
       }
-      # Print final column names for debug
-      message("Final peaks data columns: ", paste(colnames(peaks_data), collapse=", "))
-      # Convert to data.frame for compatibility
-      peaks_data <- as.data.frame(peaks_data)
-      # Remove unnecessary column `Which_mice` if present
-      peaks_data[["Which_mice"]] <- NULL
-      # Round off numeric columns to 5 significant digits
-      peaks_data <- dplyr::mutate(peaks_data,
-        dplyr::across(dplyr::where(is.numeric), function(x) signif (x, 5)))
-      # Assign to the variable to be returned
-      peaks_data_to_return <- peaks_data
-          
-    }, error = function(e) {
-      warning("Error reading/processing peaks file ", csv_path, ": ", e$message)
-      # Return empty frame on error (already initialized)
-    })
+      all_peaks_for_dataset <- dplyr::select(as.data.frame(all_peaks_for_dataset_raw), dplyr::all_of(unname(rename_vec))) %>%
+        dplyr::rename(!!!rename_vec)
 
-  # Cache the result (either processed data or empty frame) if cache_env is provided
-  if (!is.null(cache_env)) {
-    cache_env[[cache_key]] <- peaks_data_to_return
+      if("chr" %in% colnames(all_peaks_for_dataset)){ all_peaks_for_dataset$chr <- as.character(all_peaks_for_dataset$chr) }
+      if("pos" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$pos)){ all_peaks_for_dataset$pos <- suppressWarnings(as.numeric(all_peaks_for_dataset$pos)) }
+      if("lod" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$lod)){ all_peaks_for_dataset$lod <- suppressWarnings(as.numeric(all_peaks_for_dataset$lod)) }
+      allele_cols_to_check <- c("A", "B", "C", "D", "E", "F", "G", "H")
+      for(ac in allele_cols_to_check){
+          if(ac %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset[[ac]])){
+              all_peaks_for_dataset[[ac]] <- suppressWarnings(as.numeric(all_peaks_for_dataset[[ac]]))
+          }
+      }
+      if (use_cache && !is.null(cache_env)) {
+        cache_env[[cache_key]] <- all_peaks_for_dataset
+      }
+    }, error = function(e) {
+      warning("peak_finder: Error reading or processing peaks file '", actual_file_to_load, "': ", e$message)
+      all_peaks_for_dataset <<- data.frame()
+    })
+    if(!exists("all_peaks_for_dataset") || is.null(all_peaks_for_dataset) || nrow(all_peaks_for_dataset) == 0) { 
+        return(data.frame())
+    }
+  } 
+
+  if (is.null(all_peaks_for_dataset) || nrow(all_peaks_for_dataset) == 0) {
+    return(data.frame())
   }
-  
-  return(peaks_data_to_return)
-}
-create_empty_peaks <- function() {
-  data.frame(
-    marker = character(0),
-    trait = character(0),
-    chr = character(0),
-    pos = numeric(0),
-    lod = numeric(0),
-    A = numeric(0),
-    B = numeric(0),
-    C = numeric(0),
-    D = numeric(0),
-    E = numeric(0),
-    F = numeric(0),
-    G = numeric(0),
-    H = numeric(0)
-  )
+
+  if (!is.null(selected_trait) && selected_trait != "") {
+    filter_col <- NULL
+    if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
+        filter_col <- "gene_symbol"
+    } else { 
+        filter_col <- "trait"
+    }
+    if (!(filter_col %in% colnames(all_peaks_for_dataset))) {
+      warning("peak_finder: Column '", filter_col, "' needed for filtering type '", trait_type, "' not found after renaming. Returning all peaks.")
+      return(all_peaks_for_dataset)
+    }
+    filtered_peaks <- dplyr::filter(all_peaks_for_dataset, .data[[filter_col]] == selected_trait)
+    
+    if(nrow(filtered_peaks) == 0 && trait_type %in% c("genes", "isoforms")){
+        warning("peak_finder: No peaks found for gene symbol '", selected_trait, "'. Check if this symbol exists in the 'gene_symbol' column of the CSV: ", basename(peaks_file_path_for_warning))
+    }
+    if(nrow(filtered_peaks) > 0 && "marker" %in% colnames(filtered_peaks) && "lod" %in% colnames(filtered_peaks)){
+        filtered_peaks <- filtered_peaks %>%
+           dplyr::group_by(marker) %>%
+           dplyr::filter(lod == max(lod, na.rm = TRUE)) %>%
+           dplyr::slice(1) %>% 
+           dplyr::ungroup()
+    }
+    return(filtered_peaks)
+  } else {
+    return(all_peaks_for_dataset)
+  }
 }

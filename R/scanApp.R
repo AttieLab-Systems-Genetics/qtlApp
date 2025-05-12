@@ -129,7 +129,6 @@ scanApp <- function() {
       
       # Clear caches when dataset changes
       shiny::observeEvent(main_par$selected_dataset(), {
-          message("Dataset changed, clearing caches.")
           rm(list = ls(envir = trait_cache), envir = trait_cache)
           rm(list = ls(envir = peaks_cache), envir = peaks_cache)
       })
@@ -272,35 +271,37 @@ scanServer <- function(id, main_par, import, trait_cache) {
 
     shiny::observeEvent(plotly::event_data("plotly_click", source = ns("qtl_scan_plotly")), {
       ev_data <- plotly::event_data("plotly_click", source = ns("qtl_scan_plotly"))
-      if (!is.null(ev_data) && length(ev_data) > 0) {
-        # pointNumber is 0-indexed for the trace clicked
-        # We need to ensure scan_table_chr() is available and gg_data is derived correctly
-        # ggplotly can restructure data, so mapping back can be tricky if multiple traces exist
-        # For a single trace plot, pointNumber directly maps to the row index (0-indexed)
+      
+      if (!is.null(ev_data) && !is.null(ev_data$customdata) && length(ev_data$customdata) > 0) {
+        clicked_marker_id <- ev_data$customdata[1]
         
-        # Simplistic approach assuming pointNumber is reliable and plot data matches scan_table_chr()
-        # This might need refinement if aes(color=chr) creates multiple traces in ggplotly
-        clicked_idx <- ev_data$pointNumber[1] + 1 
+        current_scan_data <- scan_table_chr()
         
-        current_data <- scan_table_chr()
-        if(clicked_idx <= nrow(current_data)){
-          selected_point_df <- current_data[clicked_idx, , drop = FALSE]
+        if (!"markers" %in% colnames(current_scan_data)) {
+            warning("scanServer plotly_click: 'markers' column not found in scan_table_chr(). Cannot lookup clicked marker.")
+            clicked_plotly_point_details_rv(data.frame(Info = "Marker column missing in scan data."))
+            return()
+        }
+        selected_point_df_raw <- dplyr::filter(current_scan_data, markers == clicked_marker_id)
+        
+        if(nrow(selected_point_df_raw) > 0){
+          selected_point_df_raw <- selected_point_df_raw[1, , drop = FALSE]
           
-          # Select relevant columns for display, similar to nearPoints output
-          # Ensure 'markers', 'chr', 'position', 'LOD' exist
           cols_to_select <- c("markers", "chr", "position", "LOD")
-          # Filter out missing columns before selecting
-          cols_to_select <- cols_to_select[cols_to_select %in% names(selected_point_df)]
+          cols_to_select_present <- cols_to_select[cols_to_select %in% names(selected_point_df_raw)]
           
-          if(length(cols_to_select) > 0){
-            selected_point_df <- dplyr::select(selected_point_df, dplyr::all_of(cols_to_select))
-            selected_point_df <- dplyr::mutate(selected_point_df, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
-            clicked_plotly_point_details_rv(selected_point_df)
+          if(length(cols_to_select_present) > 0){
+            selected_point_df_processed <- dplyr::select(selected_point_df_raw, dplyr::all_of(cols_to_select_present))
+            if("chr" %in% names(selected_point_df_processed)){
+                selected_point_df_processed$chr <- chr_XYM(selected_point_df_processed$chr)
+            }
+            selected_point_df_processed <- dplyr::mutate(selected_point_df_processed, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+            clicked_plotly_point_details_rv(selected_point_df_processed)
           } else {
             clicked_plotly_point_details_rv(data.frame(Info = "Selected point data columns not found."))
           }
         } else {
-           clicked_plotly_point_details_rv(data.frame(Info = "Clicked point index out of bounds."))
+           clicked_plotly_point_details_rv(data.frame(Info = paste("Details for marker", clicked_marker_id, "not found.")))
         }
       } else {
         clicked_plotly_point_details_rv(NULL)
