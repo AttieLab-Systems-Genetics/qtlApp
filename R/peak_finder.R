@@ -108,10 +108,19 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
         column_map["trait"]       <- "phenotype"
         column_map["gene_chr"]    <- "gene_chr"
         column_map["gene_start"]  <- "gene_start"
+        # 'cis' is essential for genes/isoforms for the cisTransPlot
         essential_old_names <- c(essential_old_names, "phenotype", "gene_symbol", "gene_id", "gene_chr", "gene_start", "cis")
-      } else { 
+      } else if (!is.null(trait_type) && trait_type == "clinical") { # Explicitly handle clinical
         column_map["trait"] <- "phenotype"
-        essential_old_names <- c(essential_old_names, "phenotype", "cis")
+        # 'cis' is NOT essential for clinical traits if it doesn't exist or apply
+        essential_old_names <- c(essential_old_names, "phenotype") 
+        # If 'cis' column *might* exist for some clinical CSVs and you want to load it if present, 
+        # but not fail if absent, you'd keep it in column_map but not essential_old_names for clinical.
+        # The current column_map already includes `cis = "cis"`, so it will be loaded if present.
+      } else { # Other trait types (if any in the future) or if trait_type is NULL
+        column_map["trait"] <- "phenotype"
+        # Default assumption for other types - cis might not be essential
+        essential_old_names <- c(essential_old_names, "phenotype") 
       }
       rename_vec <- c()
       for (new_name_app in names(column_map)) {

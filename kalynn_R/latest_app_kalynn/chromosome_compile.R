@@ -10,7 +10,7 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/clinical_traits/clinical_traits_all_mice_diet_interactive/output"
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_lipids/liver_lipids_all_mice_additive/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 
 # Set data.table specific temp directory
@@ -31,8 +31,8 @@ if (!dir.exists(OUTPUT_DIR)) {
 }
 
 # Define all chromosomes
-#CHROMOSOMES <- c(1:19, "X", "Y", "M")
-CHROMOSOMES <- c(1:3)
+CHROMOSOMES <- c("X")
+#CHROMOSOMES <- c(1:3)
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
@@ -53,33 +53,35 @@ if (file.exists(markers_file)) {
 # Function to process a single gz file for all chromosomes
 process_file <- function(file_path) {
   tryCatch({
-    # Explicitly use the custom temp dir for reading (via options)
     data <- fread(file_path, header = TRUE)
     
     # Create a list to store data for each chromosome
     chr_data <- vector("list", length(CHROMOSOMES))
-    # Ensure names are characters for consistent access
     names(chr_data) <- as.character(CHROMOSOMES)
     
-    if (is.null(chr_markers)) {
-      # Extract chromosome from marker names if no marker file
-      data$chr <- str_extract(data$marker, "(?<=chr)[0-9XYM]+")
-      # Split data by chromosome using character names
-      for (chr_char in as.character(CHROMOSOMES)) {
-        chr_data[[chr_char]] <- data[data$chr == chr_char]
-      }
-    } else {
-      # Use marker lists to filter data for each chromosome
-      # Loop through numeric values but access lists using character names
-      for (chr in CHROMOSOMES) { 
-        chr_char <- as.character(chr) # Use character version for indexing
-        # Check if the name exists in chr_markers before accessing
-        if (chr_char %in% names(chr_markers)) {
-          chr_data[[chr_char]] <- data[data$marker %in% chr_markers[[chr_char]]]
-        } else {
-          # Handle case where chromosome name might be missing (shouldn't happen with current setup)
-          chr_data[[chr_char]] <- data.table() # Assign empty table
-        }
+    # The `marker` column in the input .gz files directly indicates the chromosome.
+    # We need to ensure it's treated as character for consistent matching with CHROMOSOMES list names.
+    if (!("marker" %in% colnames(data))) {
+      message(paste("Warning: 'marker' column not found in file:", file_path, "Skipping file."))
+      return(NULL)
+    }
+    data$chr_from_input_marker <- as.character(data$marker) 
+    
+    # Map numeric chromosome representations from marker column to X, Y, M if necessary
+    # This depends on how X, Y, M are represented in your input CSV's 'marker' column.
+    data$chr_from_input_marker[data$chr_from_input_marker == "20"] <- "X"
+    data$chr_from_input_marker[data$chr_from_input_marker == "21"] <- "Y"
+    data$chr_from_input_marker[data$chr_from_input_marker == "22"] <- "M"
+
+    for (chr_val in CHROMOSOMES) {
+      chr_char <- as.character(chr_val) # Ensure we are using character for indexing and comparison
+      chr_data[[chr_char]] <- data[data$chr_from_input_marker == chr_char, ]
+      
+      if (nrow(chr_data[[chr_char]]) > 0) {
+        # Optional: If you still want to ensure these markers are in the main markers_from_rds
+        # (and markers_from_rds is loaded, available as `markers` globally or passed in)
+        # you could add a filter here, but it depends on how you want to link them.
+        # For now, we assume all data for the identified chromosome is kept.
       }
     }
     

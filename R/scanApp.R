@@ -189,12 +189,26 @@ scanServer <- function(id, main_par, import, trait_cache) {
     
     scans <- shiny::reactive({
       shiny::req(main_par$selected_dataset(), selected_trait())
+      # Temporary variable to hold the result of trait_scan
+      result_from_trait_scan <- NULL 
       shiny::withProgress(
         message = paste("scan of", selected_trait(), "in progress"), value = 0, {
           shiny::setProgress(1)
-          suppressMessages(
-            trait_scan(import()$file_directory, main_par$selected_dataset(), selected_trait(), cache_env = trait_cache))
-        })
+          # Call trait_scan and store its result
+          result_from_trait_scan <- suppressMessages(
+            trait_scan(import()$file_directory, main_par$selected_dataset(), selected_trait(), cache_env = trait_cache)
+          )
+          # --- DEBUGGING trait_scan OUTPUT ---
+          message("scanApp DEBUG: Result from trait_scan() for trait: ", selected_trait())
+          message("scanApp DEBUG: str(result_from_trait_scan):")
+          str(result_from_trait_scan) # This will print to console/log
+          message("scanApp DEBUG: print(head(result_from_trait_scan)):")
+          print(head(result_from_trait_scan)) # This will print to console/log
+          message("scanApp DEBUG: colnames(result_from_trait_scan):")
+          print(colnames(result_from_trait_scan))
+          # --- END DEBUGGING trait_scan OUTPUT ---
+        }) # End withProgress
+      result_from_trait_scan # Return the result
     })
     
     scan_table <- shiny::reactive({
