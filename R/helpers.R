@@ -131,6 +131,9 @@ get_trait_type <- function(import_data, selected_dataset = NULL) {
   if (grepl("clinical", trait_type_raw, ignore.case = TRUE)) { # Using grepl for consistency
       return("clinical")
   }
+  if (grepl("lipid", trait_type_raw, ignore.case = TRUE)) { # Check if "lipid" is present anywhere
+      return("lipids")
+  }
   if (grepl("gene", trait_type_raw, ignore.case = TRUE)) { # Check if "gene" is present anywhere
       return("genes")
   }

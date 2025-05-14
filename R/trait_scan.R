@@ -63,6 +63,15 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
                 corrected_fst_path <- paste0(tools::file_path_sans_ext(original_fst_path), "_with_symbols.fst")
                 message(paste("Gene/Isoform type for file '", basename(original_fst_path), "', assumed base, adjusted path to: '", basename(corrected_fst_path), "'"))
             }
+        } else if (processed_trait_type == "liver_lipids") {
+            if (grepl("_with_symbols\\.fst$", original_fst_path)) {
+                corrected_fst_path <- sub("_with_symbols\\.fst$", "_processed.fst", original_fst_path)
+                message(paste("Liver Lipids type for file '", basename(original_fst_path), "', adjusted path from _with_symbols to: '", basename(corrected_fst_path), "'"))
+            } else if (!grepl("_processed\\.fst$", original_fst_path)) {
+                # If it's liver_lipids and not _processed and not _with_symbols, assume it's a base name and add _processed.fst
+                corrected_fst_path <- paste0(tools::file_path_sans_ext(original_fst_path), "_processed.fst")
+                message(paste("Liver Lipids type for file '", basename(original_fst_path), "', assumed base, adjusted path to: '", basename(corrected_fst_path), "'"))
+            }
         } else {
             message(paste("Unknown or unspecified trait_type ('", processed_trait_type, "') for file '", basename(original_fst_path), "'. Using original path."))
         }
@@ -71,6 +80,21 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
     }
 
     fst_path <- corrected_fst_path # Use the corrected (or original if no correction applied) path
+
+    # --- ADD DEBUGGING --- 
+    message(paste("DEBUG trait_scan: About to check file.exists() for fst_path:", fst_path))
+    message(paste("DEBUG trait_scan: dput(fst_path) is:", paste(capture.output(dput(fst_path)), collapse=""))) # Shows exact R string
+    parent_dir <- dirname(fst_path)
+    message(paste("DEBUG trait_scan: Checking parent directory:", parent_dir))
+    if(dir.exists(parent_dir)){
+        message(paste("DEBUG trait_scan: Parent directory exists. Listing some files in parent_dir:"))
+        tryCatch({
+            print(utils::head(list.files(parent_dir)))
+        }, error = function(e) { message(paste("DEBUG trait_scan: Error listing files:", e$message))})
+    } else {
+        message(paste("DEBUG trait_scan: PARENT DIRECTORY DOES NOT EXIST:", parent_dir))
+    }
+    # --- END DEBUGGING ---
 
     # Safeguard: Check if the (potentially corrected) file exists
     if (!file.exists(fst_path)) {
@@ -161,5 +185,40 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
   if (!is.null(cache_env)) {
     cache_env[[cache_key]] <- combined_data
   }
+
+  message(paste("trait_scan DEBUG: Final combined_data for trait:", selected_trait))
+  message("trait_scan DEBUG: str(combined_data):")
+  str(combined_data)
+  message("trait_scan DEBUG: print(head(combined_data)):")
+  print(head(combined_data))
+  message("trait_scan DEBUG: colnames(combined_data):")
+  print(colnames(combined_data))
+  if (nrow(combined_data) > 0 && "marker" %in% colnames(combined_data)) {
+    message("trait_scan DEBUG: dput(head(combined_data$marker)):")
+    dput(head(combined_data$marker))
+    message("trait_scan DEBUG: Any NAs in combined_data$marker? ", any(is.na(combined_data$marker)))
+    message("trait_scan DEBUG: Number of unique markers in combined_data: ", length(unique(combined_data$marker)))
+  } else {
+    message("trait_scan DEBUG: combined_data has 0 rows or no 'marker' column.")
+  }
+
+  # Save RDS for specific traits/datasets for external debugging
+  # Ensure selected_dataset is available in this scope or passed if necessary
+  # Assuming selected_dataset variable is accessible here from the function arguments or a higher scope
+  if (exists("selected_dataset", inherits = FALSE)) { # Check if selected_dataset is in the local function scope
+    if (tolower(selected_trait) == "bmp_18_2_22_6" || grepl("lipid", tolower(selected_dataset), ignore.case = TRUE)) {
+        save_path <- paste0("/tmp/debug_trait_scan_output_", gsub("[^a-zA-Z0-9_.-]", "_", selected_dataset), "_", gsub("[^a-zA-Z0-9_.-]", "_", selected_trait), ".rds")
+        message(paste("trait_scan DEBUG: SAVING combined_data for trait:", selected_trait, "from dataset:", selected_dataset, "TO:", save_path))
+        tryCatch({
+            saveRDS(combined_data, file = save_path)
+            message("trait_scan DEBUG: Successfully saved to ", save_path)
+        }, error = function(e) {
+            message(paste("trait_scan DEBUG: FAILED to save RDS:", e$message))
+        })
+    }
+  } else {
+    message("trait_scan DEBUG: selected_dataset variable not found in trait_scan scope for RDS saving condition.")
+  }
+
   return(combined_data)
 }

@@ -9,7 +9,7 @@
 #' @export
 fst_rows <- function(fst_path) {
   # Create row index filename
-  row_path <- stringr::str_replace(fst_path, ".fst$", "_row.fst")
+  row_path <- stringr::str_replace(fst_path, "\\.fst$", "_row.fst")
    # Only create row index if it doesn't exist
   if (!file.exists(row_path)) {
     # Read FST file and create row indices

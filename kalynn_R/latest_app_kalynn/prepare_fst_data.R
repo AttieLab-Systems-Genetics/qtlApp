@@ -88,6 +88,9 @@ process_fst_file <- function(fst_path, id_to_symbol, file_type) {
             message("DEBUG: Original fst_path for clinical: ", fst_path) # DEBUG
             new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
             message("DEBUG: new_fst_path for clinical after paste0: ", new_fst_path) # DEBUG
+        } else if (file_type == "liver_lipids") {
+            message("Liver lipid trait file, Phenotype column will be used as is for ", basename(fst_path))
+            new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
         } else {
             warning("Unknown file type: ", file_type, " for file: ", basename(fst_path))
             return(NULL)
@@ -120,9 +123,10 @@ main <- function() {
     }
 
     file_processing_configs <- list(
-        list(type = "clinical", pattern = "chromosome[0-9XYM]+_clinical_traits_all_mice_diet_interactive_data\\.fst$")
+        list(type = "clinical", pattern = "chromosome[X]+_clinical_traits_all_mice_diet_interactive_data\\.fst$"),
+        list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_all_mice_additive_data\\.fst$")
         # Add new types and patterns here, e.g., for isoforms:
-        # list(type = "isoforms", pattern = "isoform_pattern\\\\.fst$")
+        # list(type = "isoforms", pattern = "isoform_pattern\\.fst$")
     )
     
     all_processed_paths <- character(0) # Initialize empty character vector
