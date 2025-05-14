@@ -97,8 +97,8 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
       current_colnames <- colnames(all_peaks_for_dataset_raw)
       
       column_map <- c(
-        chr = "qtl_chr", pos = "qtl_pos", lod = "qtl_lod", marker = "marker", cis = "cis",
-        ci_lo = "qtl_ci_lo", ci_hi = "qtl_ci_hi", A = "A", B = "B", C = "C", D = "D", 
+        qtl_chr = "qtl_chr", qtl_pos = "qtl_pos", qtl_lod = "qtl_lod", marker = "marker", cis = "cis",
+        qtl_ci_lo = "qtl_ci_lo", qtl_ci_hi = "qtl_ci_hi", A = "A", B = "B", C = "C", D = "D", 
         E = "E", F = "F", G = "G", H = "H"
       )
       essential_old_names <- c("qtl_chr", "qtl_pos", "qtl_lod", "marker")
@@ -106,10 +106,12 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
         column_map["gene_symbol"] <- "gene_symbol"
         column_map["gene_id"]     <- "gene_id"
         column_map["trait"]       <- "phenotype"
-        essential_old_names <- c(essential_old_names, "phenotype", "gene_symbol", "gene_id")
+        column_map["gene_chr"]    <- "gene_chr"
+        column_map["gene_start"]  <- "gene_start"
+        essential_old_names <- c(essential_old_names, "phenotype", "gene_symbol", "gene_id", "gene_chr", "gene_start", "cis")
       } else { 
         column_map["trait"] <- "phenotype"
-        essential_old_names <- c(essential_old_names, "phenotype")
+        essential_old_names <- c(essential_old_names, "phenotype", "cis")
       }
       rename_vec <- c()
       for (new_name_app in names(column_map)) {
@@ -131,9 +133,9 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
       all_peaks_for_dataset <- dplyr::select(as.data.frame(all_peaks_for_dataset_raw), dplyr::all_of(unname(rename_vec))) %>%
         dplyr::rename(!!!rename_vec)
 
-      if("chr" %in% colnames(all_peaks_for_dataset)){ all_peaks_for_dataset$chr <- as.character(all_peaks_for_dataset$chr) }
-      if("pos" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$pos)){ all_peaks_for_dataset$pos <- suppressWarnings(as.numeric(all_peaks_for_dataset$pos)) }
-      if("lod" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$lod)){ all_peaks_for_dataset$lod <- suppressWarnings(as.numeric(all_peaks_for_dataset$lod)) }
+      if("qtl_chr" %in% colnames(all_peaks_for_dataset)){ all_peaks_for_dataset$qtl_chr <- as.character(all_peaks_for_dataset$qtl_chr) }
+      if("qtl_pos" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$qtl_pos)){ all_peaks_for_dataset$qtl_pos <- suppressWarnings(as.numeric(all_peaks_for_dataset$qtl_pos)) }
+      if("qtl_lod" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$qtl_lod)){ all_peaks_for_dataset$qtl_lod <- suppressWarnings(as.numeric(all_peaks_for_dataset$qtl_lod)) }
       allele_cols_to_check <- c("A", "B", "C", "D", "E", "F", "G", "H")
       for(ac in allele_cols_to_check){
           if(ac %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset[[ac]])){
@@ -172,10 +174,10 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
     if(nrow(filtered_peaks) == 0 && trait_type %in% c("genes", "isoforms")){
         warning("peak_finder: No peaks found for gene symbol '", selected_trait, "'. Check if this symbol exists in the 'gene_symbol' column of the CSV: ", basename(peaks_file_path_for_warning))
     }
-    if(nrow(filtered_peaks) > 0 && "marker" %in% colnames(filtered_peaks) && "lod" %in% colnames(filtered_peaks)){
+    if(nrow(filtered_peaks) > 0 && "marker" %in% colnames(filtered_peaks) && "qtl_lod" %in% colnames(filtered_peaks)){
         filtered_peaks <- filtered_peaks %>%
            dplyr::group_by(marker) %>%
-           dplyr::filter(lod == max(lod, na.rm = TRUE)) %>%
+           dplyr::filter(qtl_lod == max(qtl_lod, na.rm = TRUE)) %>%
            dplyr::slice(1) %>% 
            dplyr::ungroup()
     }
