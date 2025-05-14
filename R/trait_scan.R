@@ -120,8 +120,56 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
       }
     }
     message("Checking chromosome ", chr_num, " for trait: ", selected_trait, " in dataset: ", selected_dataset)
-    # Create row index if it doesn't exist
-    row_index_path <- fst_rows(fst_path)
+    
+    # Determine potential index file paths
+    # New convention: _rows.fst
+    index_path_new <- sub("\\\\.fst$", "_rows.fst", fst_path)
+    if (index_path_new == fst_path) { # Safety for paths not ending in .fst or if sub() fails
+        index_path_new <- paste0(fst_path, "_rows.fst")
+    }
+
+    # Legacy convention: _row.fst (this is also what fst_rows() creates)
+    index_path_legacy <- sub("\\\\.fst$", "_row.fst", fst_path)
+    if (index_path_legacy == fst_path) { # Safety for paths not ending in .fst or if sub() fails
+        index_path_legacy <- paste0(fst_path, "_row.fst")
+    }
+
+    row_index_path <- NULL # Initialize
+
+    if (file.exists(index_path_new)) {
+        message(paste("INFO: Using pre-existing NEWER convention index file:", basename(index_path_new), "(for FST:", basename(fst_path), ")"))
+        row_index_path <- index_path_new
+    } else if (file.exists(index_path_legacy)) {
+        message(paste("INFO: Using pre-existing LEGACY convention index file:", basename(index_path_legacy), "(for FST:", basename(fst_path), ")"))
+        row_index_path <- index_path_legacy
+    } else {
+        message(paste("INFO: Neither '_rows.fst' nor '_row.fst' index found for", basename(fst_path), ". Attempting to generate '_row.fst' on-the-fly using fst_rows()."))
+        # Attempt to create the legacy _row.fst index file on the fly
+        # fst_rows() will create it if it doesn't exist and return its path.
+        tryCatch({
+            row_index_path <- fst_rows(fst_path) # This will generate `_row.fst`
+            if (file.exists(row_index_path)) {
+                 message(paste("INFO: Successfully generated and using index file:", basename(row_index_path)))
+            } else {
+                 warning(paste("CRITICAL: fst_rows() was called but failed to create or return a valid path for index file:", basename(row_index_path), "(for FST:", basename(fst_path), "). Skipping this file."))
+                 row_index_path <- NULL 
+            }
+        }, error = function(e_create) {
+            warning(paste("CRITICAL: Error during on-the-fly creation of index file for", basename(fst_path), "using fst_rows():", e_create$message, ". Skipping this file."))
+            row_index_path <- NULL 
+        })
+    }
+
+    # If after all checks and potential creation, row_index_path is still NULL or doesn't exist, skip.
+    if (is.null(row_index_path) || !file.exists(row_index_path)) {
+        if(!is.null(row_index_path)) { 
+             warning(paste("CRITICAL: Index file path was determined as '", basename(row_index_path), "' but the file does not exist. Skipping FST file:", basename(fst_path)))
+        } else {
+             message(paste("INFO: No valid index file found or generated for FST file:", basename(fst_path), ". Skipping processing for this file."))
+        }
+        next # Skip to the next file in the loop
+    }
+
     tryCatch({
       # Read the row index to find the trait
       trait_index <- fst::read_fst(row_index_path, as.data.table = TRUE)
