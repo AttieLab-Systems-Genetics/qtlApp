@@ -125,14 +125,20 @@ get_trait_type <- function(import_data, selected_dataset = NULL) {
      warning("'trait_type' column missing from file directory.")
      return(NULL)
   }
-  trait_type <- tolower(file_dir_subset$trait_type[1])
+  trait_type_raw <- tolower(file_dir_subset$trait_type[1])
   
-  # Standardize clinical trait type to always be "clinical"
-  if (startsWith(trait_type, "clinical")) {
+  # Standardize trait types
+  if (grepl("clinical", trait_type_raw, ignore.case = TRUE)) { # Using grepl for consistency
       return("clinical")
   }
+  if (grepl("gene", trait_type_raw, ignore.case = TRUE)) { # Check if "gene" is present anywhere
+      return("genes")
+  }
+  if (grepl("isoform", trait_type_raw, ignore.case = TRUE)) { # Check if "isoform" is present anywhere
+      return("isoforms")
+  }
   
-  return(trait_type)
+  return(trait_type_raw) # Return the original (lowercased) if no specific keyword matched
 }
 get_trait_list <- function(import_data, trait_type) {
   if(is.null(import_data) || is.null(import_data$annotation_list)){
