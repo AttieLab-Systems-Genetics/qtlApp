@@ -26,14 +26,14 @@ create_modern_theme <- function() {
 # Function to create a modern color palette
 create_modern_palette <- function(n) {
   colors <- c(
-    "#3498db", # Blue
-    "#2c3e50", # Dark Blue
-    "#e74c3c", # Red
-    "#f1c40f", # Yellow
-    "#9b59b6", # Purple
-    "#1abc9c", # Turquoise
-    "#e67e22", # Orange
-    "#34495e"  # Navy
+    "#3498db", 
+    "#2c3e50", 
+    "#e74c3c", 
+    "#f1c40f", 
+    "#9b59b6", 
+    "#1abc9c", 
+    "#e67e22", 
+    "#34495e" 
   )
   
   if (n <= length(colors)) {
@@ -52,7 +52,7 @@ create_hover_template <- function() {
   )
 }
 
-# Function to create a modern plot layout
+
 create_plot_layout <- function(title = NULL, subtitle = NULL, xaxis_title = NULL, yaxis_title = NULL) {
   list(
     title = list(
@@ -104,7 +104,7 @@ create_plot_layout <- function(title = NULL, subtitle = NULL, xaxis_title = NULL
   )
 }
 
-# Function to create a modern plot configuration
+
 create_plot_config <- function() {
   list(
     displayModeBar = TRUE,
@@ -120,7 +120,6 @@ create_plot_config <- function() {
   )
 }
 
-# Function to create a modern plot annotation
 create_plot_annotation <- function(text, x, y, showarrow = TRUE) {
   list(
     text = text,
@@ -137,7 +136,7 @@ create_plot_annotation <- function(text, x, y, showarrow = TRUE) {
   )
 }
 
-# Function to create a modern plot shape
+
 create_plot_shape <- function(type, x0, x1, y0, y1, line = list(color = "#e74c3c", width = 2, dash = "dot")) {
   list(
     type = type,
@@ -150,7 +149,7 @@ create_plot_shape <- function(type, x0, x1, y0, y1, line = list(color = "#e74c3c
   )
 }
 
-# Function to create a modern plot marker
+
 create_plot_marker <- function(size = 8, color = "#3498db", symbol = "circle") {
   list(
     size = size,
@@ -163,7 +162,7 @@ create_plot_marker <- function(size = 8, color = "#3498db", symbol = "circle") {
   )
 }
 
-# Function to create a modern plot line
+
 create_plot_line <- function(width = 2, color = "#3498db", dash = "solid") {
   list(
     width = width,
@@ -172,7 +171,7 @@ create_plot_line <- function(width = 2, color = "#3498db", dash = "solid") {
   )
 }
 
-# Function to create a modern plot area
+
 create_plot_area <- function(color = "#3498db", opacity = 0.2) {
   list(
     color = color,
@@ -180,7 +179,7 @@ create_plot_area <- function(color = "#3498db", opacity = 0.2) {
   )
 }
 
-# Function to create a modern plot error bar
+
 create_plot_error_bar <- function(color = "#2c3e50", width = 1, thickness = 1) {
   list(
     color = color,
@@ -190,9 +189,8 @@ create_plot_error_bar <- function(color = "#2c3e50", width = 1, thickness = 1) {
 }
 
 
-# Function to customize chromosome plot appearance
+
 customize_chromosome_plot <- function(p, selected_chr = "All") {
-  # Base customizations
   p <- p + theme(
     legend.position = "none",
     panel.grid.major.x = element_blank(),
@@ -206,7 +204,7 @@ customize_chromosome_plot <- function(p, selected_chr = "All") {
   return(p)
 }
 
-# Function to add peak markers to a plot
+
 add_peak_markers <- function(p, peak_data, selected_chr = "All", color = "#e74c3c", size = 3, shape = 18) {
   if (nrow(peak_data) == 0) return(p)
   
@@ -221,7 +219,7 @@ add_peak_markers <- function(p, peak_data, selected_chr = "All", color = "#e74c3
   )
 }
 
-# Function to create highlight bands for QTL regions
+
 create_highlight_regions <- function(p, regions, selected_chr = "All", fill = "rgba(231, 76, 60, 0.1)", 
                                      outline = "#e74c3c", alpha = 0.2) {
   if (length(regions) == 0) return(p)
@@ -244,7 +242,7 @@ create_highlight_regions <- function(p, regions, selected_chr = "All", fill = "r
   return(p)
 }
 
-# Function to create modern plotly hover text
+
 create_hover_text <- function(data, trait_column = "trait", chr_column = "chr", pos_column = "pos", lod_column = "lod") {
   paste0(
     "<b>", data[[trait_column]], "</b><br>",

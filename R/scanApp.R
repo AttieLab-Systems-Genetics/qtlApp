@@ -18,7 +18,6 @@
 #'
 #' @export
 scanApp <- function() {
-  # Source UI helper functions if not already available
   if (!exists("create_download_button", mode = "function")) {
     source("R/ui_styles.R") # Assumes ui_styles.R contains all create_* helpers
   }
@@ -30,18 +29,15 @@ scanApp <- function() {
       mainParUI("main_par"),
       peakInput("peak"),
       peakUI("peak"),
-      # Existing download module (may or may not be used for these new buttons)
       downloadInput("download"),
       downloadOutput("download")
     ),
-    # Use navset_tab for main content area
     bslib::navset_tab(
       id = "main_tabs", # Use a simple string ID, removed ns()
       bslib::nav_panel("LOD Plot",
         bslib::card(
           bslib::card_header("LOD Plot"),
           bslib::card_body(
-            # Row for plot title, download buttons, and preset buttons
             shiny::div(style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap;",
               shiny::h4("LOD Score Plot", style = "margin: 0 15px 0 0; color: #2c3e50; font-weight: 600;"),
               shiny::div(style = "display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-end;",
@@ -75,7 +71,6 @@ scanApp <- function() {
                 }
               )
             ),
-            # Row for plot dimension controls and color toggle
             shiny::div(style = "display: flex; gap: 10px; align-items: center; margin-bottom: 5px; flex-wrap: wrap;",
               shiny::div(style = "display: flex; align-items: center; gap: 10px;",
                 if (exists("create_numeric_input", mode = "function")) {
@@ -108,8 +103,6 @@ scanApp <- function() {
       ),
       bslib::nav_panel("Peaks Table",
          bslib::card(
-            # No header needed if tab name is sufficient
-            # bslib::card_header("Peaks Table"),
             peakOutput("peak")
          )
       ),
@@ -219,14 +212,10 @@ scanServer <- function(id, main_par, import, trait_cache) {
     scan_table_chr <- shiny::reactive({
       shiny::req(scan_table(), main_par$selected_chr())
       current_scan_table <- scan_table()
-      # Ensure current_scan_table$chr is numeric for filtering if selected_chr is numeric
-      # QTL_plot_visualizer should ensure $chr is numeric
       selected_chromosome <- main_par$selected_chr()
       if (selected_chromosome == "All") {
         current_scan_table
       } else {
-        # Convert selected_chromosome to numeric to match chr column type (X=20, Y=21, M=22)
-        # This conversion should ideally happen in mainParServer or selected_chr reactive
         sel_chr_num <- selected_chromosome 
         if(selected_chromosome == "X") sel_chr_num <- 20
         if(selected_chromosome == "Y") sel_chr_num <- 21
@@ -240,18 +229,11 @@ scanServer <- function(id, main_par, import, trait_cache) {
     # This is the main ggplot object for the scan
     current_scan_plot_gg <- shiny::reactive({
       shiny::req(scan_table_chr(), main_par$LOD_thr(), main_par$selected_chr())
-      # Pass the color toggle state to ggplot_qtl_scan if it accepts it
-      # For now, ggplot_qtl_scan handles its own colors based on create_modern_palette
-      # We might need to modify ggplot_qtl_scan to accept a color_mode parameter
-      # Or, make sure use_alternating_colors_rv() is used by ggplot_qtl_scan
-      # For now, we assume ggplot_qtl_scan is already modernized and respects some internal toggle if available or uses its default.
-      # The key is that ggplot_qtl_scan returns a ggplot object.
       ggplot_qtl_scan(scan_table_chr(), main_par$LOD_thr(), main_par$selected_chr())
     })
 
     output$scan_plot_ui_render <- shiny::renderUI({
       shiny::req(current_scan_plot_gg())
-      # Use reactive width and height for the plotOutput
       plotly::plotlyOutput(ns("render_plotly_plot"), 
                         width = paste0(plot_width_rv(), "px"), 
                         height = paste0(plot_height_rv(), "px")) |>
@@ -266,9 +248,9 @@ scanServer <- function(id, main_par, import, trait_cache) {
       
       plt <- plt %>%
         plotly::layout(
-          dragmode = "zoom", # Enables box zoom by default dragging
+          dragmode = "zoom",
           hovermode = "closest",
-          title = list( # Keep title minimal or remove if already handled by card header
+          title = list(
             text = NULL 
           ),
           xaxis = list(title = current_scan_plot_gg()$labels$x), # Get x-axis label from ggplot
@@ -276,7 +258,6 @@ scanServer <- function(id, main_par, import, trait_cache) {
         ) %>%
         plotly::config(
           displaylogo = FALSE,
-          # Plotly modebar by default includes zoom tools. Removing some less used ones.
           modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", 
                                      "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud")
         )
@@ -359,7 +340,7 @@ scanServer <- function(id, main_par, import, trait_cache) {
         ggplot2::ggsave(file, plot = current_scan_plot_gg(), 
                         width = plot_width_rv()/96, 
                         height = plot_height_rv()/96, 
-                        device = cairo_pdf, units = "in") # Use cairo_pdf for better PDF quality
+                        device = cairo_pdf, units = "in")
       }
     )
     
@@ -373,13 +354,12 @@ scanServer <- function(id, main_par, import, trait_cache) {
       paste("scan", instanceID, sep = "_")
     })
     
-    # `%||%` operator for cleaner NULL coalescing
     `%||%` <- function(a, b) if (!is.null(a)) a else b
 
     shiny::reactiveValues(
-      filename = file_name_reactive, # For existing downloadApp module if it uses this
+      filename = file_name_reactive,
       tables = shiny::reactiveValues(scan = scan_table_chr),
-      plots  = shiny::reactiveValues(scan = current_scan_plot_gg) # Ensure this is the plot with dynamic sizing
+      plots  = shiny::reactiveValues(scan = current_scan_plot_gg)
     )
   })
 }

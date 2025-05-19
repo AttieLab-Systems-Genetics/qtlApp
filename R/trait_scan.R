@@ -12,7 +12,6 @@
 trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = NULL) {
   
   cache_key <- paste(selected_dataset, tolower(selected_trait), sep = "_")
-  # Check cache only if cache_env is provided
   if (!is.null(cache_env) && !is.null(cache_env[[cache_key]])) {
     message("Using cached data for trait: ", selected_trait, " in dataset: ", selected_dataset)
     return(cache_env[[cache_key]])
@@ -20,23 +19,19 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
   message("Searching for trait: ", selected_trait, " in dataset: ", selected_dataset)
   
   file_dir <- subset(file_dir, group == selected_dataset & file_type == "scans")
-  # Check if we found any matching files
   if (nrow(file_dir) == 0) {
     stop("No matching files found for the selected dataset: ", selected_dataset)
   }
   
   
   all_data <- list()
-  # Process each FST file (one per chromosome)
   for (i in 1:nrow(file_dir)) {
    
     chr_num <- file_dir$ID_code[i]
     original_fst_path <- file_dir$File_path[i] # Path from file_index.csv
     
-    # Get trait_type for this specific file row and convert to lowercase
     file_specific_trait_type_from_file <- tolower(file_dir$trait_type[i]) 
 
-    # Standardize "clinical traits" to "clinical" for consistent logic
     processed_trait_type <- file_specific_trait_type_from_file
     if (file_specific_trait_type_from_file == "clinical traits") {
       processed_trait_type <- "clinical"
@@ -96,15 +91,12 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
     }
     # --- END DEBUGGING ---
 
-    # Safeguard: Check if the (potentially corrected) file exists
     if (!file.exists(fst_path)) {
       warning("File check consistency error or corrected path invalid, skipping: ", fst_path, " (Original was: ", original_fst_path, ")")
       next
     }
     
-    # This check for .fst extension might be redundant if corrections ensure .fst, but kept for safety
     if (!stringr::str_detect(fst_path, "fst$")) {
-      # Attempt to replace .csv with .fst only if it's a .csv, otherwise log a warning
       if (stringr::str_detect(fst_path, "csv$")){
         fst_path_csv_replaced <- stringr::str_replace(fst_path, "csv$", "fst")
         if (!file.exists(fst_path_csv_replaced)) {
@@ -121,16 +113,13 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
     }
     message("Checking chromosome ", chr_num, " for trait: ", selected_trait, " in dataset: ", selected_dataset)
     
-    # Determine potential index file paths
-    # New convention: _rows.fst
     index_path_new <- sub("\\\\.fst$", "_rows.fst", fst_path)
     if (index_path_new == fst_path) { # Safety for paths not ending in .fst or if sub() fails
         index_path_new <- paste0(fst_path, "_rows.fst")
     }
 
-    # Legacy convention: _row.fst (this is also what fst_rows() creates)
     index_path_legacy <- sub("\\\\.fst$", "_row.fst", fst_path)
-    if (index_path_legacy == fst_path) { # Safety for paths not ending in .fst or if sub() fails
+    if (index_path_legacy == fst_path) {
         index_path_legacy <- paste0(fst_path, "_row.fst")
     }
 
@@ -144,10 +133,8 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
         row_index_path <- index_path_legacy
     } else {
         message(paste("INFO: Neither '_rows.fst' nor '_row.fst' index found for", basename(fst_path), ". Attempting to generate '_row.fst' on-the-fly using fst_rows()."))
-        # Attempt to create the legacy _row.fst index file on the fly
-        # fst_rows() will create it if it doesn't exist and return its path.
         tryCatch({
-            row_index_path <- fst_rows(fst_path) # This will generate `_row.fst`
+            row_index_path <- fst_rows(fst_path)
             if (file.exists(row_index_path)) {
                  message(paste("INFO: Successfully generated and using index file:", basename(row_index_path)))
             } else {
@@ -173,10 +160,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
     tryCatch({
       # Read the row index to find the trait
       trait_index <- fst::read_fst(row_index_path, as.data.table = TRUE)
-      # Convert Phenotype column to lowercase for case-insensitive matching
       trait_index[, Phenotype := tolower(Phenotype)]
-      # Check if the trait is present in this chromosome (case-insensitive)
-      # ** this will have problems with duplicate genes or isoforms **
       trait_rows <- trait_index[Phenotype == tolower(selected_trait), ]
       if (nrow(trait_rows) > 0) {
         message("Found trait in chromosome ", chr_num, " at rows ", trait_rows$from, "-", trait_rows$to)
@@ -204,9 +188,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
             next
           }
         }
-        # Verify that we have the correct trait data (case-insensitive)
         if ("Phenotype" %in% colnames(data)) {
-            # Double-check that all rows are for the requested trait
             data <- data[tolower(Phenotype) == tolower(selected_trait)]
             message("Verified ", nrow(data), " rows for trait: ", selected_trait)
         }
@@ -251,9 +233,7 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
   }
 
   # Save RDS for specific traits/datasets for external debugging
-  # Ensure selected_dataset is available in this scope or passed if necessary
-  # Assuming selected_dataset variable is accessible here from the function arguments or a higher scope
-  if (exists("selected_dataset", inherits = FALSE)) { # Check if selected_dataset is in the local function scope
+  if (exists("selected_dataset", inherits = FALSE)) {
     if (tolower(selected_trait) == "bmp_18_2_22_6" || grepl("lipid", tolower(selected_dataset), ignore.case = TRUE)) {
         save_path <- paste0("/tmp/debug_trait_scan_output_", gsub("[^a-zA-Z0-9_.-]", "_", selected_dataset), "_", gsub("[^a-zA-Z0-9_.-]", "_", selected_trait), ".rds")
         message(paste("trait_scan DEBUG: SAVING combined_data for trait:", selected_trait, "from dataset:", selected_dataset, "TO:", save_path))
