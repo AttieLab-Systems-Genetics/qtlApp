@@ -196,8 +196,6 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       peaks_dt <- peaks_dt[!is.na(qtl_pos)]
             
       if (nrow(peaks_dt) == 0) {
-        # This notification might be redundant if the one above already fired.
-        # shiny::showNotification(paste("No valid data after processing for phenotype class:", input$phenotype_class_selector), type = "warning")
         return(data.table::data.table())
       }
       
@@ -211,7 +209,7 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       shiny::req(df_to_plot, nrow(df_to_plot) > 0)
       
       df_to_plot[, hover_text := paste(
-        "Phenotype:", phenotype,
+        "Phenotype:", phenotype, # Original phenotype for display
         "<br>Marker:", marker, 
         "<br>LOD:", round(qtl_lod, 2),
         "<br>Chr:", qtl_chr,
