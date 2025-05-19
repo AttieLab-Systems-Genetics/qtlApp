@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install R packages using the script
-COPY kalynn_R/latest_app_kalynn/install_packages.R /tmp/install_packages.R
+COPY install_packages.R /tmp/install_packages.R
 RUN Rscript /tmp/install_packages.R && rm /tmp/install_packages.R
 
 # Force app logs to stderr
@@ -29,7 +29,7 @@ RUN mkdir -p /data
 RUN chmod -R 777 /data
 
 # Copy Brian's app.R and R directory from the root of the repository
-COPY kalynn_R/latest_app_kalynn/app.R /srv/shiny-server/
+COPY app.R /srv/shiny-server/
 COPY R /srv/shiny-server/R/
 
 # Set proper permissions
