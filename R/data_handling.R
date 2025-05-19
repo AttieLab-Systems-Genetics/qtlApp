@@ -1,5 +1,5 @@
 # Data handling and validation module
-# This module contains functions for handling and validating data in the QTL viewer app
+
 
 #' Create a new environment for caching
 #' @param parent The parent environment (default: emptyenv())
@@ -251,7 +251,7 @@ safe_file_path <- function(...) {
   do.call(file.path, components)
 }
 
-#' Check if file exists and is readable
+
 #' @param path File path to check
 #' @return TRUE if file exists and is readable, FALSE otherwise
 check_file_accessible <- function(path) {
