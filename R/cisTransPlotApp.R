@@ -7,8 +7,6 @@
 library(ggplot2)
 library(dplyr)
 
-#' Cis-Trans Plot Module Input UI
-#'
 #' @param id Module ID
 #' @export
 cisTransPlotInput <- function(id) {
@@ -45,8 +43,6 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
       
       valid_datasets <- character(0)
       for (grp in unique_groups) {
-        # Temporarily use the first row of the group to determine trait_type
-        # This assumes trait_type is consistent within a group
         group_subset <- file_dir[file_dir$group == grp, , drop = FALSE]
         if (nrow(group_subset) > 0) {
           # Create a temporary import_data structure for get_trait_type
@@ -60,7 +56,6 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
       sort(unique(valid_datasets))
     })
     
-    # Dynamic UI for dataset selector
     output$dataset_selector_ui <- renderUI({
         ns <- session$ns
         choices <- cistrans_dataset_choices()
@@ -74,7 +69,6 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
         }
     })
 
-    # Get selected dataset and trait type
     selected_dataset <- shiny::reactive({
       shiny::req(input$selected_cistrans_dataset)
       message("cisTransPlotServer: Selected Dataset: ", input$selected_cistrans_dataset) # DEBUG
@@ -87,12 +81,12 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
       current_trait_type
     })
 
-    # Get all peaks for the selected dataset
+    
     peaks_data <- shiny::reactive({
       shiny::req(import_reactives(), selected_dataset(), trait_type())
       message("cisTransPlotServer: Calling peak_finder with dataset: ", selected_dataset(), ", trait_type: ", trait_type()) # DEBUG
       
-      # Ensure peaks_cache is valid or NULL
+      
       current_peaks_cache <- if (is.environment(peaks_cache)) peaks_cache else NULL
       
       found_peaks <- peak_finder(import_reactives()$file_directory, 
@@ -116,7 +110,7 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
       found_peaks
     })
 
-    # Prepare data for plotting
+ 
     plot_data <- shiny::reactive({
       df <- peaks_data()
       message("cisTransPlotServer: Preparing plot_data. Initial df from peaks_data() has ", if(is.null(df)) "NULL" else nrow(df), " rows.") # DEBUG
@@ -124,7 +118,7 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
         message("cisTransPlotServer: plot_data - peaks_data() is NULL or empty, returning NULL.") # DEBUG
         return(NULL)
       }
-      # Require columns: qtl_chr, qtl_pos, cis, gene_chr, gene_start
+     
       req_cols <- c("qtl_chr", "qtl_pos", "cis", "gene_chr", "gene_start")
       message("cisTransPlotServer: Required columns for plot: ", paste(req_cols, collapse=", ")) # DEBUG
       message("cisTransPlotServer: Columns in df from peaks_data(): ", paste(colnames(df), collapse=", ")) # DEBUG
@@ -134,7 +128,7 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
         message("cisTransPlotServer: plot_data - Missing required columns: ", paste(missing_cols, collapse=", "), ". Returning NULL.") # DEBUG
         return(NULL)
       }
-      # Only keep rows with non-missing values
+    
       df_filtered <- dplyr::filter(df, !is.na(qtl_chr) & !is.na(qtl_pos) & !is.na(cis) & !is.na(gene_chr) & !is.na(gene_start))
       message("cisTransPlotServer: plot_data - After filtering NAs, df_filtered has ", nrow(df_filtered), " rows.") # DEBUG
       
@@ -143,7 +137,7 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
           return(NULL)
       }
       
-      # Recode chromosomes as ordered factors
+     
       chrom_levels <- c(as.character(1:19), "X")
       df_filtered$qtl_chr <- factor(chr_XYM(df_filtered$qtl_chr), levels = chrom_levels, ordered = TRUE)
       df_filtered$gene_chr <- factor(chr_XYM(df_filtered$gene_chr), levels = chrom_levels, ordered = TRUE)
@@ -162,8 +156,7 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
         return(plotly::ggplotly(plot_null("No cis/trans data available for this dataset.")))
       }
       
-      # Prepare hover text
-      # Ensure all columns used in hover_text are present in df
+      
       df$hover_text <- paste(
         "Gene ID:", df$gene_id,
         "<br>Symbol:", df$gene_symbol,
