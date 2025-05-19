@@ -118,6 +118,10 @@ scanApp <- function() {
       bslib::nav_panel("Cis/Trans Plot",
          cisTransPlotInput("cis_trans"), 
          cisTransPlotUI("cis_trans")    
+      ),
+      bslib::nav_panel("Manhattan Plot",
+         manhattanPlotInput("manhattan"),
+         manhattanPlotUI("manhattan")
       )
     )
   )
@@ -139,7 +143,8 @@ scanApp <- function() {
       peak_list <- peakServer("peak", main_par, import, peaks_cache)
       merged_list <- mergeServer("merged_list", scan_list_server_output, peak_list)
       downloadServer("download", merged_list)
-      cisTransPlotServer("cis_trans", import_reactives = import, peaks_cache = peaks_cache) 
+      cisTransPlotServer("cis_trans", import_reactives = import, peaks_cache = peaks_cache)
+      manhattanPlotServer("manhattan", import_reactives = import, main_par = main_par)
   }
   shiny::shinyApp(ui = ui, server = server)
 }

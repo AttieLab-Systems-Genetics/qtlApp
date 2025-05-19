@@ -48,6 +48,7 @@ source("R/QTL_plot_visualizer.R") # Source plot visualizer
 source("R/fst_rows.R") # Source fst_rows
 source("R/traitApp.R") # Source traitApp
 source("R/traitTypeApp.R") # Source traitTypeApp
+source("R/manhattanPlotApp.R") # Source the new Manhattan Plot module
 
 # Set maximum file upload size
 options(shiny.maxRequestSize = 20000*1024^2) # 20 GB
