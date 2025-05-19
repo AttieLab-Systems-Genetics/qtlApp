@@ -12,7 +12,9 @@ library(dplyr)
 cisTransPlotInput <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
-    uiOutput(ns("dataset_selector_ui")) # Placeholder for dynamic UI
+    # The UI for selecting dataset within cisTransPlotApp is removed,
+    # as this will be driven by the main app's selection.
+    # uiOutput(ns("dataset_selector_ui")) 
   )
 }
 
@@ -29,72 +31,46 @@ cisTransPlotUI <- function(id) {
 #'
 #' @param id Module ID
 #' @param import_reactives Reactive list containing file_directory and annotation_list
+#' @param main_par A REACTIVE that returns a list, expected to contain selected_dataset (which is a reactive group name)
 #' @param peaks_cache Environment for caching peak finder results.
 #' @export
-cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
+cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Reactive for generating dataset choices for the selectInput
-    cistrans_dataset_choices <- shiny::reactive({
-      shiny::req(import_reactives(), import_reactives()$file_directory)
-      file_dir <- import_reactives()$file_directory
-      unique_groups <- unique(file_dir$group)
-      
-      valid_datasets <- character(0)
-      for (grp in unique_groups) {
-        group_subset <- file_dir[file_dir$group == grp, , drop = FALSE]
-        if (nrow(group_subset) > 0) {
-          # Create a temporary import_data structure for get_trait_type
-          temp_import_data <- list(file_directory = group_subset)
-          type <- get_trait_type(temp_import_data, grp) 
-          if (!is.null(type) && type %in% c("genes", "isoforms")) {
-            valid_datasets <- c(valid_datasets, grp)
-          }
-        }
-      }
-      sort(unique(valid_datasets))
-    })
-    
-    output$dataset_selector_ui <- renderUI({
-        ns <- session$ns
-        choices <- cistrans_dataset_choices()
-        if (length(choices) > 0) {
-            create_select_input(ns("selected_cistrans_dataset"), 
-                                label = "Select Dataset for Cis/Trans Plot:", 
-                                choices = choices, 
-                                selected = choices[1])
-        } else {
-            shiny::p("No suitable (gene/isoform) datasets found for Cis/Trans plot.")
-        }
-    })
+    # Removed internal dataset selection UI and logic
+    # output$dataset_selector_ui <- renderUI({...})
+    # cistrans_dataset_choices <- shiny::reactive({...})
 
     selected_dataset <- shiny::reactive({
-      shiny::req(input$selected_cistrans_dataset)
-      message("cisTransPlotServer: Selected Dataset: ", input$selected_cistrans_dataset) # DEBUG
-      input$selected_cistrans_dataset
+      shiny::req(main_par(), main_par()$selected_dataset, main_par()$selected_dataset())
+      dataset_group_name <- main_par()$selected_dataset()
+      message("cisTransPlotServer: Received selected_dataset from main_par: ", dataset_group_name) 
+      return(dataset_group_name)
     })
+    
     trait_type <- shiny::reactive({
       shiny::req(import_reactives(), selected_dataset())
+      # Ensure import_reactives() is called to get the list
       current_trait_type <- get_trait_type(import_reactives(), selected_dataset())
-      message("cisTransPlotServer: Determined Trait Type: ", current_trait_type) # DEBUG
+      message("cisTransPlotServer: Determined Trait Type: ", current_trait_type) 
       current_trait_type
     })
 
     
     peaks_data <- shiny::reactive({
       shiny::req(import_reactives(), selected_dataset(), trait_type())
-      message("cisTransPlotServer: Calling peak_finder with dataset: ", selected_dataset(), ", trait_type: ", trait_type()) # DEBUG
-      
+      message("cisTransPlotServer: Calling peak_finder with dataset: ", selected_dataset(), ", trait_type: ", trait_type()) 
       
       current_peaks_cache <- if (is.environment(peaks_cache)) peaks_cache else NULL
       
+      # Ensure import_reactives() is called to get the list
       found_peaks <- peak_finder(import_reactives()$file_directory, 
                                  selected_dataset(), 
                                  trait_type = trait_type(), 
                                  cache_env = current_peaks_cache, 
                                  use_cache = TRUE)
-      message("cisTransPlotServer: Data returned by peak_finder:") # DEBUG
+      message("cisTransPlotServer: Data returned by peak_finder:") 
       if(is.data.frame(found_peaks)){
         message("peak_finder returned a data.frame with ", nrow(found_peaks), " rows and columns: ", paste(colnames(found_peaks), collapse=", "))
         if(nrow(found_peaks) > 0){
@@ -151,45 +127,92 @@ cisTransPlotServer <- function(id, import_reactives, peaks_cache) {
     })
 
     output$cis_trans_plot_output <- plotly::renderPlotly({
-      df <- plot_data()
-      if (is.null(df) || nrow(df) == 0) {
+      plot_data_filtered <- plot_data()
+      
+      if (is.null(plot_data_filtered) || nrow(plot_data_filtered) == 0) {
+        message("cisTransPlotServer: No data to plot, rendering null plot.")
         return(plotly::ggplotly(plot_null("No cis/trans data available for this dataset.")))
       }
       
+      current_selected_dataset_name <- selected_dataset()
+
+      plot_data_filtered_dt <- data.table::as.data.table(plot_data_filtered)
       
-      df$hover_text <- paste(
-        "Gene ID:", df$gene_id,
-        "<br>Symbol:", df$gene_symbol,
-        "<br>QTL Pos:", round(df$qtl_pos, 2),
-        "<br>Marker:", df$marker,
-        "<br>A:", round(df$A, 3), " B:", round(df$B, 3),
-        "<br>C:", round(df$C, 3), " D:", round(df$D, 3),
-        "<br>E:", round(df$E, 3), " F:", round(df$F, 3),
-        "<br>G:", round(df$G, 3), " H:", round(df$H, 3)
-      )
+      # Ensure 'cis' column is character "TRUE" or "FALSE" for scale_color_manual
+      if (is.logical(plot_data_filtered_dt$cis)) {
+        plot_data_filtered_dt[, cis_char := ifelse(cis, "TRUE", "FALSE")]
+      } else {
+        plot_data_filtered_dt[, cis_char := as.character(cis)] # Assume it's already proper if not logical
+      }
       
-      cis.colors <- c("FALSE" = "#E41A1C", "TRUE" = "blue")
-      p <- ggplot2::ggplot(df, ggplot2::aes(x = qtl_pos, y = gene_start, color = cis, text = hover_text)) +
-        ggplot2::geom_point(alpha = 0.5, size = 1.2) +
-        ggplot2::scale_color_manual(values = cis.colors, labels = c("FALSE" = "Trans", "TRUE" = "Cis"), drop = FALSE) +
-        ggplot2::labs(
-          x = NULL,
-          y = NULL,
-          color = "Cis QTL"
-        ) +
-        theme_minimal() +
-        ggplot2::theme(
-          panel.grid = ggplot2::element_blank(),
-          panel.border = ggplot2::element_rect(color = "grey70", fill = NA),
-          axis.text.x = ggplot2::element_blank(),
-          axis.text.y = ggplot2::element_blank(),
-          axis.title.x = ggplot2::element_blank(),
-          axis.title.y = ggplot2::element_blank(),
-          panel.spacing = ggplot2::unit(0.1, "lines")
+      plot_data_filtered_dt[, hover_text := paste(
+        "Symbol:", gene_symbol,
+        "<br>ID:", gene_id,
+        "<br>Gene Chr:", gene_chr, 
+        "<br>Gene Pos (Mbp):", round(gene_start / 1e6, 2), 
+        "<br>QTL Chr:", qtl_chr,    
+        "<br>QTL Pos (Mbp):", round(qtl_pos / 1e6, 2), 
+        "<br>LOD:", round(qtl_lod, 2),
+        "<br>QTL Type:", ifelse(cis_char == "TRUE", "Cis", "Trans"),
+        "<br>Dataset:", current_selected_dataset_name 
+      )]
+
+      cis.colors <- c("FALSE" = "#E41A1C", "TRUE" = "blue") # From your old code
+
+      p <- ggplot(plot_data_filtered_dt, 
+                  aes(x = qtl_pos,  # Using raw qtl_pos as in old example
+                      y = gene_start, # Using raw gene_start as in old example
+                      color = cis_char, # Use the character version of 'cis'
+                      key = gene_id,      
+                      text = hover_text,
+                      customdata = gene_symbol)) + 
+        geom_point(alpha = 0.5, size = 1.2) + # Old point aesthetics
+        scale_color_manual(values = cis.colors, 
+                             labels = c("FALSE" = "Trans", "TRUE" = "Cis"), 
+                             name = "QTL Type", # Legend title
+                             drop = FALSE) +
+        labs(
+          title = paste("Cis/Trans Plot for", current_selected_dataset_name),
+          x = NULL, # Old axis labs
+          y = NULL  # Old axis labs
+        ) + 
+        theme_minimal(base_size = 11) + 
+        theme( # Theme elements from your old code
+          panel.grid = element_blank(),
+          panel.border = element_rect(color = "grey70", fill = NA),
+          axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.spacing = unit(0.1, "lines"),
+          plot.title = element_text(hjust = 0.5, face = "bold"),
+          legend.position = "top" # Or "right" or remove for default
         )
-      plotly::ggplotly(p, tooltip = "text") %>%
-        plotly::layout(dragmode = "pan", hovermode = "closest") %>%
+      
+      fig <- plotly::ggplotly(p, tooltip = "text", source = ns("cistrans_plotly")) %>% 
+        plotly::layout(dragmode = "pan", hovermode = "closest") %>% 
         plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"))
+
+      fig <- plotly::event_register(fig, 'plotly_click')
+      
+      return(fig)
     })
+
+    clicked_phenotype_for_lod_scan_rv <- shiny::reactiveVal(NULL)
+
+    shiny::observeEvent(plotly::event_data("plotly_click", source = ns("cistrans_plotly")), {
+      click_data <- plotly::event_data("plotly_click", source = ns("cistrans_plotly"))
+      if (!is.null(click_data) && !is.null(click_data$customdata) && length(click_data$customdata) > 0) {
+        clicked_identifier <- click_data$customdata[[1]]
+        clicked_phenotype_for_lod_scan_rv(clicked_identifier)
+        message(paste("CisTransPlot Clicked! Identifier for LOD scan (should be symbol):", clicked_identifier))
+      } else {
+        clicked_phenotype_for_lod_scan_rv(NULL)
+      }
+    })
+    
+    return(list(
+      clicked_phenotype_for_lod_scan = clicked_phenotype_for_lod_scan_rv
+    ))
   })
 }

@@ -5,22 +5,24 @@
 #' @param id Module ID.
 #' @export
 manhattanPlotInput <- function(id) {
-  ns <- shiny::NS(id)
-  shiny::tagList(
-    if (exists("create_select_input", mode = "function")) {
-      create_select_input(ns("phenotype_class_selector"),
-                          label = "Select Phenotype Class:",
-                          choices = c("Clinical Traits" = "clinical_trait", 
-                                        "Liver Lipids" = "Lipids"), # Changed to "Lipids" (capital L)
-                          selected = "clinical_trait")
-    } else {
-      shiny::selectInput(ns("phenotype_class_selector"),
-                         label = "Select Phenotype Class:",
-                         choices = c("Clinical Traits" = "clinical_trait", 
-                                       "Liver Lipids" = "Lipids"), # Changed to "Lipids" (capital L)
-                         selected = "clinical_trait")
-    }
-  )
+  # This input is no longer needed as the plot will be determined by the main app's selection.
+  # ns <- shiny::NS(id)
+  # shiny::tagList(
+  #   if (exists("create_select_input", mode = "function")) {
+  #     create_select_input(ns("phenotype_class_selector"),
+  #                         label = "Filter by Phenotype Class:", 
+  #                         choices = c("Clinical Traits" = "clinical_trait", 
+  #                                       "Liver Lipids" = "Lipids"), 
+  #                         selected = "clinical_trait")
+  #   } else {
+  #     shiny::selectInput(ns("phenotype_class_selector"),
+  #                        label = "Filter by Phenotype Class:",
+  #                        choices = c("Clinical Traits" = "clinical_trait", 
+  #                                      "Liver Lipids" = "Lipids"),
+  #                        selected = "clinical_trait")
+  #   }
+  # )
+  return(NULL) # Return NULL as there's no UI content for this input anymore
 }
 
 #' Manhattan Plot Module UI Output
@@ -35,8 +37,8 @@ manhattanPlotUI <- function(id) {
 #' Manhattan Plot Module Server
 #'
 #' @param id Module ID.
-#' @param import_reactives Reactive list containing file_directory.
-#' @param main_par Reactive list containing selected_dataset.
+#' @param import_reactives Reactive that returns a list containing file_directory.
+#' @param main_par Reactive that returns a list containing selected_dataset (which is a reactive group name).
 #' 
 #' @importFrom dplyr %>% filter select mutate arrange distinct group_by summarise
 #' @importFrom data.table fread as.data.table setkey
@@ -49,95 +51,49 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
 
     selected_peaks_file <- shiny::reactive({
       shiny::req(
-        input$phenotype_class_selector, # Now reacts to this
-        import_reactives(),
-        import_reactives()$file_directory
+        import_reactives(), 
+        import_reactives()$file_directory,
+        main_par(), # main_par is a reactive returning a list
+        main_par()$selected_dataset, # This element is the reactive for the group name
+        main_par()$selected_dataset() # This is the actual selected group name value
       )
+      
       file_dir_dt <- data.table::as.data.table(import_reactives()$file_directory)
-      selected_phen_class_value <- input$phenotype_class_selector # "clinical_trait" or "Lipids"
+      # selected_dataset_group_name is the 'group' from file_index.csv, passed by scanApp
+      selected_dataset_group_name <- main_par()$selected_dataset()
 
-      # Determine target trait_type in file_index.csv based on selector
-      # The values of input$phenotype_class_selector are "clinical_trait" and "Lipids"
-      # In file_index.csv, the trait_type column has "Clinical Traits" and "Lipids"
-      # So, we need a mapping if they are not identical.
-      # For "Lipids", it's a direct match.
-      # For "clinical_trait", the file_index.csv uses "Clinical Traits" (with a space and capital T)
-      
-      target_trait_type <- ""
-      if (selected_phen_class_value == "clinical_trait") {
-        target_trait_type <- "Clinical Traits"
-      } else if (selected_phen_class_value == "Lipids") {
-        target_trait_type <- "Lipids"
-      } else {
-        shiny::showNotification(paste("ManhattanPlot: Unknown phenotype_class_selector value:", selected_phen_class_value), type = "error")
+      message(paste("ManhattanPlot: Received selected_dataset_group_name:", selected_dataset_group_name))
+
+      if (is.null(selected_dataset_group_name) || !nzchar(selected_dataset_group_name)){
+        shiny::showNotification("ManhattanPlot: No dataset group selected from main app.", type = "warning")
         return(NULL)
       }
 
-      # Filter for rows that are 'peaks' files and match the target_trait_type
-      # Also, let's add a preference for scan_type == "additive" if multiple exist
-      
-      if (!("trait_type" %in% names(file_dir_dt))) {
-          shiny::showNotification("ManhattanPlot: Column 'trait_type' not found in file_index.csv. Cannot select peaks file based on phenotype class.", type="error", duration=NULL)
-          return(NULL)
-      }
-      if (!("file_type" %in% names(file_dir_dt))) {
-          shiny::showNotification("ManhattanPlot: Column 'file_type' not found in file_index.csv.", type="error", duration=NULL)
-          return(NULL)
-      }
-      if (!("File_path" %in% names(file_dir_dt))) {
-          shiny::showNotification("ManhattanPlot: Column 'File_path' not found in file_index.csv.", type="error", duration=NULL)
-          return(NULL)
-      }
-       if (!("scan_type" %in% names(file_dir_dt))) { # Ensure scan_type column exists for preference
-          shiny::showNotification("ManhattanPlot: Column 'scan_type' not found in file_index.csv. Cannot prefer additive scan.", type="warning", duration=NULL)
-          # Proceed without scan_type preference if column is missing
-          peaks_rows <- file_dir_dt[file_type == "peaks" & trait_type == target_trait_type]
-      } else {
-          peaks_rows <- file_dir_dt[file_type == "peaks" & trait_type == target_trait_type]
-      }
+      # Find the row for this specific group that is a 'peaks' file.
+      target_peaks_row <- file_dir_dt[group == selected_dataset_group_name & file_type == "peaks"]
 
-
-      if (nrow(peaks_rows) == 0) {
-        shiny::showNotification(paste("ManhattanPlot: No 'peaks' file found in file_index.csv for trait_type:", target_trait_type), type = "warning", duration = NULL)
+      if (nrow(target_peaks_row) == 0) {
+        shiny::showNotification(paste("ManhattanPlot: No 'peaks' file found in file_index.csv for group:", selected_dataset_group_name), type = "warning", duration = NULL)
         return(NULL)
       }
       
-      selected_row <- NULL
-      if (nrow(peaks_rows) > 1 && "scan_type" %in% names(peaks_rows)) {
-        # Try to find an "additive" scan_type
-        additive_peaks_rows <- peaks_rows[scan_type == "additive"]
-        if (nrow(additive_peaks_rows) > 0) {
-          selected_row <- additive_peaks_rows[1, ] # Take the first additive one
-          if (nrow(additive_peaks_rows) > 1) {
-            shiny::showNotification(paste("ManhattanPlot: Multiple 'additive' peaks files found for trait_type:", target_trait_type, ". Selecting the first one."), type = "info")
-          }
-        } else {
-          # No additive found, take the first one from the original multi-row list
-          selected_row <- peaks_rows[1, ]
-          shiny::showNotification(paste("ManhattanPlot: Multiple peaks files found for trait_type:", target_trait_type, "and none are 'additive'. Selecting the first one found."), type = "info")
-        }
-      } else {
-        # Only one row found, or scan_type column was missing
-        selected_row <- peaks_rows[1, ]
+      if (nrow(target_peaks_row) > 1) {
+        shiny::showNotification(paste("ManhattanPlot: Multiple 'peaks' files found for group:", selected_dataset_group_name, ". Selecting the first one."), type = "info")
+        target_peaks_row <- target_peaks_row[1, ] 
       }
-
-      if (!is.null(selected_row)) {
-        peaks_file_path <- selected_row$File_path[[1]]
-        if (!is.na(peaks_file_path) && nzchar(peaks_file_path)) {
-          if (file.exists(peaks_file_path)) {
-            message(paste("ManhattanPlot: Loading peaks file for", target_trait_type, ":", peaks_file_path)) # Added message
-            return(peaks_file_path)
-          } else {
-            shiny::showNotification(paste("ManhattanPlot: Peaks file specified in file_index.csv does not exist:", peaks_file_path), type = "error", duration = NULL)
-            return(NULL)
-          }
+      
+      peaks_file_path <- target_peaks_row$File_path[[1]]
+      
+      if (!is.na(peaks_file_path) && nzchar(peaks_file_path)) {
+        if (file.exists(peaks_file_path)) {
+          message(paste("ManhattanPlot: Loading peaks file for group ", selected_dataset_group_name, ":", peaks_file_path))
+          return(peaks_file_path)
         } else {
-          shiny::showNotification(paste("ManhattanPlot: 'File_path' for selected peaks file is empty or NA. Trait_type:", target_trait_type), type = "warning", duration = NULL)
+          shiny::showNotification(paste("ManhattanPlot: Peaks file specified for group does not exist:", peaks_file_path), type = "error", duration = NULL)
           return(NULL)
         }
       } else {
-        # This case should ideally not be reached if nrow(peaks_rows) > 0
-        shiny::showNotification(paste("ManhattanPlot: Could not select a specific peaks file for trait_type:", target_trait_type), type = "error")
+        shiny::showNotification(paste("ManhattanPlot: 'File_path' for peaks is empty or NA for group:", selected_dataset_group_name), type = "warning", duration = NULL)
         return(NULL)
       }
     })
@@ -147,43 +103,92 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       file_path <- selected_peaks_file()
       tryCatch({
         dt <- data.table::fread(file_path)
-        # Ensure required columns are present
         req_cols <- c("phenotype_class", "phenotype", "qtl_lod", "qtl_chr", "qtl_pos")
         missing_cols <- req_cols[!req_cols %in% colnames(dt)]
         if (length(missing_cols) > 0) {
-          shiny::showNotification(paste("Missing required columns in peaks file:", paste(missing_cols, collapse = ", ")),
+          shiny::showNotification(paste("Missing required columns in peaks file (",basename(file_path),"):", paste(missing_cols, collapse = ", ")),
                                 type = "error", duration = NULL)
           return(NULL)
         }
         return(data.table::as.data.table(dt))
       }, error = function(e) {
-        shiny::showNotification(paste("Error loading peaks file:", file_path, e$message), type = "error", duration = NULL)
+        shiny::showNotification(paste("Error loading peaks file (",basename(file_path),"):", e$message), type = "error", duration = NULL)
         return(NULL)
       })
     })
 
     plot_data_prep <- shiny::reactive({
-      shiny::req(raw_peaks_data(), input$phenotype_class_selector)
+      shiny::req(raw_peaks_data(), main_par(), main_par()$selected_dataset, import_reactives(), import_reactives()$file_directory)
+      
       peaks_dt <- data.table::copy(raw_peaks_data())
-      
-      peaks_dt <- peaks_dt[phenotype_class == input$phenotype_class_selector]
-      
-      if (nrow(peaks_dt) == 0) {
-        shiny::showNotification(paste("No data for phenotype class:", input$phenotype_class_selector), type = "warning")
-        return(data.table::data.table()) 
+      selected_group_name <- main_par()$selected_dataset() # This is the 'group' name from file_index
+      file_index <- data.table::as.data.table(import_reactives()$file_directory)
+
+      # Determine the dataset_category for the selected_group_name
+      current_dataset_info <- file_index[group == selected_group_name]
+      current_dataset_category <- NULL
+      if (nrow(current_dataset_info) > 0) {
+        current_dataset_category <- current_dataset_info$dataset_category[1]
+      } else {
+        shiny::showNotification(paste("ManhattanPlot: Could not find 'group'", selected_group_name, "in file_index.csv to determine category."), type = "warning")
+        return(NULL) # Or an empty data.table
       }
 
+      shiny::validate(
+        shiny::need(current_dataset_category, "ManhattanPlot: Dataset category could not be determined.")
+      )
+
+      # Determine the phenotype_class string to filter by, based on the dataset category
+      target_phenotype_class_value <- NULL
+      if (current_dataset_category == "Clinical Traits") {
+        target_phenotype_class_value <- "clinical_trait"
+      } else if (current_dataset_category == "Liver Lipids") {
+        target_phenotype_class_value <- "liver_lipid"
+      } else {
+        # Fallback or error if the category is unexpected for Manhattan plots
+        shiny::showNotification(paste("ManhattanPlot: Unexpected dataset category '", current_dataset_category, "' for Manhattan plot."), type = "warning")
+        return(NULL) # Or an empty data.table
+      }
+      
+      message(paste0("ManhattanPlot DEBUG: For group '", selected_group_name, "' (category '", current_dataset_category, "'), ",
+                     "filtering by phenotype_class = '", target_phenotype_class_value, "'."))
+      
+      if (nrow(peaks_dt) > 0 && "phenotype_class" %in% colnames(peaks_dt)) {
+        message(paste0("ManhattanPlot DEBUG: Unique 'phenotype_class' values BEFORE filtering: ", paste(unique(peaks_dt$phenotype_class), collapse=", ")))
+      } else if (nrow(peaks_dt) == 0) {
+        message("ManhattanPlot DEBUG: raw_peaks_data for plot_data_prep is empty BEFORE filtering.")
+      } else {
+        message("ManhattanPlot DEBUG: 'phenotype_class' column not found in raw_peaks_data for plot_data_prep.")
+        return(NULL) # Critical column missing
+      }
+
+      # Actual filtering based on the determined target_phenotype_class_value
+      peaks_dt <- peaks_dt[phenotype_class == target_phenotype_class_value]
+      
+      if (nrow(peaks_dt) == 0) {
+        shiny::showNotification(
+          paste0("No data after filtering for phenotype class: ", target_phenotype_class_value, 
+                 " (for dataset '", selected_group_name, "'). Check if the peaks file contains this phenotype class and the correct string."),
+          type = "warning", duration = 10
+        )
+        # --- START DEBUG ---
+        message(paste0("ManhattanPlot DEBUG: Filtering for '", target_phenotype_class_value, "' resulted in 0 rows."))
+        # --- END DEBUG ---
+        return(data.table::data.table()) # Return empty table to avoid plot errors
+      } else {
+        message(paste0("ManhattanPlot DEBUG: Filtering for '", target_phenotype_class_value, "' resulted in ", nrow(peaks_dt), " rows."))
+      }
+
+      # Ensure all subsequent code uses peaks_dt_filtered
       if (!is.numeric(peaks_dt$qtl_lod)) {
           peaks_dt[, qtl_lod := as.numeric(as.character(qtl_lod))]
       }
       peaks_dt <- peaks_dt[!is.na(qtl_lod)]
 
-      # Convert qtl_chr to a factor for ordered faceting
-      # Keep original qtl_chr for display, make a factor for ordering
       peaks_dt[, chr_factor := factor(qtl_chr, 
                                       levels = c(as.character(1:19), "X", "Y", "M"), 
                                       ordered = TRUE)]
-      peaks_dt <- peaks_dt[!is.na(chr_factor)] # Remove rows where chr is not in 1-19,X,Y,M
+      peaks_dt <- peaks_dt[!is.na(chr_factor)] 
       
       if (!is.numeric(peaks_dt$qtl_pos)) {
           peaks_dt[, qtl_pos := as.numeric(as.character(qtl_pos))]
@@ -191,11 +196,11 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       peaks_dt <- peaks_dt[!is.na(qtl_pos)]
             
       if (nrow(peaks_dt) == 0) {
-        shiny::showNotification(paste("No valid data after processing for phenotype class:", input$phenotype_class_selector), type = "warning")
+        # This notification might be redundant if the one above already fired.
+        # shiny::showNotification(paste("No valid data after processing for phenotype class:", input$phenotype_class_selector), type = "warning")
         return(data.table::data.table())
       }
       
-      # Sort by chromosome factor and position for consistent plotting (though facet handles separation)
       data.table::setkey(peaks_dt, chr_factor, qtl_pos)
       
       return(peaks_dt)
@@ -205,22 +210,18 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       df_to_plot <- plot_data_prep()
       shiny::req(df_to_plot, nrow(df_to_plot) > 0)
       
-      # Prepare hover text (marker column is assumed to exist from your CSV header)
       df_to_plot[, hover_text := paste(
         "Phenotype:", phenotype,
-        "<br>Marker:", marker, # Using 'marker' column for tooltip
+        "<br>Marker:", marker, 
         "<br>LOD:", round(qtl_lod, 2),
         "<br>Chr:", qtl_chr,
         "<br>Pos (Mbp):", round(qtl_pos, 2)
       )]
       
-      # Chromosome colors for alternating pattern in facets (optional, but common)
-      # For now, all points are one color, faceting provides separation.
-
-      p <- ggplot(df_to_plot, aes(x = qtl_pos, y = qtl_lod, text = hover_text, key = marker)) + # Added key = marker for plotly
+      p <- ggplot(df_to_plot, aes(x = qtl_pos, y = qtl_lod, text = hover_text, key = marker, customdata = phenotype)) + 
         geom_point(alpha = 0.7, size = 1.5, color = "#2c3e50") + 
         scale_y_continuous(name = "LOD Score", expand = expansion(mult = c(0, 0.05))) +
-        labs(title = paste("Manhattan Plot for", input$phenotype_class_selector), x = "Position (Mbp)") +
+        labs(title = paste("Manhattan Plot for", main_par()$selected_dataset()), x = "Position (Mbp)") +
         facet_grid(. ~ chr_factor, scales = "free_x", space = "free_x", switch = "x") + # Facet by chromosome
         theme_minimal(base_size = 11) +
         theme(
@@ -233,13 +234,33 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
           plot.title = element_text(hjust = 0.5, face = "bold")
         )
       
-      # Convert to plotly
-      # Setting a source for event_data if needed later for interactivity, e.g. clicking a point
       plotly_p <- plotly::ggplotly(p, tooltip = "text", source = ns("manhattan_plotly")) %>%
         plotly::layout(dragmode = "pan") %>%
         plotly::config(displaylogo = FALSE)
       
+      # Register the plotly_click event
+      plotly_p <- plotly::event_register(plotly_p, 'plotly_click')
+      
       return(plotly_p)
     })
+
+    clicked_phenotype_for_lod_scan_rv <- shiny::reactiveVal(NULL)
+
+    shiny::observeEvent(plotly::event_data("plotly_click", source = ns("manhattan_plotly")), {
+      click_data <- plotly::event_data("plotly_click", source = ns("manhattan_plotly"))
+      if (!is.null(click_data) && !is.null(click_data$customdata) && length(click_data$customdata) > 0) {
+        # customdata directly gives the value from the aesthetic mapping
+        clicked_phenotype <- click_data$customdata[[1]] 
+        clicked_phenotype_for_lod_scan_rv(clicked_phenotype)
+        message(paste("ManhattanPlot Clicked! Phenotype for LOD scan:", clicked_phenotype))
+      } else {
+        # Clear if click is not on a point with customdata (e.g., background)
+        clicked_phenotype_for_lod_scan_rv(NULL) 
+      }
+    })
+
+    return(list(
+      clicked_phenotype_for_lod_scan = clicked_phenotype_for_lod_scan_rv
+    ))
   })
 } 
