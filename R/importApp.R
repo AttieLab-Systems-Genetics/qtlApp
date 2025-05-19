@@ -28,14 +28,10 @@ importApp <- function() {
 #' @export
 importServer <- function(id) {
   shiny::moduleServer(id, function(input, output, session) {
-    # Call the updated import_data function to load all necessary data
     loaded_data <- import_data()
-    
-    # Create caches - Call the (now empty) create_cache function 
-    # just in case other code expects it to be called, though it does nothing.
     create_cache()
     
-    # Return the loaded data list wrapped in a reactive
+    
     shiny::reactive(loaded_data)
   })
 }
