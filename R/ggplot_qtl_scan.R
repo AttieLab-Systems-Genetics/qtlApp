@@ -21,30 +21,27 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All") {
     return(ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title="No scan data to display"))
   }
   
-  # Ensure scan_table has 'markers', 'order' (numeric chr), 'LOD', 'position', 'BPcum'
-  # QTL_plot_visualizer is responsible for providing these with correct types.
+  
   required_cols <- c("markers", "order", "LOD", "position", "BPcum")
   if(!all(required_cols %in% colnames(scan_table))){
       missing_cols <- setdiff(required_cols, colnames(scan_table))
       stop(paste("ggplot_qtl_scan: scan_table is missing required columns:", paste(missing_cols, collapse=", ")))
   }
   
-  # Convert numeric 'order' column to character chromosome labels (1-19, X, Y, M)
-  # This new column will be used for factor levels and color mapping.
+
   scan_table$chr_labels <- chr_XYM(scan_table$order)
   
-  # Define the desired order of chromosome labels for factors and scales
-  # This ensures consistent ordering in legends and on axes.
+  
   all_possible_chr_labels <- c(as.character(1:19), "X", "Y", "M")
-  # Filter to include only those present in the current scan_table
+ 
   present_chr_labels <- intersect(all_possible_chr_labels, unique(scan_table$chr_labels))
-  # Make sure it's a factor with these levels
+  
   scan_table$chr_factor <- factor(scan_table$chr_labels, levels = present_chr_labels)
   
-  # Set x variable based on chromosome selection
+ 
   xvar <- if (selected_chr == "All") "BPcum" else "position"
   
-  # Create axis labels data frame (using numeric 'order' for calculation, character 'chr_labels' for display)
+  
   axisdf <- scan_table %>%
     dplyr::group_by(chr_factor, order) %>% # Group by both factor and numeric order
     dplyr::summarise(center = (max(.data[[xvar]], na.rm = TRUE) + min(.data[[xvar]], na.rm = TRUE))/2, .groups = "drop") %>%
@@ -83,7 +80,7 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All") {
         ),
         plot.margin = ggplot2::margin(b = 40, l = 20, r = 20, t = 20, unit = "pt")
       )
-  } else { # Fallback theme
+  } else { 
     p <- p + ggplot2::theme_bw() +
     ggplot2::theme(
       legend.position = "none",

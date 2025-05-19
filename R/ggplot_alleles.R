@@ -14,10 +14,8 @@ ggplot_alleles <- function(peak, colors = NULL) {
     source("R/plot_enhancements.R")
   }
   
-  # If no data or input is NULL, return a null plot with message
-  # Explicitly check for NULL first
+  
   if(is.null(peak) || !is.data.frame(peak) || !nrow(peak)) {
-    # Use the null plot function if available
     if (exists("create_null_plot", mode = "function")) {
       source("R/plot_null.R")
       return(create_null_allele_plot())
@@ -29,7 +27,6 @@ ggplot_alleles <- function(peak, colors = NULL) {
   }
   }
   
-  # Define modern strain colors if not provided
   if (is.null(colors)) {
     colors <- c(
     "AJ" = "#000000",
@@ -49,7 +46,7 @@ ggplot_alleles <- function(peak, colors = NULL) {
     ggplot2::scale_color_manual(values = colors) +
     ggplot2::geom_hline(yintercept = 0, color = "#7f8c8d", linetype = "dashed", size = 0.5)
   
-  # Apply modern theme if available, otherwise use enhanced classic theme
+ 
   if (exists("create_modern_theme", mode = "function")) {
     p <- p + create_modern_theme() +
       ggplot2::theme(
@@ -58,7 +55,7 @@ ggplot_alleles <- function(peak, colors = NULL) {
         axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5)
       )
   } else {
-    # Fallback to enhanced classic theme
+    
     p <- p + ggplot2::theme_bw() +
     ggplot2::theme(
       panel.border = ggplot2::element_blank(),

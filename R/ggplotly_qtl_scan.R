@@ -84,7 +84,7 @@ ggplotly_qtl_scan <- function(scan_object, peak_table,
       hovermode = "closest" #,
       
     ) |>
-    # Remove unwanted modebar buttons
+    
     plotly::config(
       displaylogo = FALSE,
       modeBarButtonsToRemove = c(
