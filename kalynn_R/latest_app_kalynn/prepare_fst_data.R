@@ -123,8 +123,8 @@ main <- function() {
     }
 
     file_processing_configs <- list(
-        list(type = "clinical", pattern = "chromosome[X]+_clinical_traits_all_mice_diet_interactive_data\\.fst$"),
-        list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_all_mice_additive_data\\.fst$")
+        # list(type = "clinical", pattern = "chromosome[X]+_clinical_traits_all_mice_diet_interactive_data\\.fst$"), # Commented out for liver lipids only run
+        list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_HC_mice_additive_data\\.fst$")
         # Add new types and patterns here, e.g., for isoforms:
         # list(type = "isoforms", pattern = "isoform_pattern\\.fst$")
     )
