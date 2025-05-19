@@ -45,7 +45,6 @@ source("R/ggplot_alleles.R") # Source ggplot alleles
 source("R/ggplot_qtl_scan.R") # Source ggplot qtl scan
 source("R/peak_info.R") # Source peak info
 source("R/QTL_plot_visualizer.R") # Source plot visualizer
-# source("R/csv2fst.R") # Source csv2fst
 source("R/fst_rows.R") # Source fst_rows
 source("R/traitApp.R") # Source traitApp
 source("R/traitTypeApp.R") # Source traitTypeApp
@@ -53,5 +52,6 @@ source("R/traitTypeApp.R") # Source traitTypeApp
 # Set maximum file upload size
 options(shiny.maxRequestSize = 20000*1024^2) # 20 GB
 
-# Launch the application (assuming scanApp is the desired main app for now)
-scanApp()
+# Launch the application
+scanApp() # Revert to launching scanApp
+# qtlApp() 
