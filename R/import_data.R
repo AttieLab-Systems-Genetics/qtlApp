@@ -9,12 +9,9 @@
 #' @importFrom data.table fread
 #' @export
 import_data <- function() {
-  # Define base data path within the container
   base_path <- "/data/dev/miniViewer_3.0"
-  
   message("Importing data from: ", base_path)
   
-  # Load file index
   file_index_path <- file.path(base_path, "file_index.csv")
   if (!file.exists(file_index_path)) {
     stop("Required file not found: ", file_index_path)
@@ -22,7 +19,6 @@ import_data <- function() {
   file_directory <- read.csv(file_index_path)
   message("Loaded file index: ", nrow(file_directory), " rows.")
 
-  # Create group identifier in file_directory FIRST
   file_directory$group <- paste0(file_directory$diet, " ", file_directory$trait_compartment, " ",
                            file_directory$trait_type, 
                            ifelse(file_directory$sexes == "Both", "", paste0(" (", file_directory$sexes, ")")),
@@ -64,7 +60,6 @@ import_data <- function() {
   annotation_list <- readRDS(annotation_list_path)
   message("Loaded annotation list.")
   
-  # Check for lipids entry in annotation_list and create a placeholder if missing
   if (!("lipids" %in% names(annotation_list))) {
     warning("annotation_list$lipids not found in the loaded annotation_list.rds. Lipid traits will not be available unless this is generated.")
     annotation_list$lipids <- data.frame(data_name = character(0), stringsAsFactors = FALSE)
@@ -78,7 +73,6 @@ import_data <- function() {
     }
   }
 
-  # Load markers
   markers_path <- file.path(base_path, "CHTC_dietDO_markers_RDSgrcm39.rds")
    if (!file.exists(markers_path)) {
     stop("Required file not found: ", markers_path)
