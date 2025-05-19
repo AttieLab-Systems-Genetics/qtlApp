@@ -14,8 +14,9 @@ ggplot_alleles <- function(peak, colors = NULL) {
     source("R/plot_enhancements.R")
   }
   
-  # If no data, return a null plot with message
-  if(!nrow(peak)) {
+  # If no data or input is NULL, return a null plot with message
+  # Explicitly check for NULL first
+  if(is.null(peak) || !is.data.frame(peak) || !nrow(peak)) {
     # Use the null plot function if available
     if (exists("create_null_plot", mode = "function")) {
       source("R/plot_null.R")
@@ -23,7 +24,8 @@ ggplot_alleles <- function(peak, colors = NULL) {
     } else {
       return(ggplot2::ggplot() +
       ggplot2::theme_void() +
-      ggplot2::labs(title = "No data to plot"))
+      ggplot2::labs(title = "No allele effects data available for this peak.") + # More informative message
+      ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5)))
   }
   }
   

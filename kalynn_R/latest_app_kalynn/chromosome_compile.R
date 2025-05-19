@@ -10,7 +10,7 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/clinical_traits/clinical_traits_all_mice_diet_interactive/output"
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_lipids/liver_lipids_HC_mice_additive/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 
 # Set data.table specific temp directory
@@ -31,13 +31,30 @@ if (!dir.exists(OUTPUT_DIR)) {
 }
 
 # Define all chromosomes
-#CHROMOSOMES <- c(1:19, "X", "Y", "M")
-CHROMOSOMES <- c(1:3)
+
+CHROMOSOMES <- c(1:19, "X", "Y", "M")
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
+marker_to_chr_map <- NULL # Initialize globally
+
 if (file.exists(markers_file)) {
   markers <- readRDS(markers_file)
+  markers_dt_global <- as.data.table(markers)
+  if (!"marker" %in% colnames(markers_dt_global) || !"chr" %in% colnames(markers_dt_global)) {
+    stop("The 'markers' object from RDS must contain 'marker' and 'chr' columns.")
+  }
+  markers_dt_global[, marker := as.character(marker)] # Ensure marker column is character
+  markers_dt_global[, chr := as.character(chr)]       # Ensure chr column is character
+
+  # Standardize chr names in the map (e.g., 20 to X) for consistent matching if CHROMOSOMES uses X, Y, M
+  markers_dt_global[chr == "20", chr := "X"]
+  markers_dt_global[chr == "21", chr := "Y"]
+  markers_dt_global[chr == "22", chr := "M"]
+
+  marker_to_chr_map <- unique(markers_dt_global[, .(marker, chr_from_map = chr)])
+  message(paste("Successfully created marker-to-chromosome map with", nrow(marker_to_chr_map), "unique markers."))
+
   # Create a list of markers for each chromosome
   chr_markers <- lapply(CHROMOSOMES, function(chr) {
     chr_markers <- markers[markers$chr == as.character(chr), "marker"]
@@ -53,39 +70,60 @@ if (file.exists(markers_file)) {
 # Function to process a single gz file for all chromosomes
 process_file <- function(file_path) {
   tryCatch({
-    # Explicitly use the custom temp dir for reading (via options)
     data <- fread(file_path, header = TRUE)
     
-    # Create a list to store data for each chromosome
-    chr_data <- vector("list", length(CHROMOSOMES))
-    # Ensure names are characters for consistent access
-    names(chr_data) <- as.character(CHROMOSOMES)
-    
-    if (is.null(chr_markers)) {
-      # Extract chromosome from marker names if no marker file
-      data$chr <- str_extract(data$marker, "(?<=chr)[0-9XYM]+")
-      # Split data by chromosome using character names
-      for (chr_char in as.character(CHROMOSOMES)) {
-        chr_data[[chr_char]] <- data[data$chr == chr_char]
-      }
-    } else {
-      # Use marker lists to filter data for each chromosome
-      # Loop through numeric values but access lists using character names
-      for (chr in CHROMOSOMES) { 
-        chr_char <- as.character(chr) # Use character version for indexing
-        # Check if the name exists in chr_markers before accessing
-        if (chr_char %in% names(chr_markers)) {
-          chr_data[[chr_char]] <- data[data$marker %in% chr_markers[[chr_char]]]
-        } else {
-          # Handle case where chromosome name might be missing (shouldn't happen with current setup)
-          chr_data[[chr_char]] <- data.table() # Assign empty table
-        }
-      }
+    # Ensure 'marker' column exists in input data from gz file
+    if (!("marker" %in% colnames(data))) {
+      message(paste("Warning: 'marker' column not found in file:", basename(file_path), ". Skipping file."))
+      return(NULL)
+    }
+    # Ensure 'marker' column in 'data' is character type for joining
+    data[, marker := as.character(marker)]
+
+    # Check if marker_to_chr_map is available
+    if (is.null(marker_to_chr_map) || nrow(marker_to_chr_map) == 0) {
+        message(paste("Error: Marker-to-chromosome map is not loaded or empty. Cannot process file:", basename(file_path)))
+        return(NULL)
+    }
+
+    # Merge input data with the prepared marker_to_chr_map
+    merged_data <- merge(data, marker_to_chr_map, by = "marker", all.x = TRUE, sort = FALSE)
+
+    # Handle markers not found in the map
+    unmatched_rows_count <- sum(is.na(merged_data$chr_from_map))
+    if (unmatched_rows_count > 0) {
+        unmatched_markers_examples <- head(unique(merged_data[is.na(chr_from_map), marker]), 5)
+        message(paste0("Warning: In ", basename(file_path), ", ", unmatched_rows_count, " rows (e.g., for markers: ", 
+                       paste(unmatched_markers_examples, collapse=", "), 
+                       "...) did not match any entry in the marker-to-chromosome map. These rows will be excluded."))
+        merged_data <- merged_data[!is.na(chr_from_map)] # Remove rows that didn't get a chromosome
     }
     
-    return(chr_data)
+    if (nrow(merged_data) == 0) {
+        message(paste("No data remaining for file", basename(file_path), "after mapping markers to chromosomes and filtering unmatched."))
+        return(NULL)
+    }
+
+    # Create a list to store data for each chromosome
+    chr_data_list <- vector("list", length(CHROMOSOMES))
+    names(chr_data_list) <- as.character(CHROMOSOMES)
+    
+    # The chr_from_map already has standardized X, Y, M from the global map preparation
+    # So, no need to re-standardize here unless CHROMOSOMES uses numeric 20,21,22
+
+    for (chr_val_loop in CHROMOSOMES) {
+      chr_char_loop <- as.character(chr_val_loop) 
+      # Subset data for the current chromosome using the mapped chromosome information
+      current_chr_subset <- merged_data[chr_from_map == chr_char_loop, ]
+      
+      # Store the subset; it includes original columns from 'data' plus 'chr_from_map'
+      chr_data_list[[chr_char_loop]] <- current_chr_subset
+    }
+    
+    return(chr_data_list)
+
   }, error = function(e) {
-    message(paste("Error processing file:", file_path, "-", e$message))
+    message(paste("Error processing file:", basename(file_path), "-", e$message)) # Ensure basename for brevity
     return(NULL)
   })
 }

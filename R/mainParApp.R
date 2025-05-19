@@ -69,70 +69,39 @@ mainParServer <- function(id, import) {
 
     # Update trait choices (existing logic)
     shiny::observeEvent(shiny::req(input$selected_dataset), {
-      shiny::req(import())
+      shiny::req(import()) 
       current_ds <- input$selected_dataset
-      message(paste("mainParServer: observeEvent for trait update. Dataset:", current_ds)) # DEBUG
-      
-      # Freeze input$which_trait while we update it to prevent premature reactions
       shiny::freezeReactiveValue(input, "which_trait")
-      message("mainParServer: Froze input$which_trait.") # DEBUG
-
-      # First, clear the existing selection
       shiny::updateSelectizeInput(session, "which_trait", choices = character(0), selected = character(0), 
                                   options = list(placeholder = 'Loading traits...')) 
-      message("mainParServer: Cleared which_trait via updateSelectizeInput.") # DEBUG
-
       choices <- get_trait_choices(import(), current_ds)
-      message(paste("mainParServer: Generated trait choices for", current_ds, ":", paste(head(choices), collapse=", "))) # DEBUG 
-      
       new_selected_trait <- NULL
       if (!is.null(choices) && length(choices) > 0) {
         new_selected_trait <- choices[1] 
-        message(paste("mainParServer: For dataset", current_ds, ", new_selected_trait will be:", new_selected_trait)) # DEBUG
-      } else {
-        message(paste("mainParServer: No trait choices found for dataset", current_ds))
       }
-      
-      # Update with new choices and select the first one
-      # No need to freeze again if this is the last update to which_trait in this observer block
       shiny::updateSelectizeInput(session, "which_trait",
         choices = choices, 
         selected = new_selected_trait, 
         options = list(placeholder = 'Search or select trait...', maxItems = 1, maxOptions = 10), 
         server = TRUE 
       )
-      message(paste("mainParServer: updateSelectizeInput for 'which_trait' called. Choices sent:", paste(head(choices),collapse=", "), "Attempted to select:", new_selected_trait)) # DEBUG
     })
 
     # Reactive for currently selected trait based on UI input, but validated against current dataset
     current_selected_trait <- shiny::reactive({
-      shiny::req(input$selected_dataset) # Require selected_dataset first
-      
+      shiny::req(input$selected_dataset)
       current_ds <- input$selected_dataset
-      current_trait_input <- input$which_trait # Value from UI
-      
-      message(paste("mainParServer: current_selected_trait CALC START. Dataset:", current_ds, "UI which_trait:", current_trait_input)) # DEBUG
-
+      current_trait_input <- input$which_trait
       valid_choices <- get_trait_choices(import(), current_ds)
-      message(paste("mainParServer: current_selected_trait valid_choices for", current_ds, ":", paste(head(valid_choices), collapse=", "))) # DEBUG
-
       final_trait_to_return <- NULL
-
       if (!is.null(valid_choices) && length(valid_choices) > 0) {
         if (!is.null(current_trait_input) && current_trait_input %in% valid_choices) {
           final_trait_to_return <- current_trait_input
-          message(paste("mainParServer: UI which_trait (", current_trait_input, ") is VALID. Returning it.")) # DEBUG
         } else {
-          final_trait_to_return <- valid_choices[1] # Default to first valid choice
-          message(paste("mainParServer: UI which_trait (", current_trait_input, ") is INVALID or NULL. Defaulting to first valid choice:", final_trait_to_return)) # DEBUG
+          final_trait_to_return <- valid_choices[1]
         }
-      } else {
-        message(paste("mainParServer: No valid_choices for dataset", current_ds, ". Returning NULL from current_selected_trait.")) # DEBUG
       }
-      
-      # This req ensures we don't proceed with a NULL trait if no valid options exist.
-      shiny::req(final_trait_to_return, cancelOutput = TRUE) # cancelOutput will prevent downstream errors if this is NULL
-      message(paste("mainParServer: current_selected_trait CALC END. Returning:", final_trait_to_return)) # DEBUG
+      shiny::req(final_trait_to_return, cancelOutput = TRUE)
       return(final_trait_to_return)
     })
 

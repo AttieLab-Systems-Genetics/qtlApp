@@ -45,72 +45,38 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    shiny::observe({
-      message("--- peakServer Debug ---")
-      message(paste("Selected Dataset (from main_par):", shiny::isolate(main_par$selected_dataset())))
-      message(paste("Which Trait (from main_par):", shiny::isolate(main_par$which_trait())))
-      imp_data <- shiny::isolate(import_data())
-      if(!is.null(imp_data) && !is.null(imp_data$file_directory)){
-        message(paste("Imported file_directory rows:", nrow(imp_data$file_directory)))
-      } else {
-        message("Imported file_directory is NULL or not fully available yet.")
-      }
-      message("------------------------")
-    })
-
     chosen_trait <- shiny::reactive({
       shiny::req(import_data(), main_par$which_trait(), main_par$selected_dataset()) 
-      # Get selected trait and log it
-      trait_val <- get_selected_trait(import_data(),
-                         main_par$which_trait(), main_par$selected_dataset())
-      message(paste("peakServer chosen_trait_reactive: Calculated chosen_trait as:", trait_val))
+      trait_val <- get_selected_trait(import_data(), main_par$which_trait(), main_par$selected_dataset())
       trait_val
     })
+    
     peak_table <- shiny::reactive({
-      shiny::req(main_par$selected_dataset(), chosen_trait())
-      
-      # For logging
+      shiny::req(main_par$selected_dataset(), chosen_trait()) 
       current_dataset <- main_par$selected_dataset()
-      current_chosen_trait <- chosen_trait()
-      message(paste("peak_table_reactive: Attempting peak_finder for trait '", current_chosen_trait, "' in dataset '", current_dataset, "'"))
-      
-      # Call peak_finder, passing the peaks_cache environment
-      found_peaks <- peak_finder(import_data()$file_directory, current_dataset, cache_env = peaks_cache)
-      message(paste("peak_table_reactive: peak_finder returned", nrow(found_peaks), "total peaks for dataset before trait subset."))
-      
-      # Subset for the chosen trait
-      # Ensure 'trait' column exists in found_peaks before subsetting
-      if("trait" %in% colnames(found_peaks)){
-        result <- subset(found_peaks, trait == current_chosen_trait)
-        message(paste("peak_table_reactive: After subsetting for trait '", current_chosen_trait, "', found", nrow(result), "peaks."))
-      } else {
-        message(paste("peak_table_reactive: 'trait' column not found in peaks returned by peak_finder. Cannot subset for trait '", current_chosen_trait, "'. Returning all found peaks for dataset."))
-        result <- found_peaks # Or an empty data frame: result <- found_peaks[0,]
-      }
+      current_chosen_trait <- chosen_trait() 
+      current_trait_type <- get_trait_type(import_data(), current_dataset)
+      result <- peak_finder(import_data()$file_directory, 
+                            current_dataset, 
+                            selected_trait = current_chosen_trait, 
+                            trait_type = current_trait_type,
+                            cache_env = peaks_cache)
       result
     })
 
-    # Observer to update which_peak choices when peak_table changes
     shiny::observeEvent(peak_table(), {
       peaks <- peak_table()
-      message("--- peakApp.R: Observer for which_peak (using updateSelectInput) ---")
       current_selected_peak <- shiny::isolate(input$which_peak) 
-
       if (is.null(peaks)) {
-        message("peaks object is NULL. Clearing choices.")
         shiny::updateSelectInput(session, "which_peak", label = "Choose peak (no data)", 
                                     choices = character(0), 
                                     selected = character(0)) 
       } else {
-        message(paste("peaks data frame has", nrow(peaks), "rows."))
         if (nrow(peaks) > 0) {
-          message(paste("Columns in peaks data frame:", paste(colnames(peaks), collapse=", ")))
           if ("marker" %in% colnames(peaks) && length(peaks$marker) > 0) {
             peak_markers <- as.character(peaks$marker)
-            choices <- stats::setNames(peak_markers, peak_markers) 
-            
-            message(paste("Generated choices for dropdown:", paste(names(choices), "=", choices, collapse="; ")))
-            
+            unique_peak_markers <- unique(peak_markers)
+            choices <- stats::setNames(unique_peak_markers, unique_peak_markers) 
             new_selected_value <- NULL
             if (length(choices) > 0) {
               if (!is.null(current_selected_peak) && current_selected_peak %in% choices) {
@@ -119,50 +85,65 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
                 new_selected_value <- choices[[1]] 
               }
             }
-            message(paste("New selected value will be:", new_selected_value))
-
             shiny::updateSelectInput(session, "which_peak", 
                                       label = "Choose peak", 
                                       choices = choices, 
                                       selected = new_selected_value) 
-            message("Updated 'which_peak' dropdown with actual peak markers.")
           } else {
-            message("'marker' column NOT FOUND or empty in peaks data frame! Clearing choices.")
             shiny::updateSelectInput(session, "which_peak", label = "Choose peak (marker N/A)", 
                                         choices = character(0), 
                                         selected = character(0))
           }
         } else {
-          message("No peaks found (nrow is 0). Updating dropdown to 'No peaks found'.")
           no_peaks_choice <- list("No peaks found" = "no_peaks_found_val")
           shiny::updateSelectInput(session, "which_peak", label = "Choose peak (none found)", 
                                       choices = no_peaks_choice, 
                                       selected = "no_peaks_found_val")
         }
       }
-      message("--- End peakApp.R: Observer for which_peak ---")
-    }, ignoreNULL = FALSE, priority = 1) 
+    }, ignoreNULL = FALSE, priority = 1)
 
-    # Table ov peaks info ------------------------------------------------------
-    output$peak_table <- DT::renderDT({DT::datatable(
-      peak_table(),
-      options = list(paging = FALSE,    # Disable pagination
-                     scrollX = TRUE,
-                     scrollY = TRUE,
-                     autoWidth = TRUE,
-                     dom = 'Bt',       # Show Buttons and Table, no other controls like search or pagination info
-                     buttons = list(
-                       list(extend = 'csv', className = 'btn-sm'),
-                       list(extend = 'excel', className = 'btn-sm')
-                     ),
-                     columnDefs = list(
-                       list(targets = '_all', className = 'dt-center'),
-                       list(targets = c(0, 8, 9), visible = FALSE))
-      ),
-      extensions = 'Buttons',
-      selection = 'single',
-      filter = 'none',                 # Remove column filters
-      rownames = TRUE)
+    # Table of peaks info ------------------------------------------------------
+    output$peak_table <- DT::renderDT({
+      peaks_data <- peak_table() # Get the reactive data
+      shiny::req(peaks_data) # Temporarily simplified req for debugging
+      # shiny::req(peaks_data, nrow(peaks_data) > 0) # Original req
+      
+      # Define base columns to hide
+      cols_to_hide_base <- c("ci_lo", "ci_hi")
+      # Conditionally add gene_id if it exists
+      cols_to_hide <- cols_to_hide_base
+      if("gene_id" %in% colnames(peaks_data)){
+          cols_to_hide <- c(cols_to_hide, "gene_id")
+      }
+      
+      # Check which columns to hide actually exist in the current data
+      cols_that_exist_and_should_be_hidden <- intersect(cols_to_hide, colnames(peaks_data))
+      
+      # Build columnDefs dynamically
+      colDefs <- list(list(targets = '_all', className = 'dt-center'))
+      if(length(cols_that_exist_and_should_be_hidden) > 0){
+          colDefs <- c(colDefs, list(list(targets = cols_that_exist_and_should_be_hidden, visible = FALSE)))
+      }
+      
+      DT::datatable(
+          peaks_data, 
+          options = list(paging = FALSE,
+                         scrollX = TRUE,
+                         scrollY = TRUE,
+                         autoWidth = TRUE,
+                         dom = 'Bt',
+                         buttons = list(
+                           list(extend = 'csv', className = 'btn-sm'),
+                           list(extend = 'excel', className = 'btn-sm')
+                         ),
+                         columnDefs = colDefs # Use dynamically generated colDefs
+          ),
+          extensions = 'Buttons',
+          selection = 'single',
+          filter = 'none',
+          rownames = TRUE
+        )
     })
  
     output$allele_effects_plot <- shiny::renderPlot({
@@ -170,13 +151,17 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
       allele_plot()
     })
     allele_plot <- shiny::reactive({
+      # Use the already filtered peak_table()
       shiny::req(peak_table(), input$which_peak)
-      peak <- pivot_peaks(peak_table(), input$which_peak)
-      ggplot_alleles(peak)
+      # pivot_peaks expects the 'marker' column and A-H columns, which peak_finder should provide
+      peak_long <- pivot_peaks(peak_table(), input$which_peak) 
+      
+      # Call ggplot_alleles without the extra arguments
+      ggplot_alleles(peak_long)
     })
     file_name <- shiny::reactive({
-      # Evaluate which_trait reactive
-      trait_val <- shiny::req(main_par$which_trait())
+      # Evaluate chosen_trait reactive (gene symbol)
+      trait_val <- shiny::req(chosen_trait())
       peak_val <- shiny::req(input$which_peak)
       instanceID <- paste(trait_val, peak_val, sep = "_") 
       
