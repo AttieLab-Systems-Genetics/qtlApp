@@ -105,22 +105,17 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
 
     # Table of peaks info ------------------------------------------------------
     output$peak_table <- DT::renderDT({
-      peaks_data <- peak_table() # Get the reactive data
-      shiny::req(peaks_data) # Temporarily simplified req for debugging
-      # shiny::req(peaks_data, nrow(peaks_data) > 0) # Original req
+      peaks_data <- peak_table() 
+      shiny::req(peaks_data) 
       
-      # Define base columns to hide
       cols_to_hide_base <- c("ci_lo", "ci_hi")
-      # Conditionally add gene_id if it exists
       cols_to_hide <- cols_to_hide_base
       if("gene_id" %in% colnames(peaks_data)){
           cols_to_hide <- c(cols_to_hide, "gene_id")
       }
       
-      # Check which columns to hide actually exist in the current data
       cols_that_exist_and_should_be_hidden <- intersect(cols_to_hide, colnames(peaks_data))
       
-      # Build columnDefs dynamically
       colDefs <- list(list(targets = '_all', className = 'dt-center'))
       if(length(cols_that_exist_and_should_be_hidden) > 0){
           colDefs <- c(colDefs, list(list(targets = cols_that_exist_and_should_be_hidden, visible = FALSE)))
@@ -137,7 +132,7 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
                            list(extend = 'csv', className = 'btn-sm'),
                            list(extend = 'excel', className = 'btn-sm')
                          ),
-                         columnDefs = colDefs # Use dynamically generated colDefs
+                         columnDefs = colDefs
           ),
           extensions = 'Buttons',
           selection = 'single',
@@ -151,16 +146,12 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
       allele_plot()
     })
     allele_plot <- shiny::reactive({
-      # Use the already filtered peak_table()
       shiny::req(peak_table(), input$which_peak)
-      # pivot_peaks expects the 'marker' column and A-H columns, which peak_finder should provide
       peak_long <- pivot_peaks(peak_table(), input$which_peak) 
       
-      # Call ggplot_alleles without the extra arguments
       ggplot_alleles(peak_long)
     })
     file_name <- shiny::reactive({
-      # Evaluate chosen_trait reactive (gene symbol)
       trait_val <- shiny::req(chosen_trait())
       peak_val <- shiny::req(input$which_peak)
       instanceID <- paste(trait_val, peak_val, sep = "_") 
@@ -168,11 +159,8 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
       # Debug before comparison
       sel_chr_val <- main_par$selected_chr()
       
-      # Defensive check before comparison
       if (is.atomic(sel_chr_val) && is.character(sel_chr_val) && length(sel_chr_val) == 1) {
-        # Evaluate selected_chr reactive and compare                        
         if(shiny::req(sel_chr_val) != "All") { 
-          # Evaluate selected_chr reactive for paste
           instanceID <- paste0(instanceID, "_chr", sel_chr_val)
         }
       } else {
@@ -181,7 +169,6 @@ peakServer <- function(id, main_par, import_data, peaks_cache) {
       
       paste("peak", instanceID, sep = "_")
     })
-    # Return `peak_list` = reactiveValues containing elements `filename`, `tables` and `plots`.
     shiny::reactiveValues(
       filename = file_name,
       tables = shiny::reactiveValues(
@@ -203,7 +190,6 @@ peakInput <- function(id) {
   
   ns <- shiny::NS(id)
   
-  # Use modern styling if available, otherwise use standard controls
   if (exists("create_select_input", mode = "function")) {
     create_well_panel(
       h4("Strain Effects", style = "color: #2c3e50; margin-bottom: 15px;"),
@@ -237,14 +223,12 @@ peakInput <- function(id) {
 #' @rdname peakApp
 #' @export
 peakUI <- function(id) {
-  # Source UI styling functions if not already loaded
   if (!exists("create_plot_output", mode = "function")) {
     source("R/ui_styles.R")
   }
   
   ns <- shiny::NS(id)
   
-  # Use modern styling if available, otherwise use standard output
   if (exists("create_plot_output", mode = "function")) {
     div(style = "margin-top: 20px; position: relative; z-index: 0;",
       shiny::plotOutput(ns("allele_effects_plot"), height = "400px") %>%
