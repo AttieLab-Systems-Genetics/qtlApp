@@ -11,7 +11,7 @@
 QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, markers_info) {
   message("--- QTL_plot_visualizer: Start ---")
 
-  # --- CRITICAL INPUT VALIDATION ---
+  
   if (is.null(scan_data)) {
     message("QTL_plot_visualizer ERROR: scan_data input is NULL. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
@@ -38,7 +38,7 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
     message("QTL_plot_visualizer WARNING: markers_info input has 0 rows. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
   }
-  # --- END CRITICAL INPUT VALIDATION ---
+ 
 
   message("QTL_plot_visualizer DEBUG: Initial scan_data (head & str) after passing critical validation:")
   print(head(scan_data))
@@ -98,26 +98,6 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
   plot_dt <- data.table::setDF(plot_dt)
   markers_dt <- data.table::setDF(markers_dt)
 
-  # --- DEBUGGING MARKER JOIN --- 
-  message("QTL_plot_visualizer DEBUG: Structure of plot_dt$markers before join:")
-  if (nrow(plot_dt) > 0) str(plot_dt$markers) else message("plot_dt is empty or plot_dt$markers does not exist")
-  message("QTL_plot_visualizer DEBUG: Head of plot_dt$markers (dput):")
-  if (nrow(plot_dt) > 0) dput(head(plot_dt$markers)) else message("plot_dt is empty or plot_dt$markers does not exist")
-  
-  message("QTL_plot_visualizer DEBUG: Structure of markers_dt$marker before join:")
-  # Note: after renaming, it's markers_dt$markers, not markers_dt$marker for the column name
-  if (nrow(markers_dt) > 0 && "markers" %in% colnames(markers_dt)) str(markers_dt$markers) else message("markers_dt is empty or markers_dt$markers does not exist")
-  message("QTL_plot_visualizer DEBUG: Head of markers_dt$markers (dput):")
-  if (nrow(markers_dt) > 0 && "markers" %in% colnames(markers_dt)) dput(head(markers_dt$markers)) else message("markers_dt is empty or markers_dt$markers does not exist")
-  
-  # Ensure marker columns are character for robust joining
-  # This conversion is now done earlier and conditionally
-  
-  message("QTL_plot_visualizer DEBUG: Structure of plot_dt$markers AFTER initial as.character():")
-  if (nrow(plot_dt) > 0) str(plot_dt$markers) else message("plot_dt is empty or plot_dt$markers does not exist")
-  message("QTL_plot_visualizer DEBUG: Structure of markers_dt$markers AFTER initial as.character():")
-  if (nrow(markers_dt) > 0 && "markers" %in% colnames(markers_dt)) str(markers_dt$markers) else message("markers_dt is empty or markers_dt$markers does not exist")
-  # --- END DEBUGGING MARKER JOIN ---
 
   # Perform the join only if both tables have rows and the join column
   if (nrow(plot_dt) > 0 && nrow(markers_dt) > 0 && "markers" %in% colnames(plot_dt) && "markers" %in% colnames(markers_dt)) {
@@ -132,11 +112,9 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
       return(dplyr::as_tibble(data.frame())) # Return empty tibble
   }
 
-  # Convert chr to numeric factor for ordering (X=20, Y=21, M=22)
-  # Ensure plot_dt is a data.table for := operations
+
   if (!is.data.table(plot_dt)) plot_dt <- data.table::as.data.table(plot_dt)
   
-  # Check if chr_orig exists before trying to use it (it should, if join was successful)
   if ("chr_orig" %in% colnames(plot_dt)) {
     plot_dt[, chr_num := as.character(chr_orig)]
     plot_dt[chr_orig == "X", chr_num := "20"]
@@ -151,18 +129,13 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
     return(dplyr::as_tibble(data.frame()))
   }
 
-  # Calculate cumulative positions
+  # Calculate cumulative positions  
   data.table::setkey(plot_dt, chr, position)
-  # Ensure 'position' column exists and is numeric before this step
-  if (!("position" %in% colnames(plot_dt)) || !is.numeric(plot_dt$position)){
-      warning("QTL_plot_visualizer: 'position' column missing or not numeric in plot_dt before cumulative calculation.")
-      return(dplyr::as_tibble(data.frame()))
-  }
+  
   chr_info <- plot_dt[, .(chr_len = max(position, na.rm = TRUE)), by = chr]
   chr_info[, tot := cumsum(as.numeric(chr_len)) - as.numeric(chr_len)]
   
   plot_dt <- chr_info[plot_dt, on = "chr"]
-  # Ensure 'position' and 'tot' exist before this addition
   if (!all(c("position", "tot") %in% colnames(plot_dt))){
       warning("QTL_plot_visualizer: 'position' or 'tot' column missing before BPcum calculation.")
       return(dplyr::as_tibble(data.frame()))

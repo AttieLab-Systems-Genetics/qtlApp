@@ -9,37 +9,30 @@
 #' 
 #' @export
 qtlApp <- function() {
-  # Source UI styling functions if not already loaded
   if (!exists("create_fluid_page", mode = "function")) {
     source("R/ui_styles.R")
   }
   
-  # Use modern UI if styling functions are available
   if (exists("create_fluid_page", mode = "function") && 
       exists("create_title_panel", mode = "function")) {
     
     ui <- create_fluid_page(
       shinyjs::useShinyjs(),
       
-      # Add custom CSS styling
       tags$head(tags$style(custom_css)),
       
-      # Modern title panel
       create_title_panel(
         "Pre-scanned QTL Visualizer for Diet DO Study",
         "Interactive visualization tool for QTL analysis"
       ),
       
-      # Main content
       create_fluid_row(
-        # Left sidebar
         create_column(3,
           create_well_panel(
             qtlInput("qtl")
           )
         ),
         
-        # Main content area
         create_column(9,
           qtlOutput("qtl")
         )
@@ -47,11 +40,10 @@ qtlApp <- function() {
     )
     
   } else {
-    # Fallback to default styling if modern UI functions aren't available
-  ui <- bslib::page_sidebar(
-    title = "Pre-scanned QTL visualizer, implemented for Diet DO study",
-    shinyjs::useShinyjs(),
-    sidebar = bslib::sidebar("side_panel",
+    ui <- bslib::page_sidebar(
+      title = "Pre-scanned QTL visualizer, implemented for Diet DO study",
+      shinyjs::useShinyjs(),
+      sidebar = bslib::sidebar("side_panel",
       qtlInput("qtl")),
     qtlOutput("qtl")
   )
