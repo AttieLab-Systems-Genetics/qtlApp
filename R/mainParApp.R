@@ -27,10 +27,9 @@ mainParServer <- function(id, import) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Populate Dataset Category choices
+    
     output$dataset_category <- shiny::renderUI({
       shiny::req(import(), import()$file_directory)
-      # Assuming file_directory now has a 'dataset_category' column
       if (!("dataset_category" %in% colnames(import()$file_directory))){
         warning("mainParServer: 'dataset_category' column missing in file_directory.")
         return(shiny::selectInput(ns("dataset_category"), label = "Dataset Category:", choices = "Error: category column missing"))
@@ -47,7 +46,6 @@ mainParServer <- function(id, import) {
       }
     })
 
-    # Populate Dataset choices based on selected category
     output$selected_dataset <- shiny::renderUI({
       shiny::req(import(), import()$file_directory, input$dataset_category)
       if (!("dataset_category" %in% colnames(import()$file_directory)) || !("group" %in% colnames(import()$file_directory))){
@@ -67,7 +65,6 @@ mainParServer <- function(id, import) {
       }
     })
 
-    # Update trait choices (existing logic)
     shiny::observeEvent(shiny::req(input$selected_dataset), {
       shiny::req(import()) 
       current_ds <- input$selected_dataset
@@ -87,7 +84,6 @@ mainParServer <- function(id, import) {
       )
     })
 
-    # Reactive for currently selected trait based on UI input, but validated against current dataset
     current_selected_trait <- shiny::reactive({
       shiny::req(input$selected_dataset)
       current_ds <- input$selected_dataset
@@ -164,7 +160,7 @@ mainParUI <- function(id) {
   
   ns <- shiny::NS(id)
   
-  # Use modern styling if available, otherwise use standard controls
+  
   if (exists("create_select_input", mode = "function")) {
     list(
       create_select_input(ns("which_trait"),
