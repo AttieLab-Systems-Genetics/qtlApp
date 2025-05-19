@@ -159,7 +159,7 @@ get_trait_list <- function(import_data, trait_type) {
 get_trait_id <- function(trait_type) {
   switch(trait_type,
     genes    = "gene.id",
-    isoforms = "transcript.id",
+    isoforms = "transcript_id",
     "data_name")
 }
 chr_XYM <- function(chr_vector) {

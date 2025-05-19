@@ -13,29 +13,27 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
 
   
   if (is.null(scan_data)) {
-    message("QTL_plot_visualizer ERROR: scan_data input is NULL. Returning empty plot.")
+    warning("QTL_plot_visualizer: scan_data input is NULL. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
   }
   if (!is.data.frame(scan_data) && !is.data.table(scan_data)) {
-    message("QTL_plot_visualizer ERROR: scan_data input is not a data.frame or data.table. Returning empty plot.")
-    str(scan_data) # Print structure of whatever it is
+    warning("QTL_plot_visualizer: scan_data input is not a data.frame or data.table. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
   }
   if (nrow(scan_data) == 0) {
-    message("QTL_plot_visualizer WARNING: scan_data input has 0 rows. Returning empty plot.")
+    warning("QTL_plot_visualizer: scan_data input has 0 rows. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
   }
   if (is.null(markers_info)) {
-    message("QTL_plot_visualizer ERROR: markers_info input is NULL. Returning empty plot.")
+    warning("QTL_plot_visualizer: markers_info input is NULL. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
   }
   if (!is.data.frame(markers_info) && !is.data.table(markers_info)) {
-    message("QTL_plot_visualizer ERROR: markers_info input is not a data.frame or data.table. Returning empty plot.")
-    str(markers_info)
+    warning("QTL_plot_visualizer: markers_info input is not a data.frame or data.table. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
   }
   if (nrow(markers_info) == 0) {
-    message("QTL_plot_visualizer WARNING: markers_info input has 0 rows. Returning empty plot.")
+    warning("QTL_plot_visualizer: markers_info input has 0 rows. Returning empty plot.")
     return(dplyr::as_tibble(data.frame()))
   }
  
@@ -69,7 +67,7 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
   if (is.data.table(plot_dt) && nrow(plot_dt) > 0 && "markers" %in% colnames(plot_dt)) {
     plot_dt[, markers := as.character(markers)]
   } else {
-    message("QTL_plot_visualizer WARNING: plot_dt is not a valid data.table with a markers column before character conversion, or is empty.")
+    warning("QTL_plot_visualizer: plot_dt is not a valid data.table with a markers column before character conversion, or is empty.")
   }
 
   if (!is.data.table(markers_info)) {
@@ -84,7 +82,7 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
   if (is.data.table(markers_dt) && nrow(markers_dt) > 0 && "markers" %in% colnames(markers_dt)) {
     markers_dt[, markers := as.character(markers)]
   } else {
-    message("QTL_plot_visualizer WARNING: markers_dt is not a valid data.table with a markers column before character conversion, or is empty.")
+    warning("QTL_plot_visualizer: markers_dt is not a valid data.table with a markers column before character conversion, or is empty.")
   }
 
   if (!all(c("markers", "chr", "bp_grcm39") %in% colnames(markers_dt))){
@@ -103,7 +101,7 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
   if (nrow(plot_dt) > 0 && nrow(markers_dt) > 0 && "markers" %in% colnames(plot_dt) && "markers" %in% colnames(markers_dt)) {
       plot_dt <- dplyr::inner_join(plot_dt, markers_dt, by = "markers") # Simplified by = "markers" if both are named "markers"
   } else {
-      message("QTL_plot_visualizer: Skipping join because one or both tables are empty or missing 'markers' column.")
+      warning("QTL_plot_visualizer: Skipping join because one or both tables are empty or missing 'markers' column.")
       plot_dt <- data.frame() # Ensure plot_dt is an empty data.frame to prevent downstream errors
   }
 
