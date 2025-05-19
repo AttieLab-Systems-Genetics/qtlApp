@@ -23,7 +23,6 @@ mergeApp <- function(id) {
     )
   )
   server <- function(input, output, session) { 
-    # Test sets
     primary_list <- shiny::reactiveValues(
       filename = shiny::reactive("panelID_instanceID"),
       plots = shiny::reactiveValues(
@@ -54,23 +53,23 @@ mergeServer <- function(id, primary_list, secondary_list) {
     ns <- session$ns
 
     merged_plots <- shiny::isolate({
-      out <- primary_list$plots # primary_list$plots is a reactiveValues
+      out <- primary_list$plots   
       
-      s_plots <- secondary_list$plots # secondary_list$plots should also be a reactiveValues
+      s_plots <- secondary_list$plots 
       if (!is.null(s_plots) && inherits(s_plots, "reactivevalues")) {
         for(i in names(s_plots)) {
-          out[[i]] <- s_plots[[i]] # Assign the reactive expression from secondary to primary
+          out[[i]] <- s_plots[[i]] 
         }
       }
       out
     })
     
     merged_tables <- shiny::isolate({
-      out <- primary_list$tables # primary_list$tables is a reactiveValues
-      s_tables <- secondary_list$tables # secondary_list$tables should also be a reactiveValues
+      out <- primary_list$tables 
+      s_tables <- secondary_list$tables 
       if (!is.null(s_tables) && inherits(s_tables, "reactivevalues")) {
         for(i in names(s_tables)) {
-          out[[i]] <- s_tables[[i]] # Assign the reactive expression from secondary to primary
+          out[[i]] <- s_tables[[i]] 
         }
       }
       out
