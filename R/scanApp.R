@@ -15,25 +15,38 @@
 #' @importFrom dplyr across mutate where filter select
 #' @importFrom stringr str_split str_remove
 #' @importFrom ggplot2 ggsave
+#' @importFrom shinyjs useShinyjs
+#' @importFrom tags tagList
 #'
 #' @export
 scanApp <- function() {
-  if (!exists("create_download_button", mode = "function")) {
-    source("R/ui_styles.R") # Assumes ui_styles.R contains all create_* helpers
+  # Ensure ui_styles.R is sourced (it contains create_fluid_page, custom_css, etc.)
+  if (!exists("custom_css", mode = "character")) { # Check for custom_css specifically
+    source("R/ui_styles.R") 
   }
 
   ui <- bslib::page_sidebar(
-    title = "QTL Scan Visualizer",
-    sidebar = bslib::sidebar("side_panel",
+    shinyjs::useShinyjs(),
+    tags$head(tags$style(custom_css)),
+    
+    create_title_panel(
+      "QTL Scan Visualizer", # New title for scanApp
+      "Interactive visualization tool for QTL analysis" # Subtitle
+    ),
+    
+    sidebar = bslib::sidebar("side_panel", # Sidebar panel
+      # Inputs previously in bslib::sidebar / create_well_panel
       mainParInput("main_par"),
       mainParUI("main_par"),
       peakInput("peak"),
-      peakUI("peak"),
+      peakUI("peak"), 
       downloadInput("download"),
       downloadOutput("download")
     ),
+    
+    # Main content area with navset_tab
     bslib::navset_tab(
-      id = "main_tabs", # Use a simple string ID, removed ns()
+      id = "main_tabs", 
       bslib::nav_panel("LOD Plot",
         bslib::card(
           bslib::card_header("LOD Plot"),
@@ -41,7 +54,6 @@ scanApp <- function() {
             shiny::div(style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap;",
               shiny::h4("LOD Score Plot", style = "margin: 0 15px 0 0; color: #2c3e50; font-weight: 600;"),
               shiny::div(style = "display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-end;",
-                # Preset Aspect Ratio Buttons
                 shiny::div(style = "display: flex; gap: 5px; margin-right: 15px;",
                   if (exists("create_button", mode = "function")) {
                     tagList(
@@ -57,7 +69,6 @@ scanApp <- function() {
                     )
                   }
                 ),
-                # Download Buttons
                 if (exists("create_download_button", mode = "function")) {
                   tagList(
                     create_download_button(shiny::NS("scan_list", "download_qtl_plot_png"), "PNG", class = "btn-sm"),
@@ -92,9 +103,7 @@ scanApp <- function() {
             )
           )
         ),
-        # The plot itself
-        scanOutput("scan_list"), # This is uiOutput(ns("scan_plot"))
-        # Clicked Peak on Scan info below plot
+        scanOutput("scan_list"), 
         bslib::card(
           bslib::card_header("Clicked Peak on Scan"), 
           scanUI("scan_list"),
@@ -107,31 +116,30 @@ scanApp <- function() {
          )
       ),
       bslib::nav_panel("Cis/Trans Plot",
-         cisTransPlotInput("cis_trans"),
-         cisTransPlotUI("cis_trans")
+         cisTransPlotInput("cis_trans"), 
+         cisTransPlotUI("cis_trans")    
       )
     )
   )
+  
   server <- function(input, output, session) {
-      # Initialize Cache Environments
+      # Server logic remains the same for scanApp
       trait_cache <- new.env(parent = emptyenv())
       peaks_cache <- new.env(parent = emptyenv())
 
       import <- importServer("import")
       main_par <- mainParServer("main_par", import) 
       
-      # Clear caches when dataset changes
       shiny::observeEvent(main_par$selected_dataset(), {
           rm(list = ls(envir = trait_cache), envir = trait_cache)
           rm(list = ls(envir = peaks_cache), envir = peaks_cache)
       })
 
-      # Pass caches to modules that need them
       scan_list_server_output <- scanServer("scan_list", main_par, import, trait_cache)
       peak_list <- peakServer("peak", main_par, import, peaks_cache)
       merged_list <- mergeServer("merged_list", scan_list_server_output, peak_list)
       downloadServer("download", merged_list)
-      cisTransPlotServer("cis_trans", import_reactives = import, peaks_cache)
+      cisTransPlotServer("cis_trans", import_reactives = import, peaks_cache = peaks_cache) 
   }
   shiny::shinyApp(ui = ui, server = server)
 }

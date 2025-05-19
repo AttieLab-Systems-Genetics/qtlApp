@@ -50,18 +50,15 @@ scanlyServer <- function(id, main_par, scan_list, peak_list) {
       plotly::plotlyOutput(ns("render_plot")) |>
         shinycssloaders::withSpinner(type = 8, color = "#3498db")
     })
-    # Extract `scan_table` and `scan_plot` from `scan_list`.
+    # Extract `table` and `plot` from `scan_list`.
     scan_table <- shiny::reactive({
-      shiny::req(scan_list$tables$scan())
-      scan_list$tables$scan()
+      shiny::req(scan_list$table())
     })
     scan_plot <- shiny::reactive({
-      shiny::req(scan_list$plots$scan())
-      scan_list$plots$scan()
+      shiny::req(scan_list$plot())
     })
     peak_table <- shiny::reactive({
       shiny::req(peak_list$tables$peak())
-      peak_list$tables$peak()
     })
     scanly_plot <- shiny::reactive({
 
