@@ -128,16 +128,16 @@ get_trait_type <- function(import_data, selected_dataset = NULL) {
   trait_type_raw <- tolower(file_dir_subset$trait_type[1])
   
   # Standardize trait types
-  if (grepl("clinical", trait_type_raw, ignore.case = TRUE)) { # Using grepl for consistency
+  if (grepl("clinical", trait_type_raw, ignore.case = TRUE)) { 
       return("clinical")
   }
-  if (grepl("lipid", trait_type_raw, ignore.case = TRUE)) { # Check if "lipid" is present anywhere
+  if (grepl("lipid", trait_type_raw, ignore.case = TRUE)) { 
       return("lipids")
   }
-  if (grepl("gene", trait_type_raw, ignore.case = TRUE)) { # Check if "gene" is present anywhere
+  if (grepl("gene", trait_type_raw, ignore.case = TRUE)) { 
       return("genes")
   }
-  if (grepl("isoform", trait_type_raw, ignore.case = TRUE)) { # Check if "isoform" is present anywhere
+  if (grepl("isoform", trait_type_raw, ignore.case = TRUE)) { 
       return("isoforms")
   }
   
@@ -163,20 +163,15 @@ get_trait_id <- function(trait_type) {
     "data_name")
 }
 chr_XYM <- function(chr_vector) {
-  if(is.null(chr_vector)) return(NA_character_) # Return NA of appropriate type
+  if(is.null(chr_vector)) return(NA_character_) 
   
-  # Ensure it's character for processing
+  
   chr_vector_char <- as.character(chr_vector)
   
-  # Replace values
-  # Use a more robust way to handle vectors for replacement
-  new_chr_vector <- chr_vector_char # Initialize with original character values
+  new_chr_vector <- chr_vector_char 
   new_chr_vector[chr_vector_char == "20"] <- "X"
   new_chr_vector[chr_vector_char == "21"] <- "Y"
   new_chr_vector[chr_vector_char == "22"] <- "M"
-  
-  # Handle cases where input might not be 1-22 (e.g. already X, Y, M, or other strings)
-  # The above replacements are safe. If it was already "X", it remains "X".
   
   return(new_chr_vector)
 }
