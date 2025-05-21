@@ -32,7 +32,7 @@ if (!dir.exists(OUTPUT_DIR)) {
 
 # Define all chromosomes
 
-CHROMOSOMES <- c(1:6)
+CHROMOSOMES <- c(7:15)
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"

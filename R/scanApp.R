@@ -387,27 +387,41 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     })
     
     scans <- shiny::reactive({
-      shiny::req(current_trait_for_scan(), selected_dataset_group(), import_reactives()$file_directory)
+      req(current_trait_for_scan(), selected_dataset_group()) 
+      trait_val <- current_trait_for_scan()
+      dataset_group_val <- selected_dataset_group()
       
-      trait_id_for_scan <- current_trait_for_scan()
-      current_dataset_group_name <- selected_dataset_group()
-      file_dir <- import_reactives()$file_directory
+      message(paste0("scanServer (within scans reactive): ABOUT TO CALL trait_scan. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'"))
+      
+      file_dir_val <- import_reactives()$file_directory
+      req(file_dir_val)
+      if (!is.data.frame(file_dir_val) || !("group" %in% names(file_dir_val))){
+          stop("scanServer: import_reactives()$file_directory is not a valid data frame or missing 'group' column before calling trait_scan.")
+      }
 
-      message(paste("scanServer: Preparing to call trait_scan for trait:", trait_id_for_scan, "in dataset group:", current_dataset_group_name))
+      result <- tryCatch({
+        trait_scan(
+          file_dir = file_dir_val,
+          selected_dataset = dataset_group_val, 
+          selected_trait = trait_val,
+          cache_env = NULL
+        )
+      }, error = function(e) {
+        message(paste0("scanServer (within scans reactive): ERROR DURING trait_scan CALL. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Error: ", e$message))
+        return(NULL) 
+      })
       
-      result_from_trait_scan <- NULL 
-      shiny::withProgress(
-        message = paste("LOD scan for", trait_id_for_scan, "in progress"), value = 0, { 
-          shiny::setProgress(1)
-          result_from_trait_scan <- suppressMessages(
-            trait_scan(file_dir, current_dataset_group_name, trait_id_for_scan)
-          )
-          message("scanServer DEBUG: Result from trait_scan() for trait: ", trait_id_for_scan)
-          str(result_from_trait_scan) 
-          print(head(result_from_trait_scan))
-          print(colnames(result_from_trait_scan))
-        }) 
-      result_from_trait_scan
+      message(paste0("scanServer (within scans reactive): RETURNED FROM trait_scan. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Result class: ", class(result), ", Result nrows: ", if(!is.null(result) && (is.data.frame(result) || is.data.table(result))) nrow(result) else "N/A"))
+      
+      # Additional check: if result is NULL due to error, or if it's an empty data frame, handle appropriately.
+      if (is.null(result) || ( (is.data.frame(result) || is.data.table(result)) && nrow(result) == 0) ) {
+        message(paste0("scanServer: trait_scan returned NULL or empty for Trait: '", trait_val, "', Dataset: '", dataset_group_val, "'. Propagating as empty result."))
+        # Return an empty data.table or data.frame as expected by downstream reactives to prevent crashes
+        # Make sure it has the columns expected by QTL_plot_visualizer if possible, or handle this there.
+        return(data.table::data.table()) 
+      }
+      
+      result
     })
     
     scan_table <- shiny::reactive({
