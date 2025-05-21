@@ -19,16 +19,7 @@ OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 # Extract the basename of the input directory for use in output filenames
 # This will extract "isoform_additive" from the path
 input_dirname <- basename(dirname(INPUT_DIR))
-if (grepl("^v5_simple_scan_", input_dirname)) {
-  # Remove the v5_simple_scan_ prefix if it exists
-  input_dirname <- sub("^v5_simple_scan_", "", input_dirname)
-}
-message(paste("Using directory basename for output files:", input_dirname))
 
-# Create output directory if it doesn't exist
-if (!dir.exists(OUTPUT_DIR)) {
-  dir.create(OUTPUT_DIR, recursive = TRUE)
-}
 
 # Define all chromosomes
 
