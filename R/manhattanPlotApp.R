@@ -38,7 +38,7 @@ manhattanPlotUI <- function(id) {
 #'
 #' @param id Module ID.
 #' @param import_reactives Reactive that returns a list containing file_directory.
-#' @param main_par Reactive that returns a list containing selected_dataset (which is a reactive group name).
+#' @param main_par Reactive that re turns a list containing selected_dataset (which is a reactive group name).
 #' 
 #' @importFrom dplyr %>% filter select mutate arrange distinct group_by summarise
 #' @importFrom data.table fread as.data.table setkey
@@ -171,9 +171,7 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
                  " (for dataset '", selected_group_name, "'). Check if the peaks file contains this phenotype class and the correct string."),
           type = "warning", duration = 10
         )
-        # --- START DEBUG ---
-        message(paste0("ManhattanPlot DEBUG: Filtering for '", target_phenotype_class_value, "' resulted in 0 rows."))
-        # --- END DEBUG ---
+        
         return(data.table::data.table()) # Return empty table to avoid plot errors
       } else {
         message(paste0("ManhattanPlot DEBUG: Filtering for '", target_phenotype_class_value, "' resulted in ", nrow(peaks_dt), " rows."))
