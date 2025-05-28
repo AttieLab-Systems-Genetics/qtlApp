@@ -314,17 +314,7 @@ scanApp <- function() {
         }
       })
 
-      # --- Reactive for selected dataset group ---
-      main_selected_dataset_group <- reactive({
-        shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
-        selected_group <- input[[ns_app_controller("specific_dataset_selector")]]
-        if (is.null(selected_group) || !nzchar(selected_group) || 
-            selected_group %in% c("Select category first", "No datasets in category")) {
-          return(NULL)
-        }
-        message(paste("Main selected dataset group:", selected_group))
-        return(selected_group)
-      })
+# Note: main_selected_dataset_group reactive is already defined above
 
       # Observer to clear the LOD scan trait when the main dataset changes
       observeEvent(main_selected_dataset_group(), {

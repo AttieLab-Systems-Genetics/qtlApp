@@ -1,0 +1,186 @@
+# qtlApp Cursor Rules
+
+## Project Overview
+This is an R package for QTL (Quantitative Trait Loci) analysis and visualization using Shiny. The project is organized as a modular package with multiple small Shiny modules for scalable QTL analysis.
+
+## R Language Standards
+
+### Code Style
+- Use 2-space indentation consistently throughout all R files
+- Use `|>` (native pipe) instead of `%>%` (magrittr pipe) for new code
+- Be explicit about package namespacing: use `package::function()` format
+- Use snake_case for function names and variables
+- Use descriptive variable names that clearly indicate their purpose
+
+### Function Documentation
+- All exported functions must have roxygen2 documentation with `@export`
+- Include `@param` for all parameters with clear descriptions
+- Include `@return` to describe what the function returns
+- Add `@importFrom` for specific package functions used
+- Example format:
+```r
+#' Function description
+#' @param param_name Description of parameter
+#' @return Description of return value
+#' @importFrom package function
+#' @export
+```
+
+### Error Handling
+- Use `shiny::req()` for required inputs in Shiny contexts
+- Implement comprehensive error checking with informative warning messages
+- Check for NULL values, empty data frames, and missing columns before processing
+- Return appropriate default values (e.g., `character(0)`, `NULL`) when data is invalid
+- Use `warning()` for non-fatal issues with descriptive messages
+
+### Data Validation
+- Always validate data frame structure before processing
+- Check for required columns using `%in% colnames()`
+- Validate data types and handle type conversions safely
+- Filter out NA values and empty strings where appropriate
+- Use `is.null()`, `is.data.frame()`, `nrow() == 0` checks
+
+## Shiny Application Structure
+
+### Modular Design
+- Break functionality into small, focused Shiny modules (~50-100 lines each)
+- Each module should handle a specific task (scanning, peaks, traits, etc.)
+- Use consistent naming: `*App.R` for module files
+- Modules should be interconnectable like "legos"
+
+### File Organization
+- Main app logic in `app.R`
+- Helper functions in `R/helpers.R`
+- Data handling functions in `R/data_handling.R`
+- Each major feature gets its own module file in `R/`
+- UI styling in `R/ui_styles.R`
+- Plot functions separated by type (ggplot, plotly, etc.)
+
+### Shiny Best Practices
+- Use `bslib` for modern Bootstrap styling
+- Implement loading indicators with `shinycssloaders`
+- Use `shinyjs` for enhanced interactivity
+- Set appropriate file upload limits: `options(shiny.maxRequestSize = 20000*1024^2)`
+- Use reactive expressions efficiently to avoid unnecessary computations
+
+## Package Structure
+
+### Dependencies
+- Core dependencies: shiny, bslib, dplyr, ggplot2, DT, data.table
+- Visualization: plotly, ggiraph, shinycssloaders
+- Data handling: fst, reshape2, stringr
+- QTL-specific: qtl2
+- Always specify minimum R version in DESCRIPTION (>= 4.2.0)
+
+### File Sourcing Order
+Source files in logical dependency order in `app.R`:
+1. helpers.R (core utilities)
+2. data_handling.R
+3. import_data.R
+4. Module files (*App.R)
+5. Visualization functions
+6. Analysis functions
+
+### Package Development
+- Use `devtools::document()` to build documentation
+- Follow roxygen2 standards for all exported functions
+- Update NAMESPACE automatically via roxygen2
+- Use semantic versioning in DESCRIPTION
+
+## Data Handling
+
+### Caching Strategy
+- Implement caching for expensive operations (peaks, traits)
+- Use appropriate cache invalidation strategies
+- Cache objects should be created via `create_cache()` function
+
+### File Formats
+- Prefer FST format for large datasets (fast read/write)
+- Support CSV import for configuration files
+- Use data.table for efficient data manipulation
+- Implement `fst_rows()` for memory-efficient data access
+
+### Chromosome Handling
+- Use standardized chromosome conversion functions:
+  - `chr_to_numeric()` for converting labels to numbers
+  - `numeric_to_chr()` for converting numbers to labels
+- Handle X, Y, M chromosomes consistently (X=20, Y=21, M=22)
+- Maintain backward compatibility with `chr_XYM()` function
+
+## Visualization Standards
+
+### Plot Functions
+- Separate ggplot2 and plotly implementations
+- Use consistent color schemes and themes
+- Implement responsive design for different screen sizes
+- Add proper axis labels and titles
+- Support both static and interactive plots
+
+### Plot Organization
+- `ggplot_*.R` for ggplot2 implementations
+- `ggplotly_*.R` for plotly implementations
+- `plot_enhancements.R` for styling and themes
+- `plot_null.R` for fallback/empty state plots
+
+## Git and Development
+
+### Commit Standards
+- Use descriptive commit messages
+- Commit logical units of work
+- Test functionality before committing
+- Update documentation when adding new features
+
+### Collaboration
+- Work on the same codebase to avoid divergence
+- Use GitHub for version control and collaboration
+- Follow the modular design to enable parallel development
+- Document new modules and functions thoroughly
+
+## Testing and Quality
+
+### Code Quality
+- Functions should be focused and do one thing well
+- Avoid functions longer than 100 lines
+- Use meaningful variable names
+- Add comments for complex logic
+- Validate inputs and handle edge cases
+
+### Performance
+- Use efficient data structures (data.table for large data)
+- Implement caching for expensive operations
+- Use FST format for fast I/O
+- Optimize Shiny reactivity patterns
+
+## Specific Project Conventions
+
+### Trait Handling
+- Support multiple trait types: genes, isoforms, clinical, lipids
+- Use standardized trait ID mapping via `get_trait_id()`
+- Implement robust trait choice generation with `get_trait_choices()`
+- Handle missing or invalid trait data gracefully
+
+### Peak Analysis
+- Use consistent LOD threshold filtering
+- Support allele effect visualization (A-H columns → strain names)
+- Implement peak reshaping for visualization via `pivot_peaks()`
+- Handle missing markers and invalid peak data
+
+### Data Import
+- Support flexible dataset configuration via CSV files
+- Validate file directory structure and trait types
+- Implement robust annotation list handling
+- Provide clear error messages for import failures
+
+### Data Processing Pipeline
+- Use `kalynn_R/latest_app_kalynn/chromosome_compile.R` to compile raw gz files
+- Use `kalynn_R/latest_app_kalynn/prepare_fst_data.R` to process and sort FST files
+- All processed files are automatically sorted by Phenotype for efficient access
+- Row indices are generated automatically for fast trait-based reading
+- See `kalynn_R/latest_app_kalynn/.cursorrules` for detailed processing guidelines
+
+## File Naming Conventions
+- `*App.R` for Shiny modules
+- `*_functions.R` or descriptive names for utility functions
+- `ggplot_*.R` for ggplot2 visualization functions
+- `data_*.R` for data handling functions
+- Use lowercase with underscores for file names 

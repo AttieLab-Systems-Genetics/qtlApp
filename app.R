@@ -13,46 +13,40 @@ library(data.table)
 library(ggiraph)
 library(writexl)
 library(fontawesome)
-library(lubridate) # Added based on potential dependencies in sourced files
-library(BiocManager) # Added based on potential dependencies
-library(grid)        # Added based on potential dependencies
-library(ggrepel)     # Added based on potential dependencies
-library(gridGraphics)# Added based on potential dependencies
-library(ggpubr)      # Added based on potential dependencies
-library(shinyFiles)  # Added based on potential dependencies
-library(spsComps)    # Added based on potential dependencies
-library(DT)          # Added based on potential dependencies
-library(reshape2)    # Added based on potential dependencies
+library(DT)
+library(reshape2)
 
 # Source files in specific order
 source("R/helpers.R")
+source("R/data_handling.R")
+source("R/import_data.R")
 source("R/importApp.R")
 source("R/mainParApp.R")
 source("R/scanApp.R")
 source("R/peakApp.R")
-source("R/scanlyApp.R") # Might not be used if qtlApp calls scanApp, but good to keep
-source("R/qtlApp.R") # Source qtlApp itself
-source("R/mergeApp.R") # Source mergeApp
-source("R/downloadApp.R") # Source downloadApp
-source("R/cisTransPlotApp.R") # Source the new module
-source("R/ui_styles.R") # Source styles
-source("R/plot_enhancements.R") # Source plot enhancements
-source("R/plot_null.R") # Source plot null
-source("R/data_handling.R") # Source data handling
-source("R/peak_finder.R") # Source peak finder
-source("R/trait_scan.R") # Source trait scan
-source("R/ggplot_alleles.R") # Source ggplot alleles
-source("R/ggplot_qtl_scan.R") # Source ggplot qtl scan
-source("R/peak_info.R") # Source peak info
-source("R/QTL_plot_visualizer.R") # Source plot visualizer
-source("R/fst_rows.R") # Source fst_rows
-source("R/traitApp.R") # Source traitApp
-source("R/traitTypeApp.R") # Source traitTypeApp
-source("R/manhattanPlotApp.R") # Source the new Manhattan Plot module
+source("R/scanlyApp.R")
+source("R/qtlApp.R")
+source("R/mergeApp.R")
+source("R/downloadApp.R")
+source("R/cisTransPlotApp.R")
+source("R/manhattanPlotApp.R")
+source("R/ui_styles.R")
+source("R/plot_enhancements.R")
+source("R/plot_null.R")
+source("R/peak_finder.R")
+source("R/trait_scan.R")
+source("R/ggplot_alleles.R")
+source("R/ggplot_qtl_scan.R")
+source("R/ggplotly_qtl_scan.R")
+source("R/peak_info.R")
+source("R/QTL_plot_visualizer.R")
+source("R/fst_rows.R")
+source("R/traitApp.R")
+source("R/traitTypeApp.R")
+source("R/traitProcessingModule.R")
 
 # Set maximum file upload size
 options(shiny.maxRequestSize = 20000*1024^2) # 20 GB
 
 # Launch the application
-scanApp() # Revert to launching scanApp
-# qtlApp() 
+scanApp() 

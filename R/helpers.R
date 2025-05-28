@@ -101,7 +101,51 @@ pivot_peaks <- function(peaks, which_peak) {
   }
   return(peak_reshaped)
 }
-# internal helper functions
+# Consolidated chromosome conversion functions
+#' Convert chromosome label to numeric
+#' @param chr The chromosome label (character or numeric)
+#' @return Numeric chromosome value
+#' @export
+chr_to_numeric <- function(chr) {
+  if (is.null(chr)) return(NA_real_)
+  chr_char <- as.character(chr)
+  
+  # Handle vectors properly
+  result <- rep(NA_real_, length(chr_char))
+  result[chr_char == "X"] <- 20
+  result[chr_char == "Y"] <- 21
+  result[chr_char == "M"] <- 22
+  
+  # For numeric chromosomes, convert directly
+  numeric_mask <- !chr_char %in% c("X", "Y", "M")
+  result[numeric_mask] <- as.numeric(chr_char[numeric_mask])
+  
+  return(result)
+}
+
+#' Convert numeric chromosome to label
+#' @param chr_num The numeric chromosome value
+#' @return Chromosome label
+#' @export
+numeric_to_chr <- function(chr_num) {
+  if (is.null(chr_num)) return(NA_character_)
+  
+  # Handle vectors properly
+  result <- as.character(chr_num)
+  result[chr_num == 20] <- "X"
+  result[chr_num == 21] <- "Y"
+  result[chr_num == 22] <- "M"
+  
+  return(result)
+}
+
+# Keep chr_XYM for backward compatibility but make it use the consolidated function
+#' @export
+chr_XYM <- function(chr_vector) {
+  numeric_to_chr(chr_vector)
+}
+
+# Internal helper functions
 get_trait_type <- function(import_data, selected_dataset = NULL) {
   if(is.null(import_data) || is.null(import_data$file_directory)){
       warning("get_trait_type: import_data or import_data$file_directory is NULL.")
@@ -161,17 +205,4 @@ get_trait_id <- function(trait_type) {
     genes    = "gene.id",
     isoforms = "transcript_id",
     "data_name")
-}
-chr_XYM <- function(chr_vector) {
-  if(is.null(chr_vector)) return(NA_character_) 
-  
-  
-  chr_vector_char <- as.character(chr_vector)
-  
-  new_chr_vector <- chr_vector_char 
-  new_chr_vector[chr_vector_char == "20"] <- "X"
-  new_chr_vector[chr_vector_char == "21"] <- "Y"
-  new_chr_vector[chr_vector_char == "22"] <- "M"
-  
-  return(new_chr_vector)
 }
