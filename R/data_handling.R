@@ -84,25 +84,7 @@ validate_chromosome <- function(chr, valid_chr = c("All", as.character(1:19), "X
   return(chr)
 }
 
-#' Convert chromosome label to numeric
-#' @param chr The chromosome label
-#' @return Numeric chromosome value
-chr_to_numeric <- function(chr) {
-  if (chr == "X") return(20)
-  if (chr == "Y") return(21)
-  if (chr == "M") return(22)
-  return(as.numeric(chr))
-}
-
-#' Convert numeric chromosome to label
-#' @param chr_num The numeric chromosome value
-#' @return Chromosome label
-numeric_to_chr <- function(chr_num) {
-  if (chr_num == 20) return("X")
-  if (chr_num == 21) return("Y")
-  if (chr_num == 22) return("M")
-  return(as.character(chr_num))
-}
+# Note: Chromosome conversion functions moved to helpers.R to avoid duplication
 
 #' Format peak information
 #' @param peak Peak data frame

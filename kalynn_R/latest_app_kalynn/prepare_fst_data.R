@@ -7,9 +7,14 @@ library(stringr)
 library(fst)
 
 # Source the fst_rows.R script to make create_fst_rows_index function available
-# Assumes the script is run with the working directory at the project root (e.g., ~/qtlApp)
-# and R/fst_rows.R is at the project root's R directory.
-source("R/fst_rows.R")
+# Try different paths to find fst_rows.R
+if (file.exists("R/fst_rows.R")) {
+  source("R/fst_rows.R")
+} else if (file.exists("../../R/fst_rows.R")) {
+  source("../../R/fst_rows.R")
+} else {
+  stop("Cannot find R/fst_rows.R. Please run this script from the project root.")
+}
 
 # Function to read and process gene annotations
 read_gene_annotations <- function(anno_file) {
@@ -76,9 +81,16 @@ process_fst_file <- function(fst_path, gene_id_to_symbol_map, transcript_id_to_s
     tryCatch({
         data <- read_fst(fst_path, as.data.table = TRUE)
         
+        # Remove unwanted columns
         if ("which_mice" %in% colnames(data)) {
             data[, which_mice := NULL]
             message("Removed which_mice column from ", basename(fst_path))
+        }
+        
+        # Remove chr_from_map column if it exists (leftover from chromosome_compile.R)
+        if ("chr_from_map" %in% colnames(data)) {
+            data[, chr_from_map := NULL]
+            message("Removed chr_from_map column from ", basename(fst_path))
         }
         
         new_fst_path <- NULL
@@ -138,6 +150,12 @@ process_fst_file <- function(fst_path, gene_id_to_symbol_map, transcript_id_to_s
         write_fst(data, new_fst_path, compress = 50)
         message("Created ", basename(new_fst_path))
         
+        # Sort the data by Phenotype for efficient trait-based reading
+        message("Sorting ", basename(new_fst_path), " by Phenotype...")
+        setorder(data, Phenotype)
+        write_fst(data, new_fst_path, compress = 50)
+        message("Successfully sorted and saved: ", basename(new_fst_path))
+        
         create_fst_rows_index(new_fst_path)
         
         return(new_fst_path)
@@ -161,10 +179,10 @@ main <- function() {
     }
 
     file_processing_configs <- list(
-        list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_HC_mice_additive_data\\.fst$"),
-        list(type = "genes", pattern = "chromosome[0-9XYM]+_DO_NOT_USE_data\\.fst$"), # Example for gene files, adjust pattern
-        list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\\.fst$") # Adjust pattern as needed
-        # list(type = "clinical", pattern = "chromosome[X]+_clinical_traits_all_mice_diet_interactive_data\\.fst$"),
+        #list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_HC_mice_additive_data\\.fst$")
+        #list(type = "genes", pattern = "chromosome[0-9XYM]+_DO_NOT_USE_data\\.fst$"), # Example for gene files, adjust pattern
+        #list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\\.fst$") # Adjust pattern as needed
+        list(type = "clinical", pattern = "chromosome[X]+_clinical_traits_all_mice_diet_interactive_data\\.fst$"),
     )
     
     all_processed_paths <- character(0)
