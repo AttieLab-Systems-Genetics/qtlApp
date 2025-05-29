@@ -182,7 +182,7 @@ main <- function() {
         #list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_HC_mice_additive_data\\.fst$")
         #list(type = "genes", pattern = "chromosome[0-9XYM]+_DO_NOT_USE_data\\.fst$"), # Example for gene files, adjust pattern
         #list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\\.fst$") # Adjust pattern as needed
-        list(type = "clinical", pattern = "chromosome[X]+_clinical_traits_all_mice_diet_interactive_data\\.fst$"),
+        list(type = "clinical", pattern = "chromosome[0-9XYM]+_clinical_traits_all_mice_sex_interactive_data\\.fst$")
     )
     
     all_processed_paths <- character(0)

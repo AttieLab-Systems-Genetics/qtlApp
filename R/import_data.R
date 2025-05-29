@@ -30,7 +30,6 @@ import_data <- function() {
 
   # Load gene symbols
   gene_symbols_path <- file.path(base_path, "gene_symbols.csv")
-  gene_symbols <- c("Gnai3", "Cdc45", "Slc4a1", "Abca12", "Nadk", "Tfpi", "Scnn1b", "Cdc20", "Gpr89", "Cdc73") # Default
   if (file.exists(gene_symbols_path)) {
     message("Loading gene symbols from: ", gene_symbols_path)
     tryCatch({
