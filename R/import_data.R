@@ -93,33 +93,11 @@ import_data <- function() {
   message("Loaded annotation list.")
   
   # --------------------------------------------------------------------------
-  # HANDLE LIPIDS ANNOTATIONS (Special case - may not exist)
-  # --------------------------------------------------------------------------
-  # Lipid traits are optional/newer feature - graceful handling if missing
-  if (!("lipids" %in% names(annotation_list))) {
-    warning("annotation_list$lipids not found in the loaded annotation_list.rds. Lipid traits will not be available unless this is generated.")
-    # Create empty placeholder so app doesn't crash when looking for lipids
-    annotation_list$lipids <- data.frame(data_name = character(0), stringsAsFactors = FALSE)
-    
-  } else {
-    # Validate that lipids data has expected structure
-    if (is.data.frame(annotation_list$lipids) && "data_name" %in% colnames(annotation_list$lipids)){
-        message(paste("Found annotation_list$lipids with", nrow(annotation_list$lipids), "entries."))
-    } else {
-        warning("annotation_list$lipids exists but is not a data.frame with a 'data_name' column. Re-initializing as empty.")
-        annotation_list$lipids <- data.frame(data_name = character(0), stringsAsFactors = FALSE)
-    }
-  }
-
-  # --------------------------------------------------------------------------
   # 5. LOAD GENETIC MARKERS (SNP positions for QTL mapping)
   # --------------------------------------------------------------------------
   # Contains SNP positions, genetic map information
   # Essential for QTL peak calling and significance thresholds
   markers_path <- file.path(base_path, "CHTC_dietDO_markers_RDSgrcm39.rds")
-   if (!file.exists(markers_path)) {
-    stop("Required file not found: ", markers_path)  # Hard stop - core QTL functionality
-  }
   markers <- readRDS(markers_path)
   message("Loaded markers.")
   
