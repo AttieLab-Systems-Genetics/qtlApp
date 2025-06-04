@@ -84,13 +84,19 @@ scanApp <- function() {
       ),
       hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
 
-      # Existing controls (may be conditionally shown or modified later)
-      mainParInput("main_par"),
-      mainParUI("main_par"),
-      peakInput("peak"), # Likely tied to a specific scan, for Phase 3
-      peakUI("peak"), # Likely tied to a specific scan, for Phase 3
-      downloadInput("download"),
-      downloadOutput("download"),
+      # LOD Threshold Control
+      div(
+        style = "margin-bottom: 20px;",
+        h5("Plot Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+        sliderInput(shiny::NS("app_controller", "LOD_thr"),
+          label = "LOD Threshold:",
+          min = 4, max = 20, value = 7.5, step = 0.5,
+          width = "100%"
+        ),
+        p("Filters Manhattan/CisTrans plots to show only points above this threshold",
+          style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 0 0;"
+        )
+      ),
 
       # Action button to clear/go back from LOD scan view
       shiny::actionButton(shiny::NS("app_controller", "clear_lod_scan_btn"),
@@ -120,10 +126,18 @@ scanApp <- function() {
   server <- function(input, output, session) {
     ns_app_controller <- shiny::NS("app_controller")
 
+    # Define the %||% operator for null coalescing
+    `%||%` <- function(a, b) if (!is.null(a)) a else b
+
     trait_cache <- new.env(parent = emptyenv())
     peaks_cache <- new.env(parent = emptyenv())
 
     import_reactives <- importServer("import")
+
+    # Our own LOD threshold reactive (no longer from mainParServer)
+    lod_threshold_rv <- shiny::reactive({
+      input[[ns_app_controller("LOD_thr")]] %||% 7.5 # Default to 7.5 if not available
+    })
 
     file_index_dt <- shiny::reactive({
       shiny::req(import_reactives()$file_directory)
@@ -230,22 +244,16 @@ scanApp <- function() {
       }
     })
 
-    main_par_outputs <- mainParServer("main_par", import_reactives)
-
+    # Create our own main_par structure (no longer using mainParServer)
     active_main_par <- shiny::reactive({
-      # main_par_outputs is ALREADY the list of reactives returned by mainParServer
-
-      params_list <- list()
-      if (is.list(main_par_outputs)) { # Check if it's a list (it should be)
-        for (name in names(main_par_outputs)) {
-          # Each element main_par_outputs[[name]] is itself a reactive expression
-          params_list[[name]] <- main_par_outputs[[name]]
-        }
-      }
-      # Override or set selected_dataset with our main_selected_dataset_group reactive
-      params_list$selected_dataset <- main_selected_dataset_group
-
-      return(params_list)
+      # Create a compatible structure with the expected reactives
+      list(
+        selected_dataset = main_selected_dataset_group, # Our dataset selection
+        LOD_thr = lod_threshold_rv, # Our LOD threshold
+        selected_chr = shiny::reactive("All"), # Default to "All" chromosomes
+        which_trait = shiny::reactive(trait_for_lod_scan_rv()), # Currently searched trait
+        dataset_category = selected_dataset_category_reactive # Our dataset category
+      )
     })
 
     # Instantiate plot modules and capture their outputs
@@ -315,9 +323,10 @@ scanApp <- function() {
       ignoreInit = TRUE
     )
 
-    shiny::observeEvent(active_main_par()$selected_dataset(),
+    # Clear caches when dataset changes (updated for new structure)
+    shiny::observeEvent(main_selected_dataset_group(),
       {
-        selected_ds_val <- active_main_par()$selected_dataset()
+        selected_ds_val <- main_selected_dataset_group()
 
         if (!is.null(selected_ds_val)) {
           message(paste("Clearing caches for dataset:", selected_ds_val))
@@ -754,8 +763,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       }
       paste("scan", instanceID, sep = "_")
     })
-
-    `%||%` <- function(a, b) if (!is.null(a)) a else b
 
     # Return reactive values that might be useful for other modules (e.g., download peak info)
     # This is currently not used by the main app, but good practice for a module.
