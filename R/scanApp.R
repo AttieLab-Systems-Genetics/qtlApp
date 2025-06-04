@@ -40,8 +40,6 @@ scanApp <- function() {
       "Interactive visualization tool using modular architecture"
     ),
     sidebar = bslib::sidebar(
-      "control_panel",
-
       # Use existing mainPar module for dataset selection and trait search
       h4("📊 Dataset & Trait Selection", style = "color: #2c3e50;"),
       mainParInput("main_par"),
@@ -112,7 +110,7 @@ scanApp <- function() {
       category <- main_par$dataset_category()
       if (category %in% c("Liver Lipids", "Clinical Traits")) {
         "manhattan"
-      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
+      } else if (category %in% c("Liver Genes", "Liver Isoforms", "Plasma 2H Metabolites")) {
         "cistrans"
       } else {
         "unknown"

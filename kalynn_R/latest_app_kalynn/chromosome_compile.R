@@ -10,7 +10,7 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_genes/liver_genes_female_mice_diet_interactive/output"
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/plasma_2H_metabolites/plasma_2H_metabolites_all_mice_additive/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 
 # Set data.table specific temp directory
@@ -23,7 +23,7 @@ input_dirname <- basename(dirname(INPUT_DIR))
 
 # Define all chromosomes
 
-CHROMOSOMES <- c(1:8)
+CHROMOSOMES <- c(16:19)
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
