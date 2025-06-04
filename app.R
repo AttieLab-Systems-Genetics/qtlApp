@@ -46,7 +46,7 @@ source("R/traitTypeApp.R")
 source("R/traitProcessingModule.R")
 
 # Set maximum file upload size
-options(shiny.maxRequestSize = 20000*1024^2) # 20 GB
+options(shiny.maxRequestSize = 20000 * 1024^2) # 20 GB
 
 # Launch the application
-scanApp() 
+scanApp()

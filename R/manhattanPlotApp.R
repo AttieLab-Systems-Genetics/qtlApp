@@ -149,6 +149,8 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
         target_phenotype_class_value <- "clinical_trait"
       } else if (current_dataset_category == "Liver Lipids") {
         target_phenotype_class_value <- "liver_lipid"
+      } else if (current_dataset_category == "Plasma 2H Metabolites") {
+        target_phenotype_class_value <- "plasma_2H_metabolite"
       } else {
         # Fallback or error if the category is unexpected for Manhattan plots
         shiny::showNotification(paste("ManhattanPlot: Unexpected dataset category '", current_dataset_category, "' for Manhattan plot."), type = "warning")
