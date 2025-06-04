@@ -182,14 +182,14 @@ scanApp <- function() {
       )
     })
 
-    # Reactive to get the highest LOD peak marker for allele effects
-    selected_peak_marker <- shiny::reactive({
+    # Reactive to get ALL peaks above threshold for the selected trait
+    available_peaks_for_trait <- shiny::reactive({
       peaks <- peaks_data_for_trait()
       if (is.null(peaks) || nrow(peaks) == 0) {
         return(NULL)
       }
 
-      # Filter by LOD threshold and get highest peak
+      # Filter by LOD threshold
       lod_thr <- lod_threshold_rv()
       shiny::req(lod_thr)
 
@@ -202,20 +202,43 @@ scanApp <- function() {
         return(NULL)
       }
 
-      # Filter and sort manually since highest_peaks expects 'lod' column
-      high_peaks <- peaks[peaks$qtl_lod >= lod_thr, ]
-      if (nrow(high_peaks) == 0) {
+      # Filter by LOD threshold and sort by LOD descending
+      filtered_peaks <- peaks[peaks$qtl_lod >= lod_thr, ]
+      if (nrow(filtered_peaks) == 0) {
         message(paste("scanApp: No peaks above LOD threshold", lod_thr, "for trait:", trait_for_lod_scan_rv()))
         return(NULL)
       }
 
       # Sort by qtl_lod descending
-      high_peaks <- high_peaks[order(-high_peaks$qtl_lod), ]
+      filtered_peaks <- filtered_peaks[order(-filtered_peaks$qtl_lod), ]
 
-      # Return the marker with highest LOD
-      top_marker <- high_peaks$marker[1]
-      message(paste("scanApp: Selected peak marker for allele effects:", top_marker, "with LOD:", high_peaks$qtl_lod[1]))
-      top_marker
+      message(paste("scanApp: Found", nrow(filtered_peaks), "peaks above threshold for trait:", trait_for_lod_scan_rv()))
+      filtered_peaks
+    })
+
+    # Reactive value to store the selected peak marker from dropdown
+    selected_peak_from_dropdown <- shiny::reactiveVal(NULL)
+
+    # Reactive to get the currently selected peak marker (either from dropdown or default to highest)
+    selected_peak_marker <- shiny::reactive({
+      available_peaks <- available_peaks_for_trait()
+      if (is.null(available_peaks) || nrow(available_peaks) == 0) {
+        return(NULL)
+      }
+
+      # Use dropdown selection if available, otherwise default to highest peak
+      dropdown_selection <- selected_peak_from_dropdown()
+      if (!is.null(dropdown_selection) && dropdown_selection %in% available_peaks$marker) {
+        selected_marker <- dropdown_selection
+        selected_peak_info <- available_peaks[available_peaks$marker == selected_marker, ]
+        message(paste("scanApp: Using dropdown-selected peak:", selected_marker, "with LOD:", selected_peak_info$qtl_lod[1]))
+      } else {
+        # Default to highest peak
+        selected_marker <- available_peaks$marker[1]
+        message(paste("scanApp: Using highest peak (default):", selected_marker, "with LOD:", available_peaks$qtl_lod[1]))
+      }
+
+      selected_marker
     })
 
     # Reactive to prepare allele effects data
@@ -483,26 +506,78 @@ scanApp <- function() {
     # Render allele effects section conditionally
     output[[ns_app_controller("allele_effects_section")]] <- shiny::renderUI({
       # Check if we have allele effects data
-      effects_data <- allele_effects_data()
-      peak_marker <- selected_peak_marker()
+      available_peaks <- available_peaks_for_trait()
 
-      message(paste("scanApp: Checking allele effects section. Effects data:", !is.null(effects_data), "Peak marker:", !is.null(peak_marker)))
+      message(paste("scanApp: Checking allele effects section. Available peaks:", !is.null(available_peaks)))
 
-      if (!is.null(effects_data) && !is.null(peak_marker)) {
-        message(paste("scanApp: Rendering allele effects section for marker:", peak_marker))
+      if (!is.null(available_peaks) && nrow(available_peaks) > 0) {
+        # Create choices for dropdown - show marker, chromosome, position, and LOD
+        peak_choices <- setNames(
+          available_peaks$marker,
+          paste0(
+            available_peaks$marker, " (Chr", available_peaks$qtl_chr,
+            ", ", round(available_peaks$qtl_pos, 2), "Mb, LOD=",
+            round(available_peaks$qtl_lod, 2), ")"
+          )
+        )
+
+        # Set default selection to highest peak if not already set
+        current_selection <- selected_peak_from_dropdown()
+        if (is.null(current_selection) || !current_selection %in% available_peaks$marker) {
+          default_selection <- available_peaks$marker[1] # Highest peak
+        } else {
+          default_selection <- current_selection
+        }
+
+        message(paste("scanApp: Rendering allele effects section with", length(peak_choices), "peak choices"))
+
         tagList(
           hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
-          h5(paste("Strain Effects for Peak:", peak_marker),
-            style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"
+          div(
+            style = "margin-bottom: 15px;",
+            h5("Strain Effects",
+              style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
+            ),
+            p(paste("Select a peak to view strain effects (", length(peak_choices), "peaks found):"),
+              style = "color: #7f8c8d; margin-bottom: 10px; font-size: 12px;"
+            ),
+            shiny::selectInput(
+              ns_app_controller("peak_selection_dropdown"),
+              label = NULL,
+              choices = peak_choices,
+              selected = default_selection,
+              width = "100%"
+            )
           ),
           shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "350px") %>%
             shinycssloaders::withSpinner(type = 8, color = "#3498db")
         )
       } else {
-        message("scanApp: No allele effects section - missing data or marker")
+        message("scanApp: No allele effects section - no peaks above threshold")
         NULL
       }
     })
+
+    # Observer to update selected peak when dropdown changes
+    shiny::observeEvent(input[[ns_app_controller("peak_selection_dropdown")]],
+      {
+        new_selection <- input[[ns_app_controller("peak_selection_dropdown")]]
+        if (!is.null(new_selection)) {
+          selected_peak_from_dropdown(new_selection)
+          message(paste("scanApp: Peak dropdown selection changed to:", new_selection))
+        }
+      },
+      ignoreNULL = FALSE
+    )
+
+    # Observer to reset peak selection when trait changes
+    shiny::observeEvent(trait_for_lod_scan_rv(),
+      {
+        selected_peak_from_dropdown(NULL) # Reset selection when trait changes
+        message("scanApp: Reset peak selection due to trait change")
+      },
+      ignoreNULL = FALSE
+    )
 
     # Render the allele effects plot
     output[[ns_app_controller("allele_effects_plot_output")]] <- shiny::renderPlot({
@@ -515,7 +590,7 @@ scanApp <- function() {
         # Create a placeholder plot when no data
         ggplot2::ggplot() +
           ggplot2::theme_void() +
-          ggplot2::labs(title = "No strain effects data available for this trait") +
+          ggplot2::labs(title = "No strain effects data available for this peak") +
           ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
       } else {
         message(paste("scanApp: Creating allele effects plot with", nrow(effects_data), "data points"))
