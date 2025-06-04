@@ -145,6 +145,11 @@ scanApp <- function() {
       input[[ns_app_controller("LOD_thr")]] %||% 7.5 # Default to 7.5 if not available
     })
 
+    # Reactive for selected chromosome (for zooming into specific chromosomes)
+    selected_chromosome_rv <- shiny::reactive({
+      input[[ns_app_controller("selected_chr")]] %||% "All" # Default to "All" chromosomes
+    })
+
     # Reactive to find peak data for the selected trait
     peaks_data_for_trait <- shiny::reactive({
       trait_val <- trait_for_lod_scan_rv()
@@ -375,7 +380,7 @@ scanApp <- function() {
       list(
         selected_dataset = main_selected_dataset_group, # Our dataset selection
         LOD_thr = lod_threshold_rv, # Our LOD threshold
-        selected_chr = shiny::reactive("All"), # Default to "All" chromosomes
+        selected_chr = selected_chromosome_rv, # Selected chromosome
         which_trait = shiny::reactive(trait_for_lod_scan_rv()), # Currently searched trait
         dataset_category = selected_dataset_category_reactive # Our dataset category
       )
@@ -533,6 +538,43 @@ scanApp <- function() {
           id = "lod_scan_plot_card",
           bslib::card_header(paste("LOD Scan for Trait:", trait_for_lod_scan_rv())),
           bslib::card_body(
+            # Chromosome selector
+            div(
+              style = "margin-bottom: 15px; background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #bdc3c7;",
+              div(
+                style = "display: flex; align-items: center; gap: 15px; flex-wrap: wrap;",
+                div(
+                  style = "flex: 1; min-width: 200px;",
+                  h6("🔍 Chromosome View", style = "color: #2c3e50; margin: 0 0 8px 0; font-weight: bold;"),
+                  shiny::selectInput(
+                    ns_app_controller("selected_chr"),
+                    label = NULL,
+                    choices = c(
+                      "All" = "All",
+                      setNames(as.character(1:19), paste("Chr", 1:19)),
+                      "X" = "X", "Y" = "Y", "M" = "M"
+                    ),
+                    selected = "All",
+                    width = "100%"
+                  )
+                ),
+                div(
+                  style = "display: flex; align-items: end; gap: 10px;",
+                  shiny::actionButton(
+                    ns_app_controller("zoom_to_chr"),
+                    "🔍 Zoom to Chromosome",
+                    class = "btn btn-primary",
+                    style = "background: #3498db; border: none; color: white; font-weight: bold;"
+                  ),
+                  shiny::actionButton(
+                    ns_app_controller("reset_chr_view"),
+                    "🌐 Show All",
+                    class = "btn btn-secondary",
+                    style = "background: #7f8c8d; border: none; color: white;"
+                  )
+                )
+              )
+            ),
             # LOD scan plot
             scanOutput(ns_app_controller("scan_plot_module")),
             # Clicked point details table
@@ -755,6 +797,41 @@ scanApp <- function() {
       # Also clear the search input field
       updateSelectizeInput(session, ns_app_controller("trait_search_input"),
         selected = character(0)
+      )
+    })
+
+    # ====== CHROMOSOME ZOOM FUNCTIONALITY ======
+    # Observer for "Zoom to Chromosome" button
+    observeEvent(input[[ns_app_controller("zoom_to_chr")]], {
+      selected_chr <- input[[ns_app_controller("selected_chr")]]
+      if (!is.null(selected_chr) && selected_chr != "All") {
+        message(paste("scanApp: Zooming to chromosome:", selected_chr))
+        # The reactive selected_chromosome_rv will automatically pick up this change
+        # and the plot will update via scan_table_chr reactive
+        shiny::showNotification(
+          paste("Zoomed to chromosome", selected_chr),
+          type = "message",
+          duration = 2
+        )
+      } else {
+        shiny::showNotification(
+          "Please select a specific chromosome to zoom to",
+          type = "warning",
+          duration = 3
+        )
+      }
+    })
+
+    # Observer for "Show All Chromosomes" button
+    observeEvent(input[[ns_app_controller("reset_chr_view")]], {
+      message("scanApp: Resetting to show all chromosomes")
+      shiny::updateSelectInput(session, ns_app_controller("selected_chr"),
+        selected = "All"
+      )
+      shiny::showNotification(
+        "Showing all chromosomes",
+        type = "message",
+        duration = 2
       )
     })
   }
