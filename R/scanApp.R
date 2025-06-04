@@ -24,52 +24,90 @@
 scanApp <- function() {
   # Ensure ui_styles.R is sourced
   if (!exists("custom_css", mode = "character")) {
-    source("R/ui_styles.R") 
+    source("R/ui_styles.R")
   }
 
   ui <- bslib::page_sidebar(
     shinyjs::useShinyjs(),
     tags$head(tags$style(custom_css)),
-    
     create_title_panel(
-      "QTL Scan Visualizer", 
+      "QTL Scan Visualizer",
       "Interactive visualization tool for QTL analysis"
     ),
-    
-    sidebar = bslib::sidebar("control_panel", 
+    sidebar = bslib::sidebar(
+      "control_panel",
       # Phase 1: New selection controls
       shiny::selectInput(shiny::NS("app_controller", "dataset_category_selector"),
-                         "Select Dataset Category:",
-                         choices = c("Loading..." = "")),
+        "Select Dataset Category:",
+        choices = c("Loading..." = "")
+      ),
       shiny::selectInput(shiny::NS("app_controller", "specific_dataset_selector"),
-                         "Select Specific Dataset:",
-                         choices = c("Loading..." = "")), 
-      hr(), # Separator
+        "Select Specific Dataset:",
+        choices = c("Loading..." = "")
+      ),
+
+      # PROMINENT TRAIT SEARCH SECTION
+      hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
+      div(
+        style = "background: linear-gradient(135deg, #3498db, #2980b9); padding: 15px; border-radius: 8px; margin-bottom: 15px;",
+        h4("🔍 Direct Trait/Gene Search",
+          style = "color: white; margin: 0 0 10px 0; font-weight: bold; text-align: center;"
+        ),
+        p("Search for any trait/gene directly:",
+          style = "color: white; margin: 0 0 10px 0; text-align: center; font-size: 12px;"
+        )
+      ),
+      div(
+        style = "background: #f8f9fa; padding: 15px; border-radius: 8px; border: 2px solid #3498db;",
+        selectizeInput(shiny::NS("app_controller", "trait_search_input"),
+          NULL, # No label since we have the header above
+          choices = NULL, # Will be populated dynamically
+          selected = NULL,
+          multiple = FALSE,
+          options = list(
+            placeholder = "Type to search traits/genes (e.g., Gapdh, Insulin, PI_38_3)",
+            maxItems = 1, # Single selection only
+            maxOptions = 10, # Limit displayed options for performance
+            create = FALSE # Don't allow creating new options
+          ),
+          width = "100%"
+        ),
+        div(
+          style = "text-align: center; margin-top: 10px;",
+          actionButton(shiny::NS("app_controller", "trait_search_button"),
+            "🚀 Search & Plot LOD Scan",
+            icon = icon("search"),
+            class = "btn-primary",
+            style = "background: #3498db; border: none; font-weight: bold; width: 100%;"
+          )
+        )
+      ),
+      hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
+
       # Existing controls (may be conditionally shown or modified later)
       mainParInput("main_par"),
       mainParUI("main_par"),
       peakInput("peak"), # Likely tied to a specific scan, for Phase 3
-      peakUI("peak"),    # Likely tied to a specific scan, for Phase 3
+      peakUI("peak"), # Likely tied to a specific scan, for Phase 3
       downloadInput("download"),
       downloadOutput("download"),
+
       # Action button to clear/go back from LOD scan view
-      shiny::actionButton(shiny::NS("app_controller", "clear_lod_scan_btn"), "Back to Overview Plot", icon = shiny::icon("arrow-left")),
-      # Trait search input
-      hr(), # Add a horizontal rule for visual separation
-      h4("Direct Trait/Gene LOD Scan"),
-      textInput(shiny::NS("app_controller", "trait_search_input"), "Enter Trait/Gene ID:", placeholder = "e.g., Gapdh or PI_38_3"),
-      actionButton(shiny::NS("app_controller", "trait_search_button"), "Plot LOD for Trait/Gene", icon = icon("search")),
-      hr(), # Add another horizontal rule
+      shiny::actionButton(shiny::NS("app_controller", "clear_lod_scan_btn"),
+        "← Back to Overview Plot",
+        icon = shiny::icon("arrow-left"),
+        class = "btn-secondary",
+        style = "width: 100%; margin-top: 10px;"
+      )
     ),
-    
     bslib::layout_columns(
       col_widths = bslib::breakpoints(
         sm = c(12, 12), # On small screens, stack them
-        md = c(6, 6)    # On medium and larger, side-by-side if LOD scan is active
+        md = c(6, 6) # On medium and larger, side-by-side if LOD scan is active
       ),
       bslib::card(
         id = "primary_plot_card",
-        bslib::card_header(shiny::textOutput(shiny::NS("app_controller", "plot_title"))), 
+        bslib::card_header(shiny::textOutput(shiny::NS("app_controller", "plot_title"))),
         bslib::card_body(
           shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
         )
@@ -78,259 +116,366 @@ scanApp <- function() {
       shiny::uiOutput(shiny::NS("app_controller", "lod_scan_plot_ui_placeholder"))
     )
   )
-  
+
   server <- function(input, output, session) {
-      ns_app_controller <- shiny::NS("app_controller")
+    ns_app_controller <- shiny::NS("app_controller")
 
-      trait_cache <- new.env(parent = emptyenv())
-      peaks_cache <- new.env(parent = emptyenv())
+    trait_cache <- new.env(parent = emptyenv())
+    peaks_cache <- new.env(parent = emptyenv())
 
-      import_reactives <- importServer("import")
-      
-      file_index_dt <- shiny::reactive({
-        shiny::req(import_reactives()$file_directory)
-        dt <- data.table::as.data.table(import_reactives()$file_directory)
-        shiny::validate(
-          shiny::need("dataset_category" %in% names(dt), "Error: 'dataset_category' column missing in file_index.csv."),
-          shiny::need("group" %in% names(dt), "Error: 'group' column missing in file_index.csv.")
+    import_reactives <- importServer("import")
+
+    file_index_dt <- shiny::reactive({
+      shiny::req(import_reactives()$file_directory)
+      dt <- data.table::as.data.table(import_reactives()$file_directory)
+      shiny::validate(
+        shiny::need("dataset_category" %in% names(dt), "Error: 'dataset_category' column missing in file_index.csv."),
+        shiny::need("group" %in% names(dt), "Error: 'group' column missing in file_index.csv.")
+      )
+      return(dt)
+    })
+
+    shiny::observe({
+      shiny::req(file_index_dt())
+      categories <- unique(file_index_dt()$dataset_category)
+      if (length(categories) > 0) {
+        shiny::updateSelectInput(session, ns_app_controller("dataset_category_selector"),
+          choices = stats::setNames(categories, categories),
+          selected = categories[1]
         )
-        return(dt)
-      })
+      } else {
+        shiny::updateSelectInput(session, ns_app_controller("dataset_category_selector"),
+          choices = c("No categories found" = ""), selected = ""
+        )
+      }
+    })
 
-      shiny::observe({
-        shiny::req(file_index_dt())
-        categories <- unique(file_index_dt()$dataset_category)
-        if (length(categories) > 0) {
-          shiny::updateSelectInput(session, ns_app_controller("dataset_category_selector"),
-                                   choices = stats::setNames(categories, categories),
-                                   selected = categories[1])
+    shiny::observe({
+      shiny::req(file_index_dt(), input[[ns_app_controller("dataset_category_selector")]])
+      selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
+
+      if (!is.null(selected_cat) && nzchar(selected_cat) && selected_cat != "No categories found") {
+        datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
+        specific_datasets_choices <- unique(datasets_in_category$group)
+
+        if (length(specific_datasets_choices) > 0) {
+          shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
+            choices = stats::setNames(specific_datasets_choices, specific_datasets_choices),
+            selected = specific_datasets_choices[1]
+          )
         } else {
-          shiny::updateSelectInput(session, ns_app_controller("dataset_category_selector"),
-                                   choices = c("No categories found" = ""), selected = "")
+          shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
+            choices = c("No datasets in category" = ""), selected = ""
+          )
         }
-      })
+      } else {
+        shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
+          choices = c("Select category first" = ""), selected = ""
+        )
+      }
+    })
 
-      shiny::observe({
-        shiny::req(file_index_dt(), input[[ns_app_controller("dataset_category_selector")]])
-        selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
-        
-        if (!is.null(selected_cat) && nzchar(selected_cat) && selected_cat != "No categories found") {
-            datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
-            specific_datasets_choices <- unique(datasets_in_category$group)
-            
-            if (length(specific_datasets_choices) > 0) {
-              shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
-                                       choices = stats::setNames(specific_datasets_choices, specific_datasets_choices),
-                                       selected = specific_datasets_choices[1])
-            } else {
-              shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"), 
-                                       choices = c("No datasets in category" = ""), selected = "")
-            }
-        } else {
-            shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"), 
-                                     choices = c("Select category first" = ""), selected = "")
-        }
-      })
-
-      main_selected_dataset_group <- shiny::reactive({
-        shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
-        selected_group <- input[[ns_app_controller("specific_dataset_selector")]]
-        if (is.null(selected_group) || !nzchar(selected_group) || 
-            selected_group %in% c("Select category first", "No datasets in category")) {
-          return(NULL)
-        }
-        message(paste("Main selected dataset group:", selected_group))
-        return(selected_group)
-      })
-      
-      selected_dataset_category_reactive <- shiny::reactive({
-        shiny::req(main_selected_dataset_group(), file_index_dt())
-        info <- file_index_dt()[group == main_selected_dataset_group()]
-        if(nrow(info) > 0){
-            return(unique(info$dataset_category)[1]) 
-        }
+    main_selected_dataset_group <- shiny::reactive({
+      shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
+      selected_group <- input[[ns_app_controller("specific_dataset_selector")]]
+      if (is.null(selected_group) || !nzchar(selected_group) ||
+        selected_group %in% c("Select category first", "No datasets in category")) {
         return(NULL)
-     })
+      }
+      message(paste("Main selected dataset group:", selected_group))
+      return(selected_group)
+    })
 
-      output[[ns_app_controller("plot_title")]] <- shiny::renderText({
-        category <- selected_dataset_category_reactive()
-        group <- main_selected_dataset_group()
-        if (is.null(category) || is.null(group)) return("Select Dataset Category and Specific Dataset")
-        
-        plot_type_text <- "Plot"
-        if (category %in% c("Liver Lipids", "Clinical Traits")) {
-          plot_type_text <- "Manhattan Plot"
-        } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
-          plot_type_text <- "Cis/Trans Plot"
+    selected_dataset_category_reactive <- shiny::reactive({
+      shiny::req(main_selected_dataset_group(), file_index_dt())
+      info <- file_index_dt()[group == main_selected_dataset_group()]
+      if (nrow(info) > 0) {
+        return(unique(info$dataset_category)[1])
+      }
+      return(NULL)
+    })
+
+    output[[ns_app_controller("plot_title")]] <- shiny::renderText({
+      category <- selected_dataset_category_reactive()
+      group <- main_selected_dataset_group()
+      if (is.null(category) || is.null(group)) {
+        return("Select Dataset Category and Specific Dataset")
+      }
+
+      plot_type_text <- "Plot"
+      if (category %in% c("Liver Lipids", "Clinical Traits")) {
+        plot_type_text <- "Manhattan Plot"
+      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
+        plot_type_text <- "Cis/Trans Plot"
+      }
+      return(paste0(plot_type_text, " for: ", group, " (", category, ")"))
+    })
+
+    output[[ns_app_controller("conditional_plot_ui")]] <- shiny::renderUI({
+      category <- selected_dataset_category_reactive()
+      shiny::req(category)
+
+      # Ensure the module IDs are unique if using the same ns_app_controller
+      if (category %in% c("Liver Lipids", "Clinical Traits")) {
+        tagList(
+          manhattanPlotUI(ns_app_controller("manhattan_plot_module"))
+        )
+      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
+        tagList(
+          cisTransPlotInput(ns_app_controller("cistrans_plot_module")),
+          cisTransPlotUI(ns_app_controller("cistrans_plot_module"))
+        )
+      } else {
+        shiny::p(paste("No specific plot type configured for category:", category))
+      }
+    })
+
+    main_par_outputs <- mainParServer("main_par", import_reactives)
+
+    active_main_par <- shiny::reactive({
+      # main_par_outputs is ALREADY the list of reactives returned by mainParServer
+
+      params_list <- list()
+      if (is.list(main_par_outputs)) { # Check if it's a list (it should be)
+        for (name in names(main_par_outputs)) {
+          # Each element main_par_outputs[[name]] is itself a reactive expression
+          params_list[[name]] <- main_par_outputs[[name]]
         }
-        return(paste0(plot_type_text, " for: ", group, " (", category, ")"))
-      })
+      }
+      # Override or set selected_dataset with our main_selected_dataset_group reactive
+      params_list$selected_dataset <- main_selected_dataset_group
 
-      output[[ns_app_controller("conditional_plot_ui")]] <- shiny::renderUI({
-        category <- selected_dataset_category_reactive()
-        shiny::req(category)
+      return(params_list)
+    })
 
-        # Ensure the module IDs are unique if using the same ns_app_controller
-        if (category %in% c("Liver Lipids", "Clinical Traits")) {
-          tagList(
-            manhattanPlotUI(ns_app_controller("manhattan_plot_module"))
-          )
-        } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
-          tagList(
-            cisTransPlotInput(ns_app_controller("cistrans_plot_module")),
-            cisTransPlotUI(ns_app_controller("cistrans_plot_module"))
-          )
-        } else {
-          shiny::p(paste("No specific plot type configured for category:", category))
-        }
-      })
-      
-      main_par_outputs <- mainParServer("main_par", import_reactives) 
+    # Instantiate plot modules and capture their outputs
+    manhattan_plot_outputs <- manhattanPlotServer(ns_app_controller("manhattan_plot_module"),
+      import_reactives = import_reactives,
+      main_par = active_main_par
+    )
 
-      active_main_par <- shiny::reactive({
-        # main_par_outputs is ALREADY the list of reactives returned by mainParServer
-        
-        params_list <- list()
-        if(is.list(main_par_outputs)){ # Check if it's a list (it should be)
-            for(name in names(main_par_outputs)){
-                # Each element main_par_outputs[[name]] is itself a reactive expression
-                params_list[[name]] <- main_par_outputs[[name]] 
-            }
-        }
-        # Override or set selected_dataset with our main_selected_dataset_group reactive
-        params_list$selected_dataset <- main_selected_dataset_group 
-        
-        return(params_list)
-      })
+    cistrans_plot_outputs <- cisTransPlotServer(ns_app_controller("cistrans_plot_module"),
+      import_reactives = import_reactives,
+      main_par = active_main_par,
+      peaks_cache = peaks_cache
+    )
 
-      # Instantiate plot modules and capture their outputs
-      manhattan_plot_outputs <- manhattanPlotServer(ns_app_controller("manhattan_plot_module"), 
-                                                 import_reactives = import_reactives, 
-                                                 main_par = active_main_par)
+    # Reactive value to store the trait selected from either plot for LOD scanning
+    trait_for_lod_scan_rv <- shiny::reactiveVal(NULL)
 
-      cistrans_plot_outputs <- cisTransPlotServer(ns_app_controller("cistrans_plot_module"), 
-                                                 import_reactives = import_reactives, 
-                                                 main_par = active_main_par, 
-                                                 peaks_cache = peaks_cache)
-
-      # Reactive value to store the trait selected from either plot for LOD scanning
-      trait_for_lod_scan_rv <- shiny::reactiveVal(NULL)
-
-      # Observe clicks from Manhattan plot
-      shiny::observeEvent(manhattan_plot_outputs$clicked_phenotype_for_lod_scan(), {
+    # Observe clicks from Manhattan plot
+    shiny::observeEvent(manhattan_plot_outputs$clicked_phenotype_for_lod_scan(),
+      {
         clicked_trait <- manhattan_plot_outputs$clicked_phenotype_for_lod_scan()
         if (!is.null(clicked_trait)) {
           trait_for_lod_scan_rv(clicked_trait)
           message(paste("scanApp: Manhattan plot click detected. Trait for LOD scan:", clicked_trait))
           # Potentially switch to LOD scan tab/view here in the future
         }
-      }, ignoreNULL = TRUE, ignoreInit = TRUE) # ignoreNULL=FALSE if we want to clear on background click
+      },
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
+    ) # ignoreNULL=FALSE if we want to clear on background click
 
-      # Observe clicks from Cis/Trans plot
-      shiny::observeEvent(cistrans_plot_outputs$clicked_phenotype_for_lod_scan(), {
+    # Observe clicks from Cis/Trans plot
+    shiny::observeEvent(cistrans_plot_outputs$clicked_phenotype_for_lod_scan(),
+      {
         clicked_trait <- cistrans_plot_outputs$clicked_phenotype_for_lod_scan()
         if (!is.null(clicked_trait)) {
           trait_for_lod_scan_rv(clicked_trait)
           message(paste("scanApp: Cis/Trans plot click detected. Trait for LOD scan:", clicked_trait))
           # Potentially switch to LOD scan tab/view here in the future
         }
-      }, ignoreNULL = TRUE, ignoreInit = TRUE)
+      },
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
+    )
 
-      # When the main selected dataset changes, clear the trait_for_lod_scan_rv
-      # to prevent a scan from an old selection on a new plot type.
-      shiny::observeEvent(main_selected_dataset_group(), {
-        message(paste("scanApp: Main dataset changed to", main_selected_dataset_group(),"Clearing trait_for_lod_scan_rv."))
-        trait_for_lod_scan_rv(NULL) 
-      }, ignoreNULL = FALSE, ignoreInit = TRUE)
-
-      # For debugging: observe the final trait selected for LOD scan
-      shiny::observeEvent(trait_for_lod_scan_rv(), {
-        message(paste("scanApp: trait_for_lod_scan_rv is now:", trait_for_lod_scan_rv()))
-      }, ignoreNULL = FALSE, ignoreInit = TRUE)
-
-      shiny::observeEvent(active_main_par()$selected_dataset(), {
-        selected_ds_val <- active_main_par()$selected_dataset()
-        
-        if(!is.null(selected_ds_val)) { 
-            message(paste("Clearing caches for dataset:", selected_ds_val))
-            rm(list = ls(envir = trait_cache), envir = trait_cache)
-            rm(list = ls(envir = peaks_cache), envir = peaks_cache)
-        } else {
-            message("No dataset selected or selected_dataset is NULL, not clearing caches.")
-        }
-      }, ignoreNULL = FALSE, ignoreInit = TRUE)
-      
-      # Observer for the clear LOD scan button
-      shiny::observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
-        message("scanApp: Clear LOD scan button clicked.")
-        trait_for_lod_scan_rv(NULL)
-      })
-
-      # Call scanServer, passing the necessary reactives
-      # scan_module_outputs will be a list of reactives/values returned by scanServer
-      scan_module_outputs <- scanServer(
-        id = ns_app_controller("scan_plot_module"), 
-        trait_to_scan = trait_for_lod_scan_rv, # Pass the reactive directly
-        selected_dataset_group = main_selected_dataset_group, # Pass the reactive for the group
-        import_reactives = import_reactives, # Pass the whole list of import reactives
-        main_par_inputs = active_main_par # Pass the combined main parameters (for LOD_thr, etc.)
-      )
-
-      # UI for LOD Scan plot - only appears when a trait is selected
-      output[[ns_app_controller("lod_scan_plot_ui_placeholder")]] <- shiny::renderUI({
-        if(!is.null(trait_for_lod_scan_rv())){
-          bslib::card(
-            id = "lod_scan_plot_card",
-            bslib::card_header(paste("LOD Scan for Trait:", trait_for_lod_scan_rv())),
-            bslib::card_body(
-              scanOutput(ns_app_controller("scan_plot_module"))
-              # We can add peakUI and download UI here, linked to scan_module_outputs
-            )
-          )
-        } else {
-          NULL # Don't show the card if no trait is selected for scanning
-        }
-      })
-
-      # --- Trait Search Logic ---
-      observeEvent(input[[ns_app_controller("trait_search_button")]], {
-        shiny::req(main_selected_dataset_group(), main_selected_dataset_group()$group) # Ensure a dataset is selected
-        
-        searched_trait <- trimws(input[[ns_app_controller("trait_search_input")]])
-        
-        if (!nzchar(searched_trait)) {
-          shiny::showNotification("Please enter a trait/gene ID to search.", type = "warning")
-          return()
-        }
-        
-        # Check if the searched trait is different from the current one to avoid re-triggering for no reason
-        # Or if current is NULL, then definitely update.
-        if (is.null(trait_for_lod_scan_rv()) || !identical(trait_for_lod_scan_rv(), searched_trait)) {
-            message(paste("scanApp: Trait search triggered. Trait for LOD scan set to:", searched_trait, 
-                          "for dataset:", main_selected_dataset_group()$group))
-            trait_for_lod_scan_rv(searched_trait)
-        } else {
-            message(paste("scanApp: Trait search for already selected trait:", searched_trait, "- no change."))
-        }
-      })
-
-# Note: main_selected_dataset_group reactive is already defined above
-
-      # Observer to clear the LOD scan trait when the main dataset changes
-      observeEvent(main_selected_dataset_group(), {
+    # When the main selected dataset changes, clear the trait_for_lod_scan_rv
+    # to prevent a scan from an old selection on a new plot type.
+    shiny::observeEvent(main_selected_dataset_group(),
+      {
         message("scanApp: Main dataset group changed. Clearing trait_for_lod_scan_rv.")
         trait_for_lod_scan_rv(NULL) # Clear any active LOD scan
-        # Also clear the search input field
-        updateTextInput(session, ns_app_controller("trait_search_input"), value = "")
-      }, ignoreNULL = TRUE, ignoreInit = TRUE)
+        # Clear the search input selection (choices will be updated by the other observer)
+        updateSelectizeInput(session, ns_app_controller("trait_search_input"),
+          selected = character(0)
+        )
+      },
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
+    )
 
-      # Observer for the "Back to Overview Plot" button
-      observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
-        message("scanApp: clear_lod_scan_btn clicked. Clearing trait_for_lod_scan_rv.")
-        trait_for_lod_scan_rv(NULL)
-        # Also clear the search input field
-        updateTextInput(session, ns_app_controller("trait_search_input"), value = "")
-      })
+    # For debugging: observe the final trait selected for LOD scan
+    shiny::observeEvent(trait_for_lod_scan_rv(),
+      {
+        message(paste("scanApp: trait_for_lod_scan_rv is now:", trait_for_lod_scan_rv()))
+      },
+      ignoreNULL = FALSE,
+      ignoreInit = TRUE
+    )
+
+    shiny::observeEvent(active_main_par()$selected_dataset(),
+      {
+        selected_ds_val <- active_main_par()$selected_dataset()
+
+        if (!is.null(selected_ds_val)) {
+          message(paste("Clearing caches for dataset:", selected_ds_val))
+          rm(list = ls(envir = trait_cache), envir = trait_cache)
+          rm(list = ls(envir = peaks_cache), envir = peaks_cache)
+        } else {
+          message("No dataset selected or selected_dataset is NULL, not clearing caches.")
+        }
+      },
+      ignoreNULL = FALSE,
+      ignoreInit = TRUE
+    )
+
+    # Observer for the clear LOD scan button
+    shiny::observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
+      message("scanApp: Clear LOD scan button clicked.")
+      trait_for_lod_scan_rv(NULL)
+      # Also clear the search input field
+      updateSelectizeInput(session, ns_app_controller("trait_search_input"),
+        selected = character(0)
+      )
+    })
+
+    # Call scanServer, passing the necessary reactives
+    # scan_module_outputs will be a list of reactives/values returned by scanServer
+    scan_module_outputs <- scanServer(
+      id = ns_app_controller("scan_plot_module"),
+      trait_to_scan = trait_for_lod_scan_rv, # Pass the reactive directly
+      selected_dataset_group = main_selected_dataset_group, # Pass the reactive for the group
+      import_reactives = import_reactives, # Pass the whole list of import reactives
+      main_par_inputs = active_main_par # Pass the combined main parameters (for LOD_thr, etc.)
+    )
+
+    # UI for LOD Scan plot - only appears when a trait is selected
+    output[[ns_app_controller("lod_scan_plot_ui_placeholder")]] <- shiny::renderUI({
+      if (!is.null(trait_for_lod_scan_rv())) {
+        bslib::card(
+          id = "lod_scan_plot_card",
+          bslib::card_header(paste("LOD Scan for Trait:", trait_for_lod_scan_rv())),
+          bslib::card_body(
+            scanOutput(ns_app_controller("scan_plot_module"))
+            # We can add peakUI and download UI here, linked to scan_module_outputs
+          )
+        )
+      } else {
+        NULL # Don't show the card if no trait is selected for scanning
+      }
+    })
+
+    # --- FIXED Trait Search Logic ---
+    observeEvent(input[[ns_app_controller("trait_search_button")]], {
+      # FIX: Use main_selected_dataset_group() directly (it's a string), not main_selected_dataset_group()$group
+      shiny::req(main_selected_dataset_group()) # Ensure a dataset is selected
+
+      searched_trait <- input[[ns_app_controller("trait_search_input")]] # Get selected value from selectizeInput
+
+      if (is.null(searched_trait) || !nzchar(searched_trait)) {
+        shiny::showNotification("Please select a trait/gene to search.", type = "warning", duration = 3)
+        return()
+      }
+
+      # Check if the searched trait is different from the current one to avoid re-triggering for no reason
+      # Or if current is NULL, then definitely update.
+      if (is.null(trait_for_lod_scan_rv()) || !identical(trait_for_lod_scan_rv(), searched_trait)) {
+        message(paste(
+          "scanApp: Trait search triggered. Trait for LOD scan set to:", searched_trait,
+          "for dataset:", main_selected_dataset_group()
+        ))
+        trait_for_lod_scan_rv(searched_trait)
+
+        # Show success notification
+        shiny::showNotification(
+          paste("Searching for trait:", searched_trait),
+          type = "message",
+          duration = 2
+        )
+      } else {
+        message(paste("scanApp: Trait search for already selected trait:", searched_trait, "- no change."))
+      }
+    })
+
+    # --- AUTO-TRIGGER SEARCH WHEN TRAIT IS SELECTED FROM DROPDOWN ---
+    # This allows users to skip clicking the button - just select from dropdown and it searches automatically
+    observeEvent(input[[ns_app_controller("trait_search_input")]],
+      {
+        searched_trait <- input[[ns_app_controller("trait_search_input")]]
+
+        # Only auto-search if a valid trait is selected and dataset is available
+        if (!is.null(searched_trait) && nzchar(searched_trait) && !is.null(main_selected_dataset_group())) {
+          if (is.null(trait_for_lod_scan_rv()) || !identical(trait_for_lod_scan_rv(), searched_trait)) {
+            message(paste("scanApp: Auto-search triggered for trait:", searched_trait))
+            trait_for_lod_scan_rv(searched_trait)
+
+            # Show notification for auto-search
+            shiny::showNotification(
+              paste("Auto-searching for trait:", searched_trait),
+              type = "message",
+              duration = 2
+            )
+          }
+        }
+      },
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
+    )
+
+    # ====== TRAIT SEARCH DROPDOWN UPDATE LOGIC ======
+    # Updates trait search choices when dataset changes (server-side selectize for performance)
+    shiny::observeEvent(shiny::req(main_selected_dataset_group()), {
+      shiny::req(import_reactives()) # Ensure import data is available
+      current_ds <- main_selected_dataset_group()
+
+      message(paste("scanApp: Updating trait search choices for dataset:", current_ds))
+
+      # RESET TRAIT SEARCH INPUT: Prevent conflicts during update
+      shiny::freezeReactiveValue(input, ns_app_controller("trait_search_input")) # Temporarily freeze reactive
+      shiny::updateSelectizeInput(session, ns_app_controller("trait_search_input"),
+        choices = character(0),
+        selected = character(0),
+        options = list(placeholder = "Loading traits...")
+      )
+
+      # GET NEW TRAIT CHOICES: Based on selected dataset
+      choices <- get_trait_choices(import_reactives(), current_ds) # External helper function
+
+      if (!is.null(choices) && length(choices) > 0) {
+        message(paste("scanApp: Found", length(choices), "traits for dataset:", current_ds))
+        # UPDATE TRAIT SEARCH DROPDOWN: With server-side processing for large lists
+        shiny::updateSelectizeInput(session, ns_app_controller("trait_search_input"),
+          choices = choices,
+          selected = NULL, # Don't auto-select for search
+          options = list(
+            placeholder = "Type to search traits/genes...",
+            maxItems = 1, # Only allow single selection
+            maxOptions = 10 # Limit displayed options for performance
+          ),
+          server = TRUE # Enable server-side processing
+        )
+      } else {
+        message(paste("scanApp: No traits found for dataset:", current_ds))
+        # No traits available for this dataset
+        shiny::updateSelectizeInput(session, ns_app_controller("trait_search_input"),
+          choices = character(0),
+          selected = character(0),
+          options = list(placeholder = "No traits available for this dataset")
+        )
+      }
+    })
+
+    # Observer for the "Back to Overview Plot" button
+    observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
+      message("scanApp: clear_lod_scan_btn clicked. Clearing trait_for_lod_scan_rv.")
+      trait_for_lod_scan_rv(NULL)
+      # Also clear the search input field
+      updateSelectizeInput(session, ns_app_controller("trait_search_input"),
+        selected = character(0)
+      )
+    })
   }
   shiny::shinyApp(ui = ui, server = server)
 }
@@ -345,8 +490,18 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     use_alternating_colors_rv <- shiny::reactiveVal(TRUE)
     clicked_plotly_point_details_lod_scan_rv <- shiny::reactiveVal(NULL)
 
-    shiny::observeEvent(input$plot_width, { plot_width_rv(input$plot_width) }, ignoreNULL = TRUE)
-    shiny::observeEvent(input$plot_height, { plot_height_rv(input$plot_height) }, ignoreNULL = TRUE)
+    shiny::observeEvent(input$plot_width,
+      {
+        plot_width_rv(input$plot_width)
+      },
+      ignoreNULL = TRUE
+    )
+    shiny::observeEvent(input$plot_height,
+      {
+        plot_height_rv(input$plot_height)
+      },
+      ignoreNULL = TRUE
+    )
 
     shiny::observeEvent(input$preset_1to1, {
       shiny::updateNumericInput(session, "plot_width", value = 800)
@@ -362,64 +517,67 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     })
 
     shiny::observeEvent(input$color_toggle, {
-      if(is.logical(input$color_toggle)){
+      if (is.logical(input$color_toggle)) {
         use_alternating_colors_rv(input$color_toggle)
       } else {
         use_alternating_colors_rv(!use_alternating_colors_rv())
       }
     })
-    
+
     current_trait_for_scan <- shiny::reactive({
-      shiny::req(trait_to_scan()) 
+      shiny::req(trait_to_scan())
       trait_val <- trait_to_scan()
       message(paste("scanServer: Received trait_to_scan value:", trait_val, "(this will be passed to trait_scan)."))
-      return(trait_val) 
+      return(trait_val)
     })
-    
+
     scans <- shiny::reactive({
-      req(current_trait_for_scan(), selected_dataset_group()) 
+      req(current_trait_for_scan(), selected_dataset_group())
       trait_val <- current_trait_for_scan()
       dataset_group_val <- selected_dataset_group()
-      
+
       message(paste0("scanServer (within scans reactive): ABOUT TO CALL trait_scan. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'"))
-      
+
       file_dir_val <- import_reactives()$file_directory
       req(file_dir_val)
-      if (!is.data.frame(file_dir_val) || !("group" %in% names(file_dir_val))){
-          stop("scanServer: import_reactives()$file_directory is not a valid data frame or missing 'group' column before calling trait_scan.")
+      if (!is.data.frame(file_dir_val) || !("group" %in% names(file_dir_val))) {
+        stop("scanServer: import_reactives()$file_directory is not a valid data frame or missing 'group' column before calling trait_scan.")
       }
 
-      result <- tryCatch({
-        trait_scan(
-          file_dir = file_dir_val,
-          selected_dataset = dataset_group_val, 
-          selected_trait = trait_val,
-          cache_env = NULL
-        )
-      }, error = function(e) {
-        message(paste0("scanServer (within scans reactive): ERROR DURING trait_scan CALL. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Error: ", e$message))
-        return(NULL) 
-      })
-      
-      message(paste0("scanServer (within scans reactive): RETURNED FROM trait_scan. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Result class: ", class(result), ", Result nrows: ", if(!is.null(result) && (is.data.frame(result) || is.data.table(result))) nrow(result) else "N/A"))
-      
+      result <- tryCatch(
+        {
+          trait_scan(
+            file_dir = file_dir_val,
+            selected_dataset = dataset_group_val,
+            selected_trait = trait_val,
+            cache_env = NULL
+          )
+        },
+        error = function(e) {
+          message(paste0("scanServer (within scans reactive): ERROR DURING trait_scan CALL. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Error: ", e$message))
+          return(NULL)
+        }
+      )
+
+      message(paste0("scanServer (within scans reactive): RETURNED FROM trait_scan. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Result class: ", class(result), ", Result nrows: ", if (!is.null(result) && (is.data.frame(result) || is.data.table(result))) nrow(result) else "N/A"))
+
       # Additional check: if result is NULL due to error, or if it's an empty data frame, handle appropriately.
-      if (is.null(result) || ( (is.data.frame(result) || is.data.table(result)) && nrow(result) == 0) ) {
+      if (is.null(result) || ((is.data.frame(result) || is.data.table(result)) && nrow(result) == 0)) {
         message(paste0("scanServer: trait_scan returned NULL or empty for Trait: '", trait_val, "', Dataset: '", dataset_group_val, "'. Propagating as empty result."))
         # Return an empty data.table or data.frame as expected by downstream reactives to prevent crashes
         # Make sure it has the columns expected by QTL_plot_visualizer if possible, or handle this there.
-        return(data.table::data.table()) 
+        return(data.table::data.table())
       }
-      
+
       result
     })
-    
+
     scan_table <- shiny::reactive({
       # Access the list of reactives first
       main_par_list <- main_par_inputs()
       shiny::req(
-        scans(), 
-        current_trait_for_scan(), 
+        scans(),
+        current_trait_for_scan(),
         main_par_list, # Ensure the list itself is available
         main_par_list$LOD_thr, # Ensure the reactive for LOD_thr is in the list
         main_par_list$LOD_thr(), # Ensure the value of LOD_thr is available
@@ -427,13 +585,13 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       )
       QTL_plot_visualizer(scans(), current_trait_for_scan(), main_par_list$LOD_thr(), import_reactives()$markers)
     })
-    
+
     scan_table_chr <- shiny::reactive({
       main_par_list <- main_par_inputs()
       shiny::req(
-        scan_table(), 
-        main_par_list, 
-        main_par_list$selected_chr, 
+        scan_table(),
+        main_par_list,
+        main_par_list$selected_chr,
         main_par_list$selected_chr()
       )
       current_scan_table <- scan_table()
@@ -441,23 +599,23 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       if (selected_chromosome == "All") {
         current_scan_table
       } else {
-        sel_chr_num <- selected_chromosome 
-        if(selected_chromosome == "X") sel_chr_num <- 20
-        if(selected_chromosome == "Y") sel_chr_num <- 21
-        if(selected_chromosome == "M") sel_chr_num <- 22
+        sel_chr_num <- selected_chromosome
+        if (selected_chromosome == "X") sel_chr_num <- 20
+        if (selected_chromosome == "Y") sel_chr_num <- 21
+        if (selected_chromosome == "M") sel_chr_num <- 22
         sel_chr_num <- as.numeric(sel_chr_num)
 
         dplyr::filter(current_scan_table, chr == sel_chr_num)
       }
     })
-    
+
     current_scan_plot_gg <- shiny::reactive({
       main_par_list <- main_par_inputs()
       shiny::req(
-        scan_table_chr(), 
-        main_par_list, 
-        main_par_list$LOD_thr, 
-        main_par_list$LOD_thr(), 
+        scan_table_chr(),
+        main_par_list,
+        main_par_list$LOD_thr,
+        main_par_list$LOD_thr(),
         main_par_list$selected_chr,
         main_par_list$selected_chr()
       )
@@ -466,62 +624,66 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
     output$scan_plot_ui_render <- shiny::renderUI({
       shiny::req(current_scan_plot_gg()) # This will now wait until ggplot_qtl_scan is successful
-      plotly::plotlyOutput(ns("render_plotly_plot"), 
-                        width = paste0(plot_width_rv(), "px"), 
-                        height = paste0(plot_height_rv(), "px")) |>
+      plotly::plotlyOutput(ns("render_plotly_plot"),
+        width = paste0(plot_width_rv(), "px"),
+        height = paste0(plot_height_rv(), "px")
+      ) |>
         shinycssloaders::withSpinner(type = 8, color = "#3498db")
     })
-    
+
     output$render_plotly_plot <- plotly::renderPlotly({
       shiny::req(current_scan_plot_gg()) # Ensure ggplot object is ready
-      plt <- plotly::ggplotly(current_scan_plot_gg(), 
-                              source = ns("qtl_scan_plotly"), 
-                              tooltip = c("x", "y", "chr"))
-      
+      plt <- plotly::ggplotly(current_scan_plot_gg(),
+        source = ns("qtl_scan_plotly"),
+        tooltip = c("x", "y", "chr")
+      )
+
       plt <- plt %>% # Use the new pipe operator
         plotly::layout(
           dragmode = "zoom",
           hovermode = "closest",
           title = list(
-            text = NULL 
+            text = NULL
           ),
-          xaxis = list(title = current_scan_plot_gg()$labels$x), 
-          yaxis = list(title = current_scan_plot_gg()$labels$y)  
+          xaxis = list(title = current_scan_plot_gg()$labels$x),
+          yaxis = list(title = current_scan_plot_gg()$labels$y)
         ) %>% # Use the new pipe operator
         plotly::config(
           displaylogo = FALSE,
-          modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", 
-                                     "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud")
+          modeBarButtonsToRemove = c(
+            "select2d", "lasso2d", "hoverClosestCartesian",
+            "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"
+          )
         )
-      
+
       # Register the plotly_click event here for the LOD scan plot
-      plt <- plotly::event_register(plt, 'plotly_click')
+      plt <- plotly::event_register(plt, "plotly_click")
       plt
     })
 
     shiny::observeEvent(plotly::event_data("plotly_click", source = ns("qtl_scan_plotly")), {
       ev_data <- plotly::event_data("plotly_click", source = ns("qtl_scan_plotly"))
-      
+
       if (!is.null(ev_data) && !is.null(ev_data$customdata) && length(ev_data$customdata) > 0) {
         clicked_marker_id <- ev_data$customdata[1]
         current_scan_data <- scan_table_chr()
-        
+
         if (!"markers" %in% colnames(current_scan_data)) {
-            warning("scanServer plotly_click: 'markers' column not found in scan_table_chr(). Cannot lookup clicked marker.")
-            clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Marker column missing in scan data."))
-            return()
+          warning("scanServer plotly_click: 'markers' column not found in scan_table_chr(). Cannot lookup clicked marker.")
+          clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Marker column missing in scan data."))
+          return()
         }
         selected_point_df_raw <- dplyr::filter(current_scan_data, markers == clicked_marker_id)
-        
-        if(nrow(selected_point_df_raw) > 0){
+
+        if (nrow(selected_point_df_raw) > 0) {
           selected_point_df_raw <- selected_point_df_raw[1, , drop = FALSE]
           cols_to_select <- c("markers", "chr", "position", "LOD")
           cols_to_select_present <- cols_to_select[cols_to_select %in% names(selected_point_df_raw)]
-          
-          if(length(cols_to_select_present) > 0){
+
+          if (length(cols_to_select_present) > 0) {
             selected_point_df_processed <- dplyr::select(selected_point_df_raw, dplyr::all_of(cols_to_select_present))
-            if("chr" %in% names(selected_point_df_processed)){
-                selected_point_df_processed$chr <- chr_XYM(selected_point_df_processed$chr)
+            if ("chr" %in% names(selected_point_df_processed)) {
+              selected_point_df_processed$chr <- chr_XYM(selected_point_df_processed$chr)
             }
             selected_point_df_processed <- dplyr::mutate(selected_point_df_processed, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
             clicked_plotly_point_details_lod_scan_rv(selected_point_df_processed)
@@ -529,35 +691,38 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Selected point data columns not found."))
           }
         } else {
-           clicked_plotly_point_details_lod_scan_rv(data.frame(Info = paste("Details for marker", clicked_marker_id, "not found.")))
+          clicked_plotly_point_details_lod_scan_rv(data.frame(Info = paste("Details for marker", clicked_marker_id, "not found.")))
         }
       } else {
         clicked_plotly_point_details_lod_scan_rv(NULL)
       }
     })
-    
+
     output$plot_click_dt <- DT::renderDT({
       details <- clicked_plotly_point_details_lod_scan_rv()
       if (is.null(details) || nrow(details) == 0) {
-        return(DT::datatable(data.frame(Info = "Click on the plot to see point details."), 
-                             options = list(dom = 't'), rownames = FALSE))
+        return(DT::datatable(data.frame(Info = "Click on the plot to see point details."),
+          options = list(dom = "t"), rownames = FALSE
+        ))
       }
-      DT::datatable(details, options = list(dom = 't', paging = FALSE), rownames = FALSE, selection = 'none')
+      DT::datatable(details, options = list(dom = "t", paging = FALSE), rownames = FALSE, selection = "none")
     })
 
     output$download_qtl_plot_png <- shiny::downloadHandler(
       filename = function() {
         main_par_list <- main_par_inputs()
         trait_name <- current_trait_for_scan() %||% "plot" # Use the current scanned trait
-        chr_suffix <- if(main_par_list$selected_chr() != "All") paste0("_chr", main_par_list$selected_chr()) else ""
+        chr_suffix <- if (main_par_list$selected_chr() != "All") paste0("_chr", main_par_list$selected_chr()) else ""
         paste0("lod_plot_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".png")
       },
       content = function(file) {
         shiny::req(current_scan_plot_gg())
-        ggplot2::ggsave(file, plot = current_scan_plot_gg(), 
-                        width = plot_width_rv()/96, 
-                        height = plot_height_rv()/96, 
-                        dpi = 300, units = "in")
+        ggplot2::ggsave(file,
+          plot = current_scan_plot_gg(),
+          width = plot_width_rv() / 96,
+          height = plot_height_rv() / 96,
+          dpi = 300, units = "in"
+        )
       }
     )
 
@@ -565,29 +730,31 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       filename = function() {
         main_par_list <- main_par_inputs()
         trait_name <- current_trait_for_scan() %||% "plot"
-        chr_suffix <- if(main_par_list$selected_chr() != "All") paste0("_chr", main_par_list$selected_chr()) else ""
+        chr_suffix <- if (main_par_list$selected_chr() != "All") paste0("_chr", main_par_list$selected_chr()) else ""
         paste0("lod_plot_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".pdf")
       },
       content = function(file) {
         shiny::req(current_scan_plot_gg())
-        ggplot2::ggsave(file, plot = current_scan_plot_gg(), 
-                        width = plot_width_rv()/96, 
-                        height = plot_height_rv()/96, 
-                        device = cairo_pdf, units = "in")
+        ggplot2::ggsave(file,
+          plot = current_scan_plot_gg(),
+          width = plot_width_rv() / 96,
+          height = plot_height_rv() / 96,
+          device = cairo_pdf, units = "in"
+        )
       }
     )
-    
+
     file_name_reactive <- shiny::reactive({
       main_par_list <- main_par_inputs()
       trait_name <- current_trait_for_scan() %||% "scan"
       instanceID <- trait_name
       selected_chromosome <- main_par_list$selected_chr()
-      if(!is.null(selected_chromosome) && selected_chromosome != "All") {
+      if (!is.null(selected_chromosome) && selected_chromosome != "All") {
         instanceID <- paste0(instanceID, "_chr", selected_chromosome)
       }
       paste("scan", instanceID, sep = "_")
     })
-    
+
     `%||%` <- function(a, b) if (!is.null(a)) a else b
 
     # Return reactive values that might be useful for other modules (e.g., download peak info)
@@ -595,14 +762,14 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     return(shiny::reactiveValues(
       filename = file_name_reactive,
       tables = shiny::reactiveValues(scan = scan_table_chr),
-      plots  = shiny::reactiveValues(scan = current_scan_plot_gg)
+      plots = shiny::reactiveValues(scan = current_scan_plot_gg)
     ))
   })
 }
 
 scanUI <- function(id) {
   ns <- shiny::NS(id)
-  DT::DTOutput(ns("plot_click_dt")) 
+  DT::DTOutput(ns("plot_click_dt"))
 }
 
 scanOutput <- function(id) {
