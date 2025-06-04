@@ -18,6 +18,7 @@
 #' @importFrom ggplot2 ggsave
 #' @importFrom shinyjs useShinyjs
 #' @importFrom tags tagList
+#' @importFrom htmltools tagList
 #' @importFrom stats setNames # Added stats for setNames
 #'
 #' @export
@@ -126,6 +127,11 @@ scanApp <- function() {
   server <- function(input, output, session) {
     ns_app_controller <- shiny::NS("app_controller")
 
+    # Source helper for allele plots if not already available
+    if (!exists("ggplot_alleles", mode = "function")) {
+      source("R/ggplot_alleles.R")
+    }
+
     # Define the %||% operator for null coalescing
     `%||%` <- function(a, b) if (!is.null(a)) a else b
 
@@ -137,6 +143,102 @@ scanApp <- function() {
     # Our own LOD threshold reactive (no longer from mainParServer)
     lod_threshold_rv <- shiny::reactive({
       input[[ns_app_controller("LOD_thr")]] %||% 7.5 # Default to 7.5 if not available
+    })
+
+    # Reactive to find peak data for the selected trait
+    peaks_data_for_trait <- shiny::reactive({
+      trait_val <- trait_for_lod_scan_rv()
+      if (is.null(trait_val)) {
+        return(NULL)
+      }
+
+      shiny::req(main_selected_dataset_group(), import_reactives())
+
+      dataset_val <- main_selected_dataset_group()
+
+      message(paste("scanApp: Finding peaks for trait:", trait_val, "in dataset:", dataset_val))
+
+      # Determine trait type for this dataset to pass to peak_finder
+      trait_type_val <- get_trait_type(import_reactives(), dataset_val)
+
+      # Use peak_finder to get peaks for this specific trait
+      tryCatch(
+        {
+          peaks <- peak_finder(
+            file_dir = import_reactives()$file_directory,
+            selected_dataset = dataset_val,
+            selected_trait = trait_val,
+            trait_type = trait_type_val,
+            cache_env = peaks_cache,
+            use_cache = TRUE
+          )
+          message(paste("scanApp: Found", if (is.null(peaks)) 0 else nrow(peaks), "peaks for trait:", trait_val))
+          peaks
+        },
+        error = function(e) {
+          message(paste("scanApp: Error finding peaks for trait", trait_val, ":", e$message))
+          NULL
+        }
+      )
+    })
+
+    # Reactive to get the highest LOD peak marker for allele effects
+    selected_peak_marker <- shiny::reactive({
+      peaks <- peaks_data_for_trait()
+      if (is.null(peaks) || nrow(peaks) == 0) {
+        return(NULL)
+      }
+
+      # Filter by LOD threshold and get highest peak
+      lod_thr <- lod_threshold_rv()
+      shiny::req(lod_thr)
+
+      # Check what columns are available
+      message(paste("scanApp: Peak data columns:", paste(colnames(peaks), collapse = ", ")))
+
+      # Use qtl_lod column (from peak_finder) instead of lod
+      if (!"qtl_lod" %in% colnames(peaks)) {
+        message("scanApp: No qtl_lod column found in peaks data")
+        return(NULL)
+      }
+
+      # Filter and sort manually since highest_peaks expects 'lod' column
+      high_peaks <- peaks[peaks$qtl_lod >= lod_thr, ]
+      if (nrow(high_peaks) == 0) {
+        message(paste("scanApp: No peaks above LOD threshold", lod_thr, "for trait:", trait_for_lod_scan_rv()))
+        return(NULL)
+      }
+
+      # Sort by qtl_lod descending
+      high_peaks <- high_peaks[order(-high_peaks$qtl_lod), ]
+
+      # Return the marker with highest LOD
+      top_marker <- high_peaks$marker[1]
+      message(paste("scanApp: Selected peak marker for allele effects:", top_marker, "with LOD:", high_peaks$qtl_lod[1]))
+      top_marker
+    })
+
+    # Reactive to prepare allele effects data
+    allele_effects_data <- shiny::reactive({
+      peaks <- peaks_data_for_trait()
+      marker <- selected_peak_marker()
+
+      if (is.null(peaks) || is.null(marker)) {
+        return(NULL)
+      }
+
+      # Use pivot_peaks helper function to reshape data for plotting
+      reshaped_data <- pivot_peaks(peaks, marker)
+
+      if (is.null(reshaped_data) || nrow(reshaped_data) == 0) {
+        message(paste("scanApp: No allele effects data available for marker:", marker))
+        return(NULL)
+      }
+
+      # Add trait name to the data for plot labeling
+      reshaped_data$trait <- trait_for_lod_scan_rv()
+      message(paste("scanApp: Prepared allele effects data for marker:", marker, "with", nrow(reshaped_data), "strain effects"))
+      reshaped_data
     })
 
     file_index_dt <- shiny::reactive({
@@ -367,12 +469,58 @@ scanApp <- function() {
           id = "lod_scan_plot_card",
           bslib::card_header(paste("LOD Scan for Trait:", trait_for_lod_scan_rv())),
           bslib::card_body(
-            scanOutput(ns_app_controller("scan_plot_module"))
-            # We can add peakUI and download UI here, linked to scan_module_outputs
+            # LOD scan plot
+            scanOutput(ns_app_controller("scan_plot_module")),
+            # Allele effects section (rendered conditionally)
+            shiny::uiOutput(ns_app_controller("allele_effects_section"))
           )
         )
       } else {
         NULL # Don't show the card if no trait is selected for scanning
+      }
+    })
+
+    # Render allele effects section conditionally
+    output[[ns_app_controller("allele_effects_section")]] <- shiny::renderUI({
+      # Check if we have allele effects data
+      effects_data <- allele_effects_data()
+      peak_marker <- selected_peak_marker()
+
+      message(paste("scanApp: Checking allele effects section. Effects data:", !is.null(effects_data), "Peak marker:", !is.null(peak_marker)))
+
+      if (!is.null(effects_data) && !is.null(peak_marker)) {
+        message(paste("scanApp: Rendering allele effects section for marker:", peak_marker))
+        tagList(
+          hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
+          h5(paste("Strain Effects for Peak:", peak_marker),
+            style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"
+          ),
+          shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "350px") %>%
+            shinycssloaders::withSpinner(type = 8, color = "#3498db")
+        )
+      } else {
+        message("scanApp: No allele effects section - missing data or marker")
+        NULL
+      }
+    })
+
+    # Render the allele effects plot
+    output[[ns_app_controller("allele_effects_plot_output")]] <- shiny::renderPlot({
+      effects_data <- allele_effects_data()
+
+      message(paste("scanApp: Rendering allele effects plot. Data available:", !is.null(effects_data)))
+
+      if (is.null(effects_data)) {
+        message("scanApp: No allele effects data - showing placeholder")
+        # Create a placeholder plot when no data
+        ggplot2::ggplot() +
+          ggplot2::theme_void() +
+          ggplot2::labs(title = "No strain effects data available for this trait") +
+          ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
+      } else {
+        message(paste("scanApp: Creating allele effects plot with", nrow(effects_data), "data points"))
+        # Use the ggplot_alleles function to create the plot
+        ggplot_alleles(effects_data)
       }
     })
 
