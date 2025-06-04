@@ -51,10 +51,10 @@ scanApp <- function() {
       hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
       div(
         style = "background: linear-gradient(135deg, #3498db, #2980b9); padding: 15px; border-radius: 8px; margin-bottom: 15px;",
-        h4("🔍 Direct Trait/Gene Search",
+        h4("🔍 Direct Search",
           style = "color: white; margin: 0 0 10px 0; font-weight: bold; text-align: center;"
         ),
-        p("Search for any trait/gene directly:",
+        p("Search for any trait directly:",
           style = "color: white; margin: 0 0 10px 0; text-align: center; font-size: 12px;"
         )
       ),
@@ -485,6 +485,47 @@ scanApp <- function() {
       main_par_inputs = active_main_par # Pass the combined main parameters (for LOD_thr, etc.)
     )
 
+    # Render the LOD scan click details table
+    output[[ns_app_controller("lod_scan_click_table")]] <- DT::renderDT({
+      # Check if we have scan module outputs and clicked point details
+      if (!is.null(scan_module_outputs) && !is.null(scan_module_outputs$clicked_point_details)) {
+        clicked_details <- scan_module_outputs$clicked_point_details()
+
+        if (!is.null(clicked_details) && nrow(clicked_details) > 0) {
+          # Format the clicked point data for display
+          display_data <- data.frame(
+            Chromosome = if ("chr" %in% colnames(clicked_details)) clicked_details$chr else "N/A",
+            Marker = if ("markers" %in% colnames(clicked_details)) clicked_details$markers else "N/A",
+            Position = if ("position" %in% colnames(clicked_details)) paste0(clicked_details$position, " Mb") else "N/A",
+            LOD = if ("LOD" %in% colnames(clicked_details)) clicked_details$LOD else "N/A"
+          )
+
+          message(paste("scanApp: Displaying clicked point details for marker:", display_data$Marker))
+
+          return(DT::datatable(
+            display_data,
+            options = list(
+              dom = "t",
+              paging = FALSE,
+              searching = FALSE,
+              columnDefs = list(list(targets = "_all", className = "dt-center"))
+            ),
+            rownames = FALSE,
+            selection = "none",
+            class = "compact hover"
+          ))
+        }
+      }
+
+      # Default message when no point is clicked
+      return(DT::datatable(
+        data.frame(Info = "Click on a point in the LOD scan plot to see details"),
+        options = list(dom = "t", paging = FALSE, searching = FALSE),
+        rownames = FALSE,
+        selection = "none"
+      ))
+    })
+
     # UI for LOD Scan plot - only appears when a trait is selected
     output[[ns_app_controller("lod_scan_plot_ui_placeholder")]] <- shiny::renderUI({
       if (!is.null(trait_for_lod_scan_rv())) {
@@ -494,7 +535,15 @@ scanApp <- function() {
           bslib::card_body(
             # LOD scan plot
             scanOutput(ns_app_controller("scan_plot_module")),
-            # Allele effects section (rendered conditionally)
+            # Clicked point details table
+            div(
+              style = "margin-top: 15px;",
+              h6("Click on plot to see point details:",
+                style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
+              ),
+              DT::DTOutput(ns_app_controller("lod_scan_click_table"))
+            ),
+            # Conditional allele effects plot
             shiny::uiOutput(ns_app_controller("allele_effects_section"))
           )
         )
@@ -992,7 +1041,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     return(shiny::reactiveValues(
       filename = file_name_reactive,
       tables = shiny::reactiveValues(scan = scan_table_chr),
-      plots = shiny::reactiveValues(scan = current_scan_plot_gg)
+      plots = shiny::reactiveValues(scan = current_scan_plot_gg),
+      clicked_point_details = clicked_plotly_point_details_lod_scan_rv
     ))
   })
 }
