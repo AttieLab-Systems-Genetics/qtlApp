@@ -10,11 +10,11 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/clinical_traits/clinical_traits_all_mice_sex_interactive/output"
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_genes/liver_genes_female_mice_diet_interactive/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 
 # Set data.table specific temp directory
-#options(datatable.tmpdir = my_temp_dir)
+# options(datatable.tmpdir = my_temp_dir)
 
 # Extract the basename of the input directory for use in output filenames
 # This will extract "isoform_additive" from the path
@@ -23,7 +23,7 @@ input_dirname <- basename(dirname(INPUT_DIR))
 
 # Define all chromosomes
 
-CHROMOSOMES <- c(1:19, "X", "Y", "M")
+CHROMOSOMES <- c(1:8)
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
@@ -36,7 +36,7 @@ if (file.exists(markers_file)) {
     stop("The 'markers' object from RDS must contain 'marker' and 'chr' columns.")
   }
   markers_dt_global[, marker := as.character(marker)] # Ensure marker column is character
-  markers_dt_global[, chr := as.character(chr)]       # Ensure chr column is character
+  markers_dt_global[, chr := as.character(chr)] # Ensure chr column is character
 
   # Standardize chr names in the map (e.g., 20 to X) for consistent matching if CHROMOSOMES uses X, Y, M
   markers_dt_global[chr == "20", chr := "X"]
@@ -60,63 +60,67 @@ if (file.exists(markers_file)) {
 
 # Function to process a single gz file for all chromosomes
 process_file <- function(file_path) {
-  tryCatch({
-    data <- fread(file_path, header = TRUE)
-    
-    # Ensure 'marker' column exists in input data from gz file
-    if (!("marker" %in% colnames(data))) {
-      message(paste("Warning: 'marker' column not found in file:", basename(file_path), ". Skipping file."))
-      return(NULL)
-    }
-    # Ensure 'marker' column in 'data' is character type for joining
-    data[, marker := as.character(marker)]
+  tryCatch(
+    {
+      data <- fread(file_path, header = TRUE)
 
-    # Check if marker_to_chr_map is available
-    if (is.null(marker_to_chr_map) || nrow(marker_to_chr_map) == 0) {
+      # Ensure 'marker' column exists in input data from gz file
+      if (!("marker" %in% colnames(data))) {
+        message(paste("Warning: 'marker' column not found in file:", basename(file_path), ". Skipping file."))
+        return(NULL)
+      }
+      # Ensure 'marker' column in 'data' is character type for joining
+      data[, marker := as.character(marker)]
+
+      # Check if marker_to_chr_map is available
+      if (is.null(marker_to_chr_map) || nrow(marker_to_chr_map) == 0) {
         message(paste("Error: Marker-to-chromosome map is not loaded or empty. Cannot process file:", basename(file_path)))
         return(NULL)
-    }
+      }
 
-    # Merge input data with the prepared marker_to_chr_map
-    merged_data <- merge(data, marker_to_chr_map, by = "marker", all.x = TRUE, sort = FALSE)
+      # Merge input data with the prepared marker_to_chr_map
+      merged_data <- merge(data, marker_to_chr_map, by = "marker", all.x = TRUE, sort = FALSE)
 
-    # Handle markers not found in the map
-    unmatched_rows_count <- sum(is.na(merged_data$chr_from_map))
-    if (unmatched_rows_count > 0) {
+      # Handle markers not found in the map
+      unmatched_rows_count <- sum(is.na(merged_data$chr_from_map))
+      if (unmatched_rows_count > 0) {
         unmatched_markers_examples <- head(unique(merged_data[is.na(chr_from_map), marker]), 5)
-        message(paste0("Warning: In ", basename(file_path), ", ", unmatched_rows_count, " rows (e.g., for markers: ", 
-                       paste(unmatched_markers_examples, collapse=", "), 
-                       "...) did not match any entry in the marker-to-chromosome map. These rows will be excluded."))
+        message(paste0(
+          "Warning: In ", basename(file_path), ", ", unmatched_rows_count, " rows (e.g., for markers: ",
+          paste(unmatched_markers_examples, collapse = ", "),
+          "...) did not match any entry in the marker-to-chromosome map. These rows will be excluded."
+        ))
         merged_data <- merged_data[!is.na(chr_from_map)] # Remove rows that didn't get a chromosome
-    }
-    
-    if (nrow(merged_data) == 0) {
+      }
+
+      if (nrow(merged_data) == 0) {
         message(paste("No data remaining for file", basename(file_path), "after mapping markers to chromosomes and filtering unmatched."))
         return(NULL)
+      }
+
+      # Create a list to store data for each chromosome
+      chr_data_list <- vector("list", length(CHROMOSOMES))
+      names(chr_data_list) <- as.character(CHROMOSOMES)
+
+      # The chr_from_map already has standardized X, Y, M from the global map preparation
+      # So, no need to re-standardize here unless CHROMOSOMES uses numeric 20,21,22
+
+      for (chr_val_loop in CHROMOSOMES) {
+        chr_char_loop <- as.character(chr_val_loop)
+        # Subset data for the current chromosome using the mapped chromosome information
+        current_chr_subset <- merged_data[chr_from_map == chr_char_loop, ]
+
+        # Store the subset; it includes original columns from 'data' plus 'chr_from_map'
+        chr_data_list[[chr_char_loop]] <- current_chr_subset
+      }
+
+      return(chr_data_list)
+    },
+    error = function(e) {
+      message(paste("Error processing file:", basename(file_path), "-", e$message)) # Ensure basename for brevity
+      return(NULL)
     }
-
-    # Create a list to store data for each chromosome
-    chr_data_list <- vector("list", length(CHROMOSOMES))
-    names(chr_data_list) <- as.character(CHROMOSOMES)
-    
-    # The chr_from_map already has standardized X, Y, M from the global map preparation
-    # So, no need to re-standardize here unless CHROMOSOMES uses numeric 20,21,22
-
-    for (chr_val_loop in CHROMOSOMES) {
-      chr_char_loop <- as.character(chr_val_loop) 
-      # Subset data for the current chromosome using the mapped chromosome information
-      current_chr_subset <- merged_data[chr_from_map == chr_char_loop, ]
-      
-      # Store the subset; it includes original columns from 'data' plus 'chr_from_map'
-      chr_data_list[[chr_char_loop]] <- current_chr_subset
-    }
-    
-    return(chr_data_list)
-
-  }, error = function(e) {
-    message(paste("Error processing file:", basename(file_path), "-", e$message)) # Ensure basename for brevity
-    return(NULL)
-  })
+  )
 }
 
 # List all gz files in the input directory
@@ -142,28 +146,30 @@ num_chunks <- ceiling(length(gz_files) / chunk_size)
 
 for (i in 1:num_chunks) {
   message(paste("Processing chunk", i, "of", num_chunks))
-  start_idx <- (i-1) * chunk_size + 1
+  start_idx <- (i - 1) * chunk_size + 1
   end_idx <- min(i * chunk_size, length(gz_files))
   chunk_files <- gz_files[start_idx:end_idx]
-  
+
   # Process this chunk of files
   chunk_results <- mclapply(chunk_files, process_file, mc.cores = num_cores)
-  
+
   # Combine results from this chunk for each chromosome
   for (chr in CHROMOSOMES) {
     chr_char <- as.character(chr) # Use character version for indexing
     # Extract data for this chromosome from all files in the chunk
     # Use chr_char to access the named list elements from chunk_results
     chr_chunk_data <- rbindlist(
-      lapply(chunk_results[!sapply(chunk_results, is.null)], 
-             function(x) x[[chr_char]]), # Access using character name
+      lapply(
+        chunk_results[!sapply(chunk_results, is.null)],
+        function(x) x[[chr_char]]
+      ), # Access using character name
       fill = TRUE
     )
-    
+
     # Append to the main data table for this chromosome
     if (nrow(chr_chunk_data) > 0) {
       # Access all_chr_data using character name
-      if (chr_char %in% names(all_chr_data)) { 
+      if (chr_char %in% names(all_chr_data)) {
         all_chr_data[[chr_char]] <- rbindlist(list(all_chr_data[[chr_char]], chr_chunk_data), fill = TRUE)
         message(paste("  Accumulated", nrow(all_chr_data[[chr_char]]), "rows for chromosome", chr_char))
       } else {
@@ -171,7 +177,7 @@ for (i in 1:num_chunks) {
       }
     }
   }
-  
+
   # Clean up to free memory
   rm(chunk_results, chr_chunk_data)
   gc()
@@ -181,7 +187,7 @@ for (i in 1:num_chunks) {
 for (chr in CHROMOSOMES) {
   chr_char <- as.character(chr) # Use character version for indexing
   # Check if the name exists and if data exists before writing
-  if (chr_char %in% names(all_chr_data) && nrow(all_chr_data[[chr_char]]) > 0) { 
+  if (chr_char %in% names(all_chr_data) && nrow(all_chr_data[[chr_char]]) > 0) {
     output_file <- file.path(OUTPUT_DIR, paste0("chromosome", chr_char, "_", input_dirname, "_data.fst"))
     message(paste("Writing chromosome", chr_char, "data to FST file..."))
     # Explicitly use the custom temp directory for writing
