@@ -828,14 +828,31 @@ scanApp <- function() {
       }
     })
 
+    # Store a flag to prevent auto-search immediately after dataset changes
+    dataset_just_changed <- shiny::reactiveVal(FALSE)
+
+    # Reset the flag after a short delay
+    observe({
+      if (dataset_just_changed()) {
+        invalidateLater(1000) # Wait 1 second
+        dataset_just_changed(FALSE)
+      }
+    })
+
     # --- AUTO-TRIGGER SEARCH WHEN TRAIT IS SELECTED FROM DROPDOWN ---
     # This allows users to skip clicking the button - just select from dropdown and it searches automatically
+    # But NOT immediately after dataset changes to prevent slow loading
     observeEvent(input[[ns_app_controller("trait_search_input")]],
       {
         searched_trait <- input[[ns_app_controller("trait_search_input")]]
 
-        # Only auto-search if a valid trait is selected and dataset is available
-        if (!is.null(searched_trait) && nzchar(searched_trait) && !is.null(main_selected_dataset_group())) {
+        # Only auto-search if:
+        # 1. A valid trait is selected and dataset is available
+        # 2. Dataset didn't just change (to prevent slow loading)
+        # 3. This is a new selection by the user (not just preservation from dataset change)
+        if (!is.null(searched_trait) && nzchar(searched_trait) &&
+          !is.null(main_selected_dataset_group()) &&
+          !dataset_just_changed()) {
           if (is.null(trait_for_lod_scan_rv()) || !identical(trait_for_lod_scan_rv(), searched_trait)) {
             message(paste("scanApp: Auto-search triggered for trait:", searched_trait))
             trait_for_lod_scan_rv(searched_trait)
@@ -847,6 +864,8 @@ scanApp <- function() {
               duration = 2
             )
           }
+        } else if (dataset_just_changed()) {
+          message(paste("scanApp: Trait selection preserved but auto-search skipped due to recent dataset change. Use search button to trigger LOD scan."))
         }
       },
       ignoreNULL = TRUE,
@@ -861,6 +880,13 @@ scanApp <- function() {
 
       message(paste("scanApp: Updating trait search choices for dataset:", current_ds))
 
+      # SET FLAG to prevent immediate auto-search after dataset change
+      dataset_just_changed(TRUE)
+
+      # PRESERVE CURRENT SELECTION: Store the current trait selection before updating
+      current_trait_selection <- input[[ns_app_controller("trait_search_input")]]
+      message(paste("scanApp: Current trait selection before dataset change:", current_trait_selection %||% "None"))
+
       # RESET TRAIT SEARCH INPUT: Prevent conflicts during update
       shiny::freezeReactiveValue(input, ns_app_controller("trait_search_input")) # Temporarily freeze reactive
       shiny::updateSelectizeInput(session, ns_app_controller("trait_search_input"),
@@ -874,10 +900,22 @@ scanApp <- function() {
 
       if (!is.null(choices) && length(choices) > 0) {
         message(paste("scanApp: Found", length(choices), "traits for dataset:", current_ds))
+
+        # CHECK IF PREVIOUS SELECTION EXISTS IN NEW DATASET
+        trait_to_select <- NULL
+        if (!is.null(current_trait_selection) && nzchar(current_trait_selection)) {
+          if (current_trait_selection %in% choices) {
+            trait_to_select <- current_trait_selection
+            message(paste("scanApp: Preserving trait selection:", current_trait_selection, "- found in new dataset"))
+          } else {
+            message(paste("scanApp: Previous trait selection:", current_trait_selection, "- not found in new dataset, clearing selection"))
+          }
+        }
+
         # UPDATE TRAIT SEARCH DROPDOWN: With server-side processing for large lists
         shiny::updateSelectizeInput(session, ns_app_controller("trait_search_input"),
           choices = choices,
-          selected = NULL, # Don't auto-select for search
+          selected = trait_to_select, # Preserve selection if trait exists in new dataset
           options = list(
             placeholder = "Type to search traits/genes...",
             maxItems = 1, # Only allow single selection
@@ -885,6 +923,15 @@ scanApp <- function() {
           ),
           server = TRUE # Enable server-side processing
         )
+
+        # Notify user if trait was preserved but auto-search was disabled
+        if (!is.null(trait_to_select)) {
+          shiny::showNotification(
+            paste("Trait '", trait_to_select, "' preserved. Click 'Search & Plot LOD Scan' to analyze in new dataset."),
+            type = "message",
+            duration = 4
+          )
+        }
       } else {
         message(paste("scanApp: No traits found for dataset:", current_ds))
         # No traits available for this dataset
