@@ -99,18 +99,6 @@ scanApp <- function() {
               )
             ),
 
-            # LOD Threshold Control
-            hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
-            h5("Plot Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
-            sliderInput(shiny::NS("app_controller", "LOD_thr"),
-              label = "LOD Threshold:",
-              min = 4, max = 20, value = 7.5, step = 0.5,
-              width = "100%"
-            ),
-            p("Filters overview plots to show only points above this threshold",
-              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 0 0;"
-            ),
-
             # Back button
             hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
             shiny::actionButton(shiny::NS("app_controller", "clear_lod_scan_btn"),
@@ -127,6 +115,15 @@ scanApp <- function() {
           "LOD peaks",
           div(
             style = "padding: 10px;",
+
+            # LOD Threshold Control (moved here from Data Search tab)
+            h5("Peak Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+            # Dynamic LOD threshold slider that updates based on scan type
+            uiOutput(shiny::NS("app_controller", "lod_threshold_slider")),
+            p("Filters peaks shown in the plot below",
+              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
+            ),
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
             h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
               style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
             ),
@@ -168,9 +165,43 @@ scanApp <- function() {
 
     import_reactives <- importServer("import")
 
+    # Detect if current dataset is additive or interactive based on dataset name
+    scan_type <- shiny::reactive({
+      shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
+      dataset_name <- input[[ns_app_controller("specific_dataset_selector")]]
+
+      if (is.null(dataset_name) || dataset_name == "") {
+        return("additive") # Default to additive
+      }
+
+      # Check if dataset name contains "interactive" or "diet_interactive"
+      if (grepl("interactive|diet_interactive", dataset_name, ignore.case = TRUE)) {
+        return("interactive")
+      } else {
+        return("additive")
+      }
+    })
+
+    # Dynamic LOD threshold slider based on scan type
+    output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
+      current_scan_type <- scan_type()
+
+      # Set different minimums based on scan type
+      min_val <- if (current_scan_type == "interactive") 10.5 else 7.5
+      default_val <- min_val # Start at minimum value
+
+      sliderInput(shiny::NS("app_controller", "LOD_thr"),
+        label = paste("LOD Threshold (", current_scan_type, "scan):"),
+        min = min_val, max = 20, value = default_val, step = 0.5,
+        width = "100%"
+      )
+    })
+
     # Our own LOD threshold reactive (no longer from mainParServer)
     lod_threshold_rv <- shiny::reactive({
-      input[[ns_app_controller("LOD_thr")]] %||% 7.5 # Default to 7.5 if not available
+      current_scan_type <- scan_type()
+      default_threshold <- if (current_scan_type == "interactive") 10.5 else 7.5
+      input[[ns_app_controller("LOD_thr")]] %||% default_threshold
     })
 
     # Reactive for selected chromosome (for zooming into specific chromosomes)
