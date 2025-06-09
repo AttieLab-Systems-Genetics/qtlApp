@@ -136,6 +136,53 @@ scanApp <- function() {
             )
           )
         )
+      ),
+
+      # Horizontal separator
+      hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
+
+      # Additional Analyses section below the main tabs
+      h5("📈 Additional Analyses", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
+      bslib::navset_pill(
+        id = "additional_analyses_tabs",
+
+        # Profile Plot tab
+        bslib::nav_panel(
+          "Profile Plot",
+          div(
+            style = "padding: 10px;",
+            div(
+              style = "height: 50vh; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
+              shinycssloaders::withSpinner(
+                plotly::plotlyOutput(shiny::NS("app_controller", "profile_plot_output"),
+                  height = "calc(50vh - 40px)"
+                )
+              )
+            ),
+            p("Profile plot visualization coming soon",
+              style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
+            )
+          )
+        ),
+
+        # Correlation tab
+        bslib::nav_panel(
+          "Correlation",
+          div(
+            style = "padding: 10px;",
+            div(
+              style = "height: 50vh; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
+              shinycssloaders::withSpinner(
+                plotly::plotlyOutput(shiny::NS("app_controller", "correlation_plot_output"),
+                  height = "calc(50vh - 40px)"
+                )
+              )
+            ),
+            p("Correlation analysis visualization coming soon",
+              style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
+            )
+          )
+        )
       )
     ),
 
@@ -892,6 +939,47 @@ scanApp <- function() {
         type = "message",
         duration = 2
       )
+    })
+
+    # ====== ADDITIONAL ANALYSES PLOT OUTPUTS ======
+    # Profile Plot output
+    output[[ns_app_controller("profile_plot_output")]] <- plotly::renderPlotly({
+      plotly::plot_ly() %>%
+        plotly::add_annotations(
+          text = "Profile Plot Coming Soon",
+          x = 0.5,
+          y = 0.5,
+          xref = "paper",
+          yref = "paper",
+          showarrow = FALSE,
+          font = list(size = 20, color = "#2c3e50")
+        ) %>%
+        plotly::layout(
+          title = "Profile Plot",
+          showlegend = FALSE,
+          xaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE),
+          yaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
+        )
+    })
+
+    # Correlation Plot output
+    output[[ns_app_controller("correlation_plot_output")]] <- plotly::renderPlotly({
+      plotly::plot_ly() %>%
+        plotly::add_annotations(
+          text = "Correlation Analysis Coming Soon",
+          x = 0.5,
+          y = 0.5,
+          xref = "paper",
+          yref = "paper",
+          showarrow = FALSE,
+          font = list(size = 20, color = "#2c3e50")
+        ) %>%
+        plotly::layout(
+          title = "Correlation Analysis",
+          showlegend = FALSE,
+          xaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE),
+          yaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
+        )
     })
   }
   shiny::shinyApp(ui = ui, server = server)
