@@ -17,8 +17,7 @@
 #' @importFrom stringr str_split str_remove
 #' @importFrom ggplot2 ggsave
 #' @importFrom shinyjs useShinyjs
-#' @importFrom tags tagList
-#' @importFrom htmltools tagList
+#' @importFrom htmltools tagList tags
 #' @importFrom stats setNames # Added stats for setNames
 #'
 #' @export
@@ -708,14 +707,10 @@ scanApp <- function() {
       message(paste("scanApp: Checking allele effects section. Available peaks:", !is.null(available_peaks)))
 
       if (!is.null(available_peaks) && nrow(available_peaks) > 0) {
-        # Create choices for dropdown - show marker, chromosome, position, and LOD
+        # Create choices for dropdown - just show marker names
         peak_choices <- setNames(
           available_peaks$marker,
-          paste0(
-            available_peaks$marker, " (Chr", available_peaks$qtl_chr,
-            ", ", round(available_peaks$qtl_pos, 2), "Mb, LOD=",
-            round(available_peaks$qtl_lod, 2), ")"
-          )
+          available_peaks$marker
         )
 
         # Set default selection to highest peak if not already set
@@ -724,6 +719,12 @@ scanApp <- function() {
           default_selection <- available_peaks$marker[1] # Highest peak
         } else {
           default_selection <- current_selection
+        }
+
+        # Get current peak info for display
+        current_peak_info <- NULL
+        if (!is.null(default_selection)) {
+          current_peak_info <- available_peaks[available_peaks$marker == default_selection, ][1, ]
         }
 
         message(paste("scanApp: Rendering allele effects section with", length(peak_choices), "peak choices"))
@@ -744,7 +745,17 @@ scanApp <- function() {
               choices = peak_choices,
               selected = default_selection,
               width = "100%"
-            )
+            ),
+            # Add peak summary info
+            if (!is.null(current_peak_info)) {
+              div(
+                id = ns_app_controller("peak_summary_info"),
+                style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db;",
+                shiny::uiOutput(ns_app_controller("peak_info_display"))
+              )
+            } else {
+              NULL
+            }
           ),
           shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "350px") %>%
             shinycssloaders::withSpinner(type = 8, color = "#3498db")
@@ -753,6 +764,77 @@ scanApp <- function() {
         message("scanApp: No allele effects section - no peaks above threshold")
         NULL
       }
+    })
+
+    # Dynamic peak info display
+    output[[ns_app_controller("peak_info_display")]] <- shiny::renderUI({
+      current_peaks <- available_peaks_for_trait()
+      selected_marker <- selected_peak_marker()
+
+      if (is.null(current_peaks) || is.null(selected_marker)) {
+        return(NULL)
+      }
+
+      peak_info <- current_peaks[current_peaks$marker == selected_marker, ][1, ]
+      if (nrow(peak_info) == 0) {
+        return(NULL)
+      }
+
+      # Build summary info
+      info_elements <- list()
+
+      # Basic info
+      info_elements <- c(info_elements, list(
+        tags$strong("Marker: "), peak_info$marker, tags$br(),
+        tags$strong("Position: "), paste0("Chr", peak_info$qtl_chr, ":", round(peak_info$qtl_pos, 2), " Mb"), tags$br(),
+        tags$strong("LOD Score: "), round(peak_info$qtl_lod, 3), tags$br()
+      ))
+
+      # Cis/Trans status
+      if ("cis" %in% colnames(peak_info)) {
+        cis_status <- if (is.logical(peak_info$cis)) {
+          ifelse(peak_info$cis, "Cis", "Trans")
+        } else if (is.character(peak_info$cis)) {
+          ifelse(toupper(peak_info$cis) %in% c("TRUE", "1", "YES"), "Cis", "Trans")
+        } else {
+          "Unknown"
+        }
+
+        cis_color <- if (cis_status == "Cis") "#27ae60" else "#e74c3c"
+        info_elements <- c(info_elements, list(
+          tags$strong("Type: "),
+          tags$span(cis_status, style = paste0("color: ", cis_color, "; font-weight: bold;")),
+          tags$br()
+        ))
+      }
+
+      # Confidence interval
+      if ("qtl_ci_lo" %in% colnames(peak_info) && "qtl_ci_hi" %in% colnames(peak_info)) {
+        if (!is.na(peak_info$qtl_ci_lo) && !is.na(peak_info$qtl_ci_hi)) {
+          info_elements <- c(info_elements, list(
+            tags$strong("95% CI: "),
+            paste0(round(peak_info$qtl_ci_lo, 2), " - ", round(peak_info$qtl_ci_hi, 2), " Mb"),
+            tags$br()
+          ))
+        }
+      }
+
+      # Add founder allele effects summary
+      allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+      available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
+
+      if (length(available_alleles) > 0) {
+        non_na_alleles <- available_alleles[!is.na(peak_info[available_alleles])]
+        if (length(non_na_alleles) > 0) {
+          info_elements <- c(info_elements, list(
+            tags$strong("Founder Effects: "),
+            paste0(length(non_na_alleles), " available (", paste(non_na_alleles, collapse = ", "), ")"),
+            tags$br()
+          ))
+        }
+      }
+
+      do.call(tagList, info_elements)
     })
 
     # Observer to update selected peak when dropdown changes
@@ -1037,6 +1119,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # Create local cache for peaks data
+    local_peaks_cache <- new.env(parent = emptyenv())
+
     plot_width_rv <- shiny::reactiveVal(1200)
     plot_height_rv <- shiny::reactiveVal(600)
     use_alternating_colors_rv <- shiny::reactiveVal(TRUE)
@@ -1231,19 +1316,106 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
           clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Marker column missing in scan data."))
           return()
         }
+
+        # Get basic scan data
         selected_point_df_raw <- dplyr::filter(current_scan_data, markers == clicked_marker_id)
 
         if (nrow(selected_point_df_raw) > 0) {
           selected_point_df_raw <- selected_point_df_raw[1, , drop = FALSE]
-          cols_to_select <- c("markers", "chr", "position", "LOD")
-          cols_to_select_present <- cols_to_select[cols_to_select %in% names(selected_point_df_raw)]
 
-          if (length(cols_to_select_present) > 0) {
-            selected_point_df_processed <- dplyr::select(selected_point_df_raw, dplyr::all_of(cols_to_select_present))
+          # Start with basic scan information
+          basic_cols <- c("markers", "chr", "position", "LOD")
+          basic_cols_present <- basic_cols[basic_cols %in% names(selected_point_df_raw)]
+
+          if (length(basic_cols_present) > 0) {
+            selected_point_df_processed <- dplyr::select(selected_point_df_raw, dplyr::all_of(basic_cols_present))
             if ("chr" %in% names(selected_point_df_processed)) {
               selected_point_df_processed$chr <- chr_XYM(selected_point_df_processed$chr)
             }
             selected_point_df_processed <- dplyr::mutate(selected_point_df_processed, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
+
+            # Try to get additional peak information from peaks file
+            tryCatch(
+              {
+                current_trait <- current_trait_for_scan()
+                current_dataset <- selected_dataset_group()
+
+                if (!is.null(current_trait) && !is.null(current_dataset)) {
+                  # Get trait type for this dataset to pass to peak_finder
+                  trait_type_val <- get_trait_type(import_reactives(), current_dataset)
+
+                  # Get all peaks for this trait
+                  trait_peaks <- peak_finder(
+                    file_dir = import_reactives()$file_directory,
+                    selected_dataset = current_dataset,
+                    selected_trait = current_trait,
+                    trait_type = trait_type_val,
+                    cache_env = local_peaks_cache,
+                    use_cache = TRUE
+                  )
+
+                  if (!is.null(trait_peaks) && nrow(trait_peaks) > 0) {
+                    # Find the peak matching this marker
+                    marker_peak <- dplyr::filter(trait_peaks, marker == clicked_marker_id)
+
+                    if (nrow(marker_peak) > 0) {
+                      marker_peak <- marker_peak[1, , drop = FALSE]
+
+                      # Add cis/trans information if available
+                      if ("cis" %in% colnames(marker_peak)) {
+                        cis_status <- if (is.logical(marker_peak$cis)) {
+                          ifelse(marker_peak$cis, "Cis", "Trans")
+                        } else if (is.character(marker_peak$cis)) {
+                          ifelse(toupper(marker_peak$cis) %in% c("TRUE", "1", "YES"), "Cis", "Trans")
+                        } else {
+                          "Unknown"
+                        }
+                        selected_point_df_processed$CisOrTrans <- cis_status
+                      }
+
+                      # Add confidence interval if available
+                      if ("qtl_ci_lo" %in% colnames(marker_peak) && "qtl_ci_hi" %in% colnames(marker_peak)) {
+                        ci_lo <- signif(marker_peak$qtl_ci_lo, 4)
+                        ci_hi <- signif(marker_peak$qtl_ci_hi, 4)
+                        selected_point_df_processed$CI_Range <- paste0("[", ci_lo, " - ", ci_hi, "]")
+                      }
+
+                      # Add founder allele effects A-H if available
+                      allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+                      available_alleles <- allele_cols[allele_cols %in% colnames(marker_peak)]
+
+                      # Debug: print all column names and A-H values
+                      message("scanServer: Peak data columns: ", paste(colnames(marker_peak), collapse = ", "))
+                      message("scanServer: Available A-H columns: ", paste(available_alleles, collapse = ", "))
+
+                      if (length(available_alleles) > 0) {
+                        for (allele in available_alleles) {
+                          allele_value <- marker_peak[[allele]]
+                          message(paste("scanServer: Column", allele, "value:", allele_value, "is.na:", is.na(allele_value)))
+                          if (!is.na(allele_value)) {
+                            selected_point_df_processed[[paste0("Founder_", allele)]] <- signif(allele_value, 4)
+                          }
+                        }
+                      } else {
+                        # Check if allele columns might have different names
+                        potential_allele_cols <- grep("^[A-H]$|founder.*[A-H]|allele.*[A-H]", colnames(marker_peak), ignore.case = TRUE, value = TRUE)
+                        message("scanServer: No standard A-H columns found. Potential allele columns: ", paste(potential_allele_cols, collapse = ", "))
+                      }
+
+                      message(paste("scanServer: Enhanced click details with peak info for marker:", clicked_marker_id))
+                    } else {
+                      message(paste("scanServer: No peak found matching marker:", clicked_marker_id))
+                    }
+                  } else {
+                    message("scanServer: No peaks data available for trait:", current_trait)
+                  }
+                }
+              },
+              error = function(e) {
+                message(paste("scanServer: Error getting peak info for clicked marker:", e$message))
+              }
+            )
+
             clicked_plotly_point_details_lod_scan_rv(selected_point_df_processed)
           } else {
             clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Selected point data columns not found."))
@@ -1263,7 +1435,55 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
           options = list(dom = "t"), rownames = FALSE
         ))
       }
-      DT::datatable(details, options = list(dom = "t", paging = FALSE), rownames = FALSE, selection = "none")
+
+      # Transpose the data for better display
+      if (ncol(details) > 1) {
+        # Create a two-column table with Property and Value
+        transposed_details <- data.frame(
+          Property = names(details),
+          Value = as.character(unlist(details[1, ])),
+          stringsAsFactors = FALSE
+        )
+
+        # Clean up column names for better display
+        transposed_details$Property <- gsub("_", " ", transposed_details$Property)
+        transposed_details$Property <- gsub("Founder ", "Founder ", transposed_details$Property)
+        transposed_details$Property <- ifelse(transposed_details$Property == "markers", "Marker",
+          ifelse(transposed_details$Property == "chr", "Chromosome",
+            ifelse(transposed_details$Property == "position", "Position (Mb)",
+              ifelse(transposed_details$Property == "CisOrTrans", "Cis/Trans",
+                ifelse(transposed_details$Property == "CI Range", "Confidence Interval",
+                  transposed_details$Property
+                )
+              )
+            )
+          )
+        )
+
+        return(DT::datatable(
+          transposed_details,
+          options = list(
+            dom = "t",
+            paging = FALSE,
+            searching = FALSE,
+            columnDefs = list(
+              list(targets = 0, className = "dt-left", width = "40%"),
+              list(targets = 1, className = "dt-left", width = "60%")
+            )
+          ),
+          rownames = FALSE,
+          selection = "none",
+          colnames = c("Property", "Value"),
+          class = "compact hover"
+        ) %>%
+          DT::formatStyle(
+            "Property",
+            fontWeight = "bold",
+            backgroundColor = "#f8f9fa"
+          ))
+      } else {
+        return(DT::datatable(details, options = list(dom = "t", paging = FALSE), rownames = FALSE, selection = "none"))
+      }
     })
 
     output$download_qtl_plot_png <- shiny::downloadHandler(
