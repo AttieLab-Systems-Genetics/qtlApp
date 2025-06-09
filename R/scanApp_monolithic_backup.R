@@ -31,96 +31,124 @@ scanApp <- function() {
   ui <- bslib::page_sidebar(
     shinyjs::useShinyjs(),
     tags$head(tags$style(custom_css)),
-    create_title_panel(
-      "QTL Scan Visualizer",
-      "Interactive visualization tool for QTL analysis"
-    ),
-    sidebar = bslib::sidebar(
-      "control_panel",
-      # Phase 1: New selection controls
-      shiny::selectInput(shiny::NS("app_controller", "dataset_category_selector"),
-        "Select Dataset Category:",
-        choices = c("Loading..." = "")
-      ),
-      shiny::selectInput(shiny::NS("app_controller", "specific_dataset_selector"),
-        "Select Specific Dataset:",
-        choices = c("Loading..." = "")
-      ),
 
-      # PROMINENT TRAIT SEARCH SECTION
-      hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
+    # Top navigation bar for dataset category selection
+    div(
+      style = "background: linear-gradient(135deg, #2c3e50, #3498db); padding: 15px; margin-bottom: 20px; border-radius: 8px;",
       div(
-        style = "background: linear-gradient(135deg, #3498db, #2980b9); padding: 15px; border-radius: 8px; margin-bottom: 15px;",
-        h4("🔍 Direct Search",
-          style = "color: white; margin: 0 0 10px 0; font-weight: bold; text-align: center;"
-        ),
-        p("Search for any trait directly:",
-          style = "color: white; margin: 0 0 10px 0; text-align: center; font-size: 12px;"
-        )
-      ),
-      div(
-        style = "background: #f8f9fa; padding: 15px; border-radius: 8px; border: 2px solid #3498db;",
-        selectizeInput(shiny::NS("app_controller", "trait_search_input"),
-          NULL, # No label since we have the header above
-          choices = NULL, # Will be populated dynamically
-          selected = NULL,
-          multiple = FALSE,
-          options = list(
-            placeholder = "Type to search traits/genes (e.g., Gapdh, Insulin, PI_38_3)",
-            maxItems = 1, # Single selection only
-            maxOptions = 10, # Limit displayed options for performance
-            create = FALSE # Don't allow creating new options
-          ),
-          width = "100%"
+        style = "display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;",
+        h3("QTL Scan Visualizer",
+          style = "color: white; margin: 0; font-weight: bold;"
         ),
         div(
-          style = "text-align: center; margin-top: 10px;",
-          actionButton(shiny::NS("app_controller", "trait_search_button"),
-            "🚀 Search & Plot LOD Scan",
-            icon = icon("search"),
-            class = "btn-primary",
-            style = "background: #3498db; border: none; font-weight: bold; width: 100%;"
+          style = "display: flex; align-items: center; gap: 15px;",
+          h5("Dataset Category:",
+            style = "color: white; margin: 0; font-weight: bold;"
+          ),
+          shiny::selectInput(shiny::NS("app_controller", "dataset_category_selector"),
+            NULL,
+            choices = c("Loading..." = ""),
+            width = "200px"
           )
         )
-      ),
-      hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
-
-      # LOD Threshold Control
-      div(
-        style = "margin-bottom: 20px;",
-        h5("Plot Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
-        sliderInput(shiny::NS("app_controller", "LOD_thr"),
-          label = "LOD Threshold:",
-          min = 4, max = 20, value = 7.5, step = 0.5,
-          width = "100%"
-        ),
-        p("Filters Manhattan/CisTrans plots to show only points above this threshold",
-          style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 0 0;"
-        )
-      ),
-
-      # Action button to clear/go back from LOD scan view
-      shiny::actionButton(shiny::NS("app_controller", "clear_lod_scan_btn"),
-        "← Back to Overview Plot",
-        icon = shiny::icon("arrow-left"),
-        class = "btn-secondary",
-        style = "width: 100%; margin-top: 10px;"
       )
     ),
-    bslib::layout_columns(
-      col_widths = bslib::breakpoints(
-        sm = c(12, 12), # On small screens, stack them
-        md = c(6, 6) # On medium and larger, side-by-side if LOD scan is active
-      ),
-      bslib::card(
-        id = "primary_plot_card",
-        bslib::card_header(shiny::textOutput(shiny::NS("app_controller", "plot_title"))),
-        bslib::card_body(
-          shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
+    sidebar = bslib::sidebar(
+      width = 600, # Increased sidebar width a bit more for better screen coverage
+      # Tabbed sidebar content
+      bslib::navset_pill(
+        id = "sidebar_tabs",
+
+        # Tab 1: Dataset Selection and Controls
+        bslib::nav_panel(
+          "Data Search",
+          div(
+            style = "padding: 10px;",
+
+            # Dataset selection
+            h5("Dataset Selection", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
+            shiny::selectInput(shiny::NS("app_controller", "specific_dataset_selector"),
+              "Select Specific Dataset:",
+              choices = c("Loading..." = ""),
+              width = "100%"
+            ),
+
+            # Trait search section
+            hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
+            h5("🔍 Trait Search", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
+            selectizeInput(shiny::NS("app_controller", "trait_search_input"),
+              "Search for traits/genes:",
+              choices = NULL,
+              selected = NULL,
+              multiple = FALSE,
+              options = list(
+                placeholder = "Type to search (e.g., Gapdh, Insulin, PI_38_3)",
+                maxItems = 1,
+                maxOptions = 10,
+                create = FALSE
+              ),
+              width = "100%"
+            ),
+            div(
+              style = "text-align: center; margin-top: 10px;",
+              actionButton(shiny::NS("app_controller", "trait_search_button"),
+                "🚀 Search & Plot LOD Scan",
+                icon = icon("search"),
+                class = "btn-primary",
+                style = "background: #3498db; border: none; font-weight: bold; width: 100%;"
+              )
+            ),
+
+            # LOD Threshold Control
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
+            h5("Plot Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+            sliderInput(shiny::NS("app_controller", "LOD_thr"),
+              label = "LOD Threshold:",
+              min = 4, max = 20, value = 7.5, step = 0.5,
+              width = "100%"
+            ),
+            p("Filters overview plots to show only points above this threshold",
+              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 0 0;"
+            ),
+
+            # Back button
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
+            shiny::actionButton(shiny::NS("app_controller", "clear_lod_scan_btn"),
+              "← Back to Overview Plot",
+              icon = shiny::icon("arrow-left"),
+              class = "btn-secondary",
+              style = "width: 100%;"
+            )
+          )
+        ),
+
+        # Tab 2: Overview Plot (Manhattan/Cis-Trans)
+        bslib::nav_panel(
+          "LOD peaks",
+          div(
+            style = "padding: 10px;",
+            h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
+              style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
+            ),
+            div(
+              style = "height: 65vh; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;", # Increased to 65% viewport height
+              shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
+            ),
+            p("Click on points to view detailed LOD scans",
+              style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
+            )
+          )
         )
-      ),
-      # Conditional panel for the LOD scan plot
-      shiny::uiOutput(shiny::NS("app_controller", "lod_scan_plot_ui_placeholder"))
+      )
+    ),
+
+    # Simplified main area - just the LOD scan plot
+    bslib::card(
+      id = "lod_scan_card",
+      bslib::card_header("LOD Scan - Detailed View"),
+      bslib::card_body(
+        shiny::uiOutput(shiny::NS("app_controller", "lod_scan_plot_ui_placeholder"))
+      )
     )
   )
 

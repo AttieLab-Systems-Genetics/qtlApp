@@ -31,7 +31,7 @@ manhattanPlotInput <- function(id) {
 #' @export
 manhattanPlotUI <- function(id) {
   ns <- shiny::NS(id)
-  shinycssloaders::withSpinner(plotly::plotlyOutput(ns("manhattan_plot_output"), height = "600px"))
+  shinycssloaders::withSpinner(plotly::plotlyOutput(ns("manhattan_plot_output"), height = "calc(65vh - 40px)"))
 }
 
 #' Manhattan Plot Module Server
