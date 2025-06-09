@@ -383,7 +383,7 @@ get_trait_type <- function(import_data, selected_dataset = NULL) {
     return("isoforms")
   }
   if (grepl("plasma.*metabolite", trait_type_raw, ignore.case = TRUE)) {
-    return("plasma_2H_metabolite")
+    return("plasma_metabolite")
   }
 
   # Return original (lowercased) if no specific pattern matched
@@ -433,3 +433,18 @@ get_trait_id <- function(trait_type) {
 # =============================================================================
 # END OF HELPERS.R
 # =============================================================================
+
+get_phenotype_class_from_category <- function(dataset_category) {
+  if (is.null(dataset_category) || !nzchar(dataset_category)) {
+    return(NULL)
+  }
+
+  if (dataset_category == "Clinical Traits") {
+    return("clinical_trait")
+  } else if (dataset_category == "Liver Lipids") {
+    return("liver_lipid")
+  } else if (dataset_category == "Plasma Metabolites") {
+    return("plasma_metabolite")
+  }
+  return(NULL)
+}

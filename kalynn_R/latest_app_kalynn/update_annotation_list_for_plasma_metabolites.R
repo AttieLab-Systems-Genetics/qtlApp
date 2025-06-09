@@ -13,13 +13,13 @@ base_data_dir <- "/data/dev/miniViewer_3.0"
 
 # Pattern to match plasma metabolite _processed_rows.fst files
 # Adjust this pattern to match your actual file naming from prepare_fst_data.R
-row_file_pattern <- "chromosome[0-9XYM]+_plasma_2H_metabolites_all_mice_additive_data_processed_row\\.fst$"
+row_file_pattern <- "chromosome[0-9XYM]+_plasma_metabolites_all_mice_additive_data_processed_row\\.fst$"
 
 # Path to the annotation_list.rds file that the Shiny app uses
 annotation_list_rds_path <- "/data/dev/miniViewer_3.0/annotation_list.rds"
 
 # Key to use in the annotation_list for these traits
-annotation_list_key <- "plasma_2H_metabolite"
+annotation_list_key <- "plasma_metabolite"
 # --- End Configuration ---
 
 message(paste("Attempting to update", annotation_list_key, "annotations in:", annotation_list_rds_path))
@@ -107,3 +107,4 @@ tryCatch(
 )
 
 message("Plasma metabolite annotation update complete.")
+ 
