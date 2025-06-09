@@ -2,7 +2,7 @@
 # This module contains all the custom CSS and styling elements
 
 # Custom CSS for modern UI with genomics theme
-custom_css <- HTML("
+custom_css <- shiny::HTML("
   /* ==== GENOMICS THEME VARIABLES ==== */
   :root {
     --primary-blue: #3498db;
