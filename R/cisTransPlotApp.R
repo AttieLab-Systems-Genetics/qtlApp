@@ -24,7 +24,7 @@ cisTransPlotInput <- function(id) {
 #' @export
 cisTransPlotUI <- function(id) {
   ns <- shiny::NS(id)
-  shinycssloaders::withSpinner(plotly::plotlyOutput(ns("cis_trans_plot_output"), height = "700px"))
+  shinycssloaders::withSpinner(plotly::plotlyOutput(ns("cis_trans_plot_output"), height = "calc(65vh - 40px)"))
 }
 
 #' Cis-Trans Plot Module Server

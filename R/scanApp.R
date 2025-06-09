@@ -61,13 +61,17 @@ scanApp <- function() {
     bslib::layout_columns(
       col_widths = bslib::breakpoints(
         sm = c(12, 12),
-        md = c(6, 6)
+        md = c(3, 9) # Make first column much smaller (1/4) and second much larger (3/4)
       ),
 
       # Primary plot (Manhattan or Cis/Trans based on dataset category)
       bslib::card(
         id = "primary_plot_card",
-        bslib::card_header(shiny::textOutput("plot_title")),
+        style = "border: 5px solid red; background-color: #ffe6e6;",
+        bslib::card_header(
+          style = "background-color: red; color: white;",
+          shiny::textOutput("plot_title")
+        ),
         bslib::card_body(
           shiny::uiOutput("conditional_plot_ui")
         )
