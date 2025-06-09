@@ -1197,8 +1197,14 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
           title = list(
             text = NULL
           ),
-          xaxis = list(title = current_scan_plot_gg()$labels$x),
-          yaxis = list(title = current_scan_plot_gg()$labels$y)
+          xaxis = list(
+            title = current_scan_plot_gg()$labels$x,
+            fixedrange = FALSE # Allow x-axis zooming
+          ),
+          yaxis = list(
+            title = current_scan_plot_gg()$labels$y,
+            fixedrange = TRUE # Prevent y-axis zooming - always show full height
+          )
         ) %>% # Use the new pipe operator
         plotly::config(
           displaylogo = FALSE,
