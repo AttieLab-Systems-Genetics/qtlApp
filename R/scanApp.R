@@ -8,7 +8,7 @@
 #'
 #' @importFrom shiny moduleServer reactive renderText req selectInput shinyApp
 #'             uiOutput observeEvent tags
-#' @importFrom bslib page_sidebar sidebar layout_columns card card_header card_body
+#' @importFrom bslib page_sidebar sidebar layout_columns card card_header card_body nav_panel nav_pills
 #' @importFrom shinyjs useShinyjs
 #' @importFrom htmltools tagList div h4 hr h5
 #' @export
@@ -31,6 +31,12 @@ scanApp <- function() {
   if (!exists("plot_null", mode = "function")) {
     source("R/plot_null.R")
   }
+  if (!exists("profilePlotServer", mode = "function")) {
+    source("R/profilePlotApp.R")
+  }
+  if (!exists("correlationServer", mode = "function")) {
+    source("R/correlationApp.R")
+  }
 
   ui <- bslib::page_sidebar(
     shinyjs::useShinyjs(),
@@ -44,6 +50,26 @@ scanApp <- function() {
       h4("📊 Dataset & Trait Selection", style = "color: #2c3e50;"),
       mainParInput("main_par"),
       mainParUI("main_par"),
+      hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
+
+      # Add new card for Profile Plot and Correlation
+      bslib::card(
+        bslib::card_header("📈 Additional Analyses"),
+        bslib::card_body(
+          bslib::nav_pills(
+            bslib::nav_panel(
+              "Profile Plot",
+              profilePlotInput("profile_plot"),
+              profilePlotUI("profile_plot")
+            ),
+            bslib::nav_panel(
+              "Correlation",
+              correlationInput("correlation"),
+              correlationUI("correlation")
+            )
+          )
+        )
+      ),
       hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
 
       # Add chromosome controls module
@@ -107,6 +133,10 @@ scanApp <- function() {
 
     # Initialize chromosome controls
     chr_controls <- chromosomeControlsServer("chr_controls")
+
+    # Initialize profile plot and correlation modules
+    profilePlotServer("profile_plot", import_reactives, main_par)
+    correlationServer("correlation", import_reactives, main_par)
 
     # Determine plot type based on dataset category
     plot_type <- shiny::reactive({
