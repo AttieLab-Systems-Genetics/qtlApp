@@ -210,7 +210,7 @@ scanApp <- function() {
     peak_outputs <- peakServer("peak_list", enhanced_main_par, import_reactives, peaks_cache)
 
     # Initialize scanly server for interactive LOD plots
-    scanlyServer("scanly", enhanced_main_par, scan_outputs, peak_outputs)
+    scanlyServer("scanly", enhanced_main_par, scan_outputs, peak_outputs, peaks_cache = peaks_cache)
 
     # Create download list structure
     download_list <- shiny::reactiveValues(

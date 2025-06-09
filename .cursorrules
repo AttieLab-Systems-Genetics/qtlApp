@@ -1,11 +1,13 @@
 # qtlApp Cursor Rules
 
 ## Project Overview
+
 This is an R package for QTL (Quantitative Trait Loci) analysis and visualization using Shiny. The project is organized as a modular package with multiple small Shiny modules for scalable QTL analysis.
 
 ## R Language Standards
 
 ### Code Style
+
 - Use 2-space indentation consistently throughout all R files
 - Use `|>` (native pipe) instead of `%>%` (magrittr pipe) for new code
 - Be explicit about package namespacing: use `package::function()` format
@@ -13,11 +15,13 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 - Use descriptive variable names that clearly indicate their purpose
 
 ### Function Documentation
+
 - All exported functions must have roxygen2 documentation with `@export`
 - Include `@param` for all parameters with clear descriptions
 - Include `@return` to describe what the function returns
 - Add `@importFrom` for specific package functions used
 - Example format:
+
 ```r
 #' Function description
 #' @param param_name Description of parameter
@@ -27,6 +31,7 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 ```
 
 ### Error Handling
+
 - Use `shiny::req()` for required inputs in Shiny contexts
 - Implement comprehensive error checking with informative warning messages
 - Check for NULL values, empty data frames, and missing columns before processing
@@ -34,6 +39,7 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 - Use `warning()` for non-fatal issues with descriptive messages
 
 ### Data Validation
+
 - Always validate data frame structure before processing
 - Check for required columns using `%in% colnames()`
 - Validate data types and handle type conversions safely
@@ -43,12 +49,14 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 ## Shiny Application Structure
 
 ### Modular Design
+
 - Break functionality into small, focused Shiny modules (~50-100 lines each)
 - Each module should handle a specific task (scanning, peaks, traits, etc.)
 - Use consistent naming: `*App.R` for module files
 - Modules should be interconnectable like "legos"
 
 ### File Organization
+
 - Main app logic in `app.R`
 - Helper functions in `R/helpers.R`
 - Data handling functions in `R/data_handling.R`
@@ -57,15 +65,24 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 - Plot functions separated by type (ggplot, plotly, etc.)
 
 ### Shiny Best Practices
+
 - Use `bslib` for modern Bootstrap styling
 - Implement loading indicators with `shinycssloaders`
 - Use `shinyjs` for enhanced interactivity
 - Set appropriate file upload limits: `options(shiny.maxRequestSize = 20000*1024^2)`
 - Use reactive expressions efficiently to avoid unnecessary computations
 
+### Performance Optimization
+
+- Implement trait preservation across dataset changes to maintain user workflow
+- Use reactive flags to prevent expensive auto-computations during dataset transitions
+- Add appropriate delays and notifications to guide user interactions
+- Optimize plotly interactions for specific use cases (e.g., horizontal-only zoom for LOD scans)
+
 ## Package Structure
 
 ### Dependencies
+
 - Core dependencies: shiny, bslib, dplyr, ggplot2, DT, data.table
 - Visualization: plotly, ggiraph, shinycssloaders
 - Data handling: fst, reshape2, stringr
@@ -73,15 +90,18 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 - Always specify minimum R version in DESCRIPTION (>= 4.2.0)
 
 ### File Sourcing Order
+
 Source files in logical dependency order in `app.R`:
+
 1. helpers.R (core utilities)
 2. data_handling.R
 3. import_data.R
-4. Module files (*App.R)
+4. Module files (\*App.R)
 5. Visualization functions
 6. Analysis functions
 
 ### Package Development
+
 - Use `devtools::document()` to build documentation
 - Follow roxygen2 standards for all exported functions
 - Update NAMESPACE automatically via roxygen2
@@ -90,17 +110,20 @@ Source files in logical dependency order in `app.R`:
 ## Data Handling
 
 ### Caching Strategy
+
 - Implement caching for expensive operations (peaks, traits)
 - Use appropriate cache invalidation strategies
 - Cache objects should be created via `create_cache()` function
 
 ### File Formats
+
 - Prefer FST format for large datasets (fast read/write)
 - Support CSV import for configuration files
 - Use data.table for efficient data manipulation
 - Implement `fst_rows()` for memory-efficient data access
 
 ### Chromosome Handling
+
 - Use standardized chromosome conversion functions:
   - `chr_to_numeric()` for converting labels to numbers
   - `numeric_to_chr()` for converting numbers to labels
@@ -110,6 +133,7 @@ Source files in logical dependency order in `app.R`:
 ## Visualization Standards
 
 ### Plot Functions
+
 - Separate ggplot2 and plotly implementations
 - Use consistent color schemes and themes
 - Implement responsive design for different screen sizes
@@ -117,20 +141,61 @@ Source files in logical dependency order in `app.R`:
 - Support both static and interactive plots
 
 ### Plot Organization
+
 - `ggplot_*.R` for ggplot2 implementations
 - `ggplotly_*.R` for plotly implementations
 - `plot_enhancements.R` for styling and themes
 - `plot_null.R` for fallback/empty state plots
 
+### Strain Effects Plots
+
+- Use horizontal layout with strains on x-axis for better readability
+- Remove legends when strain names are displayed on axes
+- Apply consistent strain color mapping across all visualizations
+- Use `fixedrange = TRUE/FALSE` in plotly layout for axis-specific zoom control
+
+### Interactive Plot Configuration
+
+- Configure plotly plots for specific interaction patterns:
+  - LOD scan plots: horizontal-only zoom (`yaxis: fixedrange = TRUE`)
+  - Manhattan plots: pan-only interaction (`dragmode = "pan"`)
+  - Strain effects: no legend needed when strains are on axes (`guide = "none"`)
+
+### LOD Plot Click Enhancement
+
+- When clicking on LOD scan plot points, pull comprehensive peak information from peaks files
+- Display cis/trans status, confidence intervals, and founder allele effects (A-H columns)
+- Format click details in transposed Property-Value table for better readability
+- Color-code cis/trans status (green for Cis, red for Trans)
+- Include peak information in strain effects dropdown for easy peak selection
+
+## User Experience Patterns
+
+### Dataset Switching
+
+- Preserve trait selection when switching between datasets in the same category
+- Prevent automatic expensive computations during dataset transitions
+- Use `reactiveVal` flags with timed resets to control auto-search behavior
+- Provide clear notifications about preserved selections and required actions
+
+### Trait Search Workflow
+
+- Implement server-side selectize for large trait lists
+- Support both manual search button and auto-search functionality
+- Use intelligent auto-search prevention during dataset changes
+- Clear and informative placeholder text and notifications
+
 ## Git and Development
 
 ### Commit Standards
+
 - Use descriptive commit messages
 - Commit logical units of work
 - Test functionality before committing
 - Update documentation when adding new features
 
 ### Collaboration
+
 - Work on the same codebase to avoid divergence
 - Use GitHub for version control and collaboration
 - Follow the modular design to enable parallel development
@@ -139,6 +204,7 @@ Source files in logical dependency order in `app.R`:
 ## Testing and Quality
 
 ### Code Quality
+
 - Functions should be focused and do one thing well
 - Avoid functions longer than 100 lines
 - Use meaningful variable names
@@ -146,41 +212,76 @@ Source files in logical dependency order in `app.R`:
 - Validate inputs and handle edge cases
 
 ### Performance
+
 - Use efficient data structures (data.table for large data)
 - Implement caching for expensive operations
 - Use FST format for fast I/O
 - Optimize Shiny reactivity patterns
+- Monitor and prevent unnecessary trait scans during UI updates
 
 ## Specific Project Conventions
 
 ### Trait Handling
+
 - Support multiple trait types: genes, isoforms, clinical, lipids
 - Use standardized trait ID mapping via `get_trait_id()`
 - Implement robust trait choice generation with `get_trait_choices()`
 - Handle missing or invalid trait data gracefully
+- Preserve trait selections across compatible dataset changes
 
 ### Peak Analysis
+
 - Use consistent LOD threshold filtering
 - Support allele effect visualization (A-H columns → strain names)
 - Implement peak reshaping for visualization via `pivot_peaks()`
 - Handle missing markers and invalid peak data
+- Extract and display comprehensive peak metadata:
+  - `cis` column (TRUE/FALSE) for cis vs trans QTL classification
+  - `qtl_ci_lo` and `qtl_ci_hi` for confidence intervals
+  - A, B, C, D, E, F, G, H founder allele effects
+  - Standard QTL information (chromosome, position, LOD score)
 
 ### Data Import
+
 - Support flexible dataset configuration via CSV files
 - Validate file directory structure and trait types
 - Implement robust annotation list handling
 - Provide clear error messages for import failures
 
 ### Data Processing Pipeline
+
 - Use `kalynn_R/latest_app_kalynn/chromosome_compile.R` to compile raw gz files
 - Use `kalynn_R/latest_app_kalynn/prepare_fst_data.R` to process and sort FST files
 - All processed files are automatically sorted by Phenotype for efficient access
 - Row indices are generated automatically for fast trait-based reading
 - See `kalynn_R/latest_app_kalynn/.cursorrules` for detailed processing guidelines
 
+### App Architecture Patterns
+
+- Use monolithic backup file (`scanApp_monolithic_backup.R`) for stable features
+- Implement modular components for extensibility
+- Add placeholder sections for future functionality (Profile Plot, Correlation)
+- Use consistent namespace patterns across modules
+
+## Notification Standards
+
+- Use appropriate Shiny notification types: "message", "warning", "error", "default"
+- Provide informative duration settings for different message types
+- Include actionable guidance in notification text
+- Use consistent notification patterns across the application
+
+## Peak Information Display Standards
+
+- Use transposed Property-Value tables for detailed peak click information
+- Color-code biological classifications (cis=green, trans=red)
+- Include comprehensive metadata in peak selection dropdowns
+- Format confidence intervals and coordinates consistently
+- Display founder allele effects with clear strain labeling
+
 ## File Naming Conventions
+
 - `*App.R` for Shiny modules
 - `*_functions.R` or descriptive names for utility functions
 - `ggplot_*.R` for ggplot2 visualization functions
 - `data_*.R` for data handling functions
-- Use lowercase with underscores for file names 
+- Use lowercase with underscores for file names
