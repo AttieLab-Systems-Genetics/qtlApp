@@ -151,6 +151,9 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
 
       plot_data_filtered_dt <- data.table::as.data.table(plot_data_filtered)
 
+      # Filter out rows with NA gene_symbol
+      plot_data_filtered_dt <- plot_data_filtered_dt[!is.na(gene_symbol)]
+
       # Ensure 'cis' column is character "TRUE" or "FALSE" for scale_color_manual
       if (is.logical(plot_data_filtered_dt$cis)) {
         plot_data_filtered_dt[, cis_char := ifelse(cis, "TRUE", "FALSE")]
@@ -158,59 +161,51 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
         plot_data_filtered_dt[, cis_char := as.character(cis)] # Assume it's already proper if not logical
       }
 
-      plot_data_filtered_dt[, hover_text := paste(
-        "Symbol:", gene_symbol,
-        "<br>ID:", gene_id,
-        "<br>Gene Chr:", gene_chr,
-        "<br>Gene Pos (Mbp):", round(gene_start / 1e6, 2),
-        "<br>QTL Chr:", qtl_chr,
-        "<br>QTL Pos (Mbp):", round(qtl_pos / 1e6, 2),
-        "<br>LOD:", round(qtl_lod, 2),
-        "<br>QTL Type:", ifelse(cis_char == "TRUE", "Cis", "Trans"),
-        "<br>Dataset:", current_selected_dataset_name
+      # Simplified hover text for better performance
+      plot_data_filtered_dt[, hover_text := paste0(
+        gene_symbol, " (", ifelse(cis_char == "TRUE", "Cis", "Trans"), ")<br>",
+        "LOD: ", round(qtl_lod, 2), "<br>",
+        "Gene: Chr", gene_chr, ":", round(gene_start / 1e6, 2), "Mb<br>",
+        "QTL: Chr", qtl_chr, ":", round(qtl_pos / 1e6, 2), "Mb"
       )]
 
       cis.colors <- c("FALSE" = "#E41A1C", "TRUE" = "blue") # From your old code
+      names(cis.colors) <- c("FALSE", "TRUE")
 
-      p <- ggplot(
-        plot_data_filtered_dt,
-        aes(
-          x = qtl_pos, # Using raw qtl_pos as in old example
-          y = gene_start, # Using raw gene_start as in old example
-          color = cis_char, # Use the character version of 'cis'
-          key = gene_id,
-          text = hover_text,
-          customdata = gene_symbol
-        )
-      ) +
-        geom_point(alpha = 0.5, size = 1.2) + # Old point aesthetics
-        scale_color_manual(
-          values = cis.colors,
-          labels = c("FALSE" = "Trans", "TRUE" = "Cis"),
-          name = "QTL Type", # Legend title
-          drop = FALSE
-        ) +
-        labs(
-          title = paste("Cis/Trans Plot for", current_selected_dataset_name, "(LOD ≥", main_par()$LOD_thr(), ")"),
-          x = NULL, # Old axis labs
-          y = NULL # Old axis labs
-        ) +
-        theme_minimal(base_size = 11) +
-        theme( # Theme elements from your old code
-          panel.grid = element_blank(),
-          panel.border = element_rect(color = "grey70", fill = NA),
+      # Reverse the order of gene_chr factor levels
+      plot_data_filtered_dt[, gene_chr := factor(gene_chr, levels = rev(levels(gene_chr)))]
+
+      p <- ggplot(plot_data_filtered_dt, aes(x = qtl_pos, y = gene_start, text = hover_text, customdata = gene_symbol)) +
+        geom_point(aes(color = cis_char), alpha = 0.5, size = 0.8) +
+        scale_color_manual(values = cis.colors, labels = c("Trans", "Cis"), name = "QTL Type") +
+        facet_grid(gene_chr ~ qtl_chr, scales = "free", shrink = TRUE) +
+        theme(
+          panel.background = element_blank(),
+          panel.border = element_rect(fill = NA, color = "grey70"),
+          panel.grid.minor = element_blank(),
+          panel.spacing = unit(0.05, "lines"),
           axis.text.x = element_blank(),
           axis.text.y = element_blank(),
-          axis.title.x = element_blank(),
-          axis.title.y = element_blank(),
-          panel.spacing = unit(0.1, "lines"),
-          plot.title = element_text(hjust = 0.5, face = "bold"),
-          legend.position = "top" # Or "right" or remove for default
+          axis.ticks.x = element_blank(),
+          axis.ticks.y = element_blank()
+        ) +
+        labs(
+          x = "QTL Position",
+          y = "Gene Position"
         )
 
       fig <- plotly::ggplotly(p, tooltip = "text", source = ns("cistrans_plotly")) %>%
-        plotly::layout(dragmode = "pan", hovermode = "closest") %>%
-        plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"))
+        plotly::layout(
+          dragmode = "pan",
+          hovermode = "closest",
+          showlegend = TRUE
+        ) %>%
+        plotly::config(
+          displaylogo = FALSE,
+          modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"),
+          scrollZoom = FALSE,
+          doubleClick = "reset"
+        )
 
       fig <- plotly::event_register(fig, "plotly_click")
 
