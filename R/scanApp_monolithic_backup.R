@@ -29,7 +29,17 @@ scanApp <- function() {
 
   ui <- bslib::page_sidebar(
     shinyjs::useShinyjs(),
-    tags$head(tags$style(custom_css)),
+    tags$head(
+      # Viewport meta tag for responsive design
+      tags$meta(name = "viewport", content = "width=device-width, initial-scale=1.0, user-scalable=yes"),
+
+      # Autosizing CSS and JavaScript
+      tags$link(rel = "stylesheet", type = "text/css", href = "autosize.css"),
+      tags$script(src = "autosize.js"),
+
+      # Custom app styles
+      tags$style(custom_css)
+    ),
 
     # Top navigation bar for dataset category selection
     div(
@@ -127,7 +137,9 @@ scanApp <- function() {
               style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
             ),
             div(
-              style = "height: 65vh; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;", # Increased to 65% viewport height
+              id = "overview-plot-container",
+              class = "overview-plot-container",
+              style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
               shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
             ),
             p("Click on points to view detailed LOD scans",
@@ -151,10 +163,12 @@ scanApp <- function() {
           div(
             style = "padding: 10px;",
             div(
-              style = "height: 50vh; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
+              id = "profile-plot-container",
+              class = "sidebar-plot-container",
+              style = "height: 50vh; min-height: 300px; max-height: 500px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
               shinycssloaders::withSpinner(
                 plotly::plotlyOutput(shiny::NS("app_controller", "profile_plot_output"),
-                  height = "calc(50vh - 40px)"
+                  height = "100%", width = "100%"
                 )
               )
             ),
@@ -170,10 +184,12 @@ scanApp <- function() {
           div(
             style = "padding: 10px;",
             div(
-              style = "height: 50vh; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
+              id = "correlation-plot-container",
+              class = "sidebar-plot-container",
+              style = "height: 50vh; min-height: 300px; max-height: 500px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
               shinycssloaders::withSpinner(
                 plotly::plotlyOutput(shiny::NS("app_controller", "correlation_plot_output"),
-                  height = "calc(50vh - 40px)"
+                  height = "100%", width = "100%"
                 )
               )
             ),

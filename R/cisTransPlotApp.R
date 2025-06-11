@@ -24,7 +24,13 @@ cisTransPlotInput <- function(id) {
 #' @export
 cisTransPlotUI <- function(id) {
   ns <- shiny::NS(id)
-  shinycssloaders::withSpinner(plotly::plotlyOutput(ns("cis_trans_plot_output"), height = "calc(65vh - 40px)"))
+  shinycssloaders::withSpinner(
+    plotly::plotlyOutput(
+      ns("cis_trans_plot_output"),
+      height = "100%",
+      width = "100%"
+    )
+  )
 }
 
 #' Cis-Trans Plot Module Server
@@ -198,13 +204,16 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
         plotly::layout(
           dragmode = "pan",
           hovermode = "closest",
-          showlegend = TRUE
+          showlegend = TRUE,
+          autosize = TRUE,
+          margin = list(l = 50, r = 50, t = 50, b = 50)
         ) %>%
         plotly::config(
           displaylogo = FALSE,
           modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"),
           scrollZoom = FALSE,
-          doubleClick = "reset"
+          doubleClick = "reset",
+          responsive = TRUE
         )
 
       fig <- plotly::event_register(fig, "plotly_click")
