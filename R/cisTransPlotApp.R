@@ -180,13 +180,11 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
 
       # Simplified hover text for better performance
       plot_data_filtered_dt[, hover_text := paste0(
-        gene_symbol, " (", ifelse(cis_char == "TRUE", "Cis", "Trans"), ")<br>",
-        "LOD: ", round(qtl_lod, 2), "<br>",
-        "Gene: Chr", gene_chr, ":", round(gene_start / 1e6, 2), "Mb<br>",
-        "QTL: Chr", qtl_chr, ":", round(qtl_pos / 1e6, 2), "Mb"
+        gene_symbol, "<br>",
+        "LOD: ", round(qtl_lod, 2)
       )]
 
-      cis.colors <- c("FALSE" = "#E41A1C", "TRUE" = "blue") # From your old code
+      cis.colors <- c("FALSE" = "#E41A1C", "TRUE" = "blue")
       names(cis.colors) <- c("FALSE", "TRUE")
 
       # Reverse the order of gene_chr factor levels
@@ -213,7 +211,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
 
       fig <- plotly::ggplotly(p, tooltip = "text", source = ns("cistrans_plotly")) %>%
         plotly::layout(
-          dragmode = "pan",
+          dragmode = FALSE,
           hovermode = "closest",
           showlegend = TRUE,
           autosize = TRUE,
@@ -221,7 +219,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
         ) %>%
         plotly::config(
           displaylogo = FALSE,
-          modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"),
+          modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud", "pan2d", "zoom2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"),
           scrollZoom = FALSE,
           doubleClick = "reset",
           responsive = TRUE
