@@ -444,7 +444,7 @@ get_phenotype_class_from_category <- function(dataset_category) {
   } else if (dataset_category == "Liver Lipids") {
     return("liver_lipid")
   } else if (dataset_category == "Plasma Metabolites") {
-    return("plasma_metabolite")
+    return(c("plasma_13C_metabolite", "plasma_2H_metabolite"))
   }
   return(NULL)
 }

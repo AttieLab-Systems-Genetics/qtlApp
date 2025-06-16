@@ -468,7 +468,7 @@ scanApp <- function() {
       }
 
       plot_type_text <- "Plot"
-      if (category %in% c("Liver Lipids", "Clinical Traits")) {
+      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
         plot_type_text <- "Manhattan Plot"
       } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
         plot_type_text <- "Cis/Trans Plot"
@@ -481,7 +481,7 @@ scanApp <- function() {
       shiny::req(category)
 
       # Ensure the module IDs are unique if using the same ns_app_controller
-      if (category %in% c("Liver Lipids", "Clinical Traits")) {
+      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
         tagList(
           manhattanPlotUI(ns_app_controller("manhattan_plot_module"))
         )

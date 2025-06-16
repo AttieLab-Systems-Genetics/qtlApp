@@ -46,7 +46,7 @@ scanApp <- function() {
       "Interactive visualization tool using modular architecture"
     ),
     sidebar = bslib::sidebar(
-      width = 350, # Slightly wider to accommodate new controls
+      width = 1500, # Slightly wider to accommodate new controls
 
       # Data import controls
       importInput("import"),
@@ -154,9 +154,9 @@ scanApp <- function() {
     plot_type <- shiny::reactive({
       shiny::req(main_par$dataset_category())
       category <- main_par$dataset_category()
-      if (category %in% c("Liver Lipids", "Clinical Traits")) {
+      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
         "manhattan"
-      } else if (category %in% c("Liver Genes", "Liver Isoforms", "Plasma 2H Metabolites")) {
+      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
         "cistrans"
       } else {
         "unknown"

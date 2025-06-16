@@ -144,13 +144,13 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       )
 
       # Determine the phenotype_class string to filter by, based on the dataset category
-      target_phenotype_class_value <- NULL
+      target_phenotype_class_values <- NULL
       if (current_dataset_category == "Clinical Traits") {
-        target_phenotype_class_value <- "clinical_trait"
+        target_phenotype_class_values <- c("clinical_trait")
       } else if (current_dataset_category == "Liver Lipids") {
-        target_phenotype_class_value <- "liver_lipid"
-      } else if (current_dataset_category == "Plasma 2H Metabolites") {
-        target_phenotype_class_value <- "plasma_2H_metabolite"
+        target_phenotype_class_values <- c("liver_lipid")
+      } else if (current_dataset_category == "Plasma Metabolites") {
+        target_phenotype_class_values <- c("plasma_13C_metabolite", "plasma_2H_metabolite")
       } else {
         # Fallback or error if the category is unexpected for Manhattan plots
         shiny::showNotification(paste("ManhattanPlot: Unexpected dataset category '", current_dataset_category, "' for Manhattan plot."), type = "warning")
@@ -159,7 +159,7 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
 
       message(paste0(
         "ManhattanPlot DEBUG: For group '", selected_group_name, "' (category '", current_dataset_category, "'), ",
-        "filtering by phenotype_class = '", target_phenotype_class_value, "'."
+        "filtering by phenotype_class = '", paste(target_phenotype_class_values, collapse = ", "), "'."
       ))
 
       if (nrow(peaks_dt) > 0 && "phenotype_class" %in% colnames(peaks_dt)) {
@@ -171,21 +171,21 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
         return(NULL) # Critical column missing
       }
 
-      # Actual filtering based on the determined target_phenotype_class_value
-      peaks_dt <- peaks_dt[phenotype_class == target_phenotype_class_value]
+      # Actual filtering based on the determined target_phenotype_class_values (using %in% for multiple values)
+      peaks_dt <- peaks_dt[phenotype_class %in% target_phenotype_class_values]
 
       if (nrow(peaks_dt) == 0) {
         shiny::showNotification(
           paste0(
-            "No data after filtering for phenotype class: ", target_phenotype_class_value,
-            " (for dataset '", selected_group_name, "'). Check if the peaks file contains this phenotype class and the correct string."
+            "No data after filtering for phenotype classes: ", paste(target_phenotype_class_values, collapse = ", "),
+            " (for dataset '", selected_group_name, "'). Check if the peaks file contains these phenotype classes."
           ),
           type = "warning", duration = 10
         )
 
         return(data.table::data.table()) # Return empty table to avoid plot errors
       } else {
-        message(paste0("ManhattanPlot DEBUG: Filtering for '", target_phenotype_class_value, "' resulted in ", nrow(peaks_dt), " rows."))
+        message(paste0("ManhattanPlot DEBUG: Filtering for '", paste(target_phenotype_class_values, collapse = ", "), "' resulted in ", nrow(peaks_dt), " rows."))
       }
 
       # Ensure all subsequent code uses peaks_dt_filtered
