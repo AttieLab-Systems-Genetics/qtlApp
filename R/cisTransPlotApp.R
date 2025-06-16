@@ -109,6 +109,17 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
       message("cisTransPlotServer: Required columns for plot: ", paste(req_cols, collapse = ", ")) # DEBUG
       message("cisTransPlotServer: Columns in df from peaks_data(): ", paste(colnames(df), collapse = ", ")) # DEBUG
 
+      # Check for gene_symbol column specifically
+      if ("gene_symbol" %in% colnames(df)) {
+        message("cisTransPlotServer: gene_symbol column found with ", sum(!is.na(df$gene_symbol)), " non-NA values out of ", nrow(df), " rows")
+        # Show sample of gene symbols
+        sample_symbols <- head(unique(df$gene_symbol[!is.na(df$gene_symbol)]), 5)
+        message("cisTransPlotServer: Sample gene symbols: ", paste(sample_symbols, collapse = ", "))
+      } else {
+        message("cisTransPlotServer: WARNING - gene_symbol column NOT found in peaks data!")
+        message("cisTransPlotServer: Available columns: ", paste(colnames(df), collapse = ", "))
+      }
+
       if (!all(req_cols %in% colnames(df))) {
         missing_cols <- req_cols[!req_cols %in% colnames(df)]
         message("cisTransPlotServer: plot_data - Missing required columns: ", paste(missing_cols, collapse = ", "), ". Returning NULL.") # DEBUG

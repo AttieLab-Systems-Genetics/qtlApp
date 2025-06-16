@@ -448,3 +448,120 @@ get_phenotype_class_from_category <- function(dataset_category) {
   }
   return(NULL)
 }
+
+#' Diagnostic function to troubleshoot gene symbol issues
+#'
+#' This function helps diagnose why certain genes might not be found in datasets.
+#' It checks multiple sources and provides detailed information about gene symbol availability.
+#'
+#' @param import_data List containing file_directory and annotation_list
+#' @param selected_dataset String identifying the dataset to check
+#' @param gene_name String containing the gene symbol to search for
+#' @return List containing diagnostic information
+#' @export
+diagnose_gene_symbol <- function(import_data, selected_dataset, gene_name) {
+  results <- list(
+    gene_name = gene_name,
+    selected_dataset = selected_dataset,
+    issues_found = character(0),
+    recommendations = character(0)
+  )
+
+  # Check 1: Dataset exists
+  if (is.null(import_data) || is.null(import_data$file_directory)) {
+    results$issues_found <- c(results$issues_found, "import_data or file_directory is NULL")
+    results$recommendations <- c(results$recommendations, "Check data import process")
+    return(results)
+  }
+
+  file_directory <- import_data$file_directory
+  dataset_rows <- subset(file_directory, group == selected_dataset)
+
+  if (nrow(dataset_rows) == 0) {
+    results$issues_found <- c(results$issues_found, paste("Dataset", selected_dataset, "not found in file_directory"))
+    results$recommendations <- c(results$recommendations, "Check available datasets with unique(file_directory$group)")
+    return(results)
+  }
+
+  # Check 2: Trait type determination
+  trait_type <- get_trait_type(import_data, selected_dataset)
+  results$trait_type <- trait_type
+
+  if (is.null(trait_type)) {
+    results$issues_found <- c(results$issues_found, "Could not determine trait type for dataset")
+    results$recommendations <- c(results$recommendations, "Check trait_type column in file_directory")
+    return(results)
+  }
+
+  # Check 3: Annotation list availability
+  if (is.null(import_data$annotation_list)) {
+    results$issues_found <- c(results$issues_found, "annotation_list is NULL")
+    results$recommendations <- c(results$recommendations, "Check annotation_list.rds loading")
+    return(results)
+  }
+
+  annotation_list <- import_data$annotation_list
+
+  if (!(trait_type %in% names(annotation_list))) {
+    results$issues_found <- c(results$issues_found, paste("Trait type", trait_type, "not found in annotation_list"))
+    results$recommendations <- c(results$recommendations, paste("Available annotation types:", paste(names(annotation_list), collapse = ", ")))
+    return(results)
+  }
+
+  # Check 4: Gene symbol in annotation list
+  trait_list_df <- annotation_list[[trait_type]]
+  results$annotation_structure <- list(
+    columns = colnames(trait_list_df),
+    nrows = nrow(trait_list_df)
+  )
+
+  if (trait_type %in% c("genes", "isoforms")) {
+    if ("symbol" %in% colnames(trait_list_df)) {
+      available_symbols <- unique(trait_list_df$symbol)
+      results$total_symbols_available <- length(available_symbols)
+      results$gene_found_in_annotations <- gene_name %in% available_symbols
+
+      if (!results$gene_found_in_annotations) {
+        # Find similar gene names
+        similar_genes <- available_symbols[grepl(gene_name, available_symbols, ignore.case = TRUE)]
+        if (length(similar_genes) > 0) {
+          results$similar_genes <- head(similar_genes, 10)
+          results$recommendations <- c(results$recommendations, paste("Similar genes found:", paste(head(similar_genes, 5), collapse = ", ")))
+        } else {
+          results$recommendations <- c(results$recommendations, "Gene not found in annotation list. Check gene symbol spelling or try alternative symbols.")
+        }
+      }
+    } else {
+      results$issues_found <- c(results$issues_found, "No 'symbol' column found in gene/isoform annotations")
+      results$recommendations <- c(results$recommendations, "Check annotation_list structure - genes should have 'symbol' column")
+    }
+  } else {
+    # For non-gene datasets
+    trait_id_col <- get_trait_id(trait_type)
+    if (trait_id_col %in% colnames(trait_list_df)) {
+      available_traits <- unique(trait_list_df[[trait_id_col]])
+      results$total_traits_available <- length(available_traits)
+      results$trait_found_in_annotations <- gene_name %in% available_traits
+
+      if (!results$trait_found_in_annotations) {
+        similar_traits <- available_traits[grepl(gene_name, available_traits, ignore.case = TRUE)]
+        if (length(similar_traits) > 0) {
+          results$similar_traits <- head(similar_traits, 10)
+        }
+      }
+    }
+  }
+
+  # Check 5: Gene symbols file
+  if (!is.null(import_data$gene_symbols)) {
+    results$gene_symbols_file_loaded <- TRUE
+    results$total_gene_symbols_in_file <- length(import_data$gene_symbols)
+    results$gene_in_symbols_file <- gene_name %in% import_data$gene_symbols
+  } else {
+    results$gene_symbols_file_loaded <- FALSE
+    results$issues_found <- c(results$issues_found, "gene_symbols not loaded from CSV file")
+    results$recommendations <- c(results$recommendations, "Check gene_symbols.csv file exists and loads properly")
+  }
+
+  return(results)
+}
