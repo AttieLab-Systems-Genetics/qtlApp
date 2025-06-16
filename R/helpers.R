@@ -565,3 +565,129 @@ diagnose_gene_symbol <- function(import_data, selected_dataset, gene_name) {
 
   return(results)
 }
+
+# =============================================================================
+# INTERACTIVE SUBTRACTION UTILITIES
+# =============================================================================
+
+#' Compute peak differences between interactive and additive scans
+#'
+#' Calculates the difference in LOD scores between interactive and additive
+#' QTL scans for the same traits and markers.
+#'
+#' @param interactive_peaks DataFrame containing interactive scan peaks
+#' @param additive_peaks DataFrame containing additive scan peaks
+#' @return DataFrame with difference values (interactive - additive)
+#' @importFrom dplyr inner_join mutate select
+#' @export
+compute_peak_differences <- function(interactive_peaks, additive_peaks) {
+  # Validate inputs
+  if (is.null(interactive_peaks) || is.null(additive_peaks)) {
+    warning("compute_peak_differences: One or both peak datasets are NULL")
+    return(NULL)
+  }
+
+  if (nrow(interactive_peaks) == 0 || nrow(additive_peaks) == 0) {
+    warning("compute_peak_differences: One or both peak datasets are empty")
+    return(data.frame())
+  }
+
+  # Check for required columns
+  required_cols <- c("marker", "qtl_lod", "phenotype")
+
+  if (!all(required_cols %in% colnames(interactive_peaks))) {
+    missing_cols <- required_cols[!required_cols %in% colnames(interactive_peaks)]
+    warning(
+      "compute_peak_differences: Missing columns in interactive_peaks: ",
+      paste(missing_cols, collapse = ", ")
+    )
+    return(NULL)
+  }
+
+  if (!all(required_cols %in% colnames(additive_peaks))) {
+    missing_cols <- required_cols[!required_cols %in% colnames(additive_peaks)]
+    warning(
+      "compute_peak_differences: Missing columns in additive_peaks: ",
+      paste(missing_cols, collapse = ", ")
+    )
+    return(NULL)
+  }
+
+  # Join datasets on marker and phenotype
+  joined_data <- dplyr::inner_join(
+    interactive_peaks,
+    additive_peaks,
+    by = c("marker", "phenotype"),
+    suffix = c("_interactive", "_additive")
+  )
+
+  if (nrow(joined_data) == 0) {
+    warning("compute_peak_differences: No matching markers/phenotypes found between datasets")
+    return(data.frame())
+  }
+
+  # Compute differences
+  difference_data <- joined_data |>
+    dplyr::mutate(
+      qtl_lod_diff = qtl_lod_interactive - qtl_lod_additive,
+      scan_type = "difference"
+    ) |>
+    dplyr::select(
+      marker, phenotype,
+      qtl_lod = qtl_lod_diff, scan_type,
+      qtl_lod_interactive, qtl_lod_additive,
+      dplyr::everything()
+    )
+
+  message("compute_peak_differences: Computed differences for ", nrow(difference_data), " peaks")
+  return(difference_data)
+}
+
+#' Save computed differences to cache directory
+#'
+#' Saves difference analysis results to the specified cache directory
+#' for future use.
+#'
+#' @param difference_data DataFrame containing computed differences
+#' @param cache_dir Directory path for saving cached results
+#' @param dataset_info List containing dataset metadata
+#' @param interaction_type String specifying interaction type ("sex" or "diet")
+#' @return Logical indicating success/failure
+#' @export
+save_difference_cache <- function(difference_data, cache_dir = "/data/dev/miniViewer_3.0/",
+                                  dataset_info, interaction_type) {
+  if (is.null(difference_data) || nrow(difference_data) == 0) {
+    warning("save_difference_cache: No data to save")
+    return(FALSE)
+  }
+
+  # Create cache filename
+  cache_filename <- paste0(
+    "difference_",
+    dataset_info$trait_compartment, "_",
+    dataset_info$trait_type, "_",
+    interaction_type, "_",
+    format(Sys.Date(), "%Y%m%d"),
+    ".csv"
+  )
+
+  cache_path <- file.path(cache_dir, cache_filename)
+
+  # Ensure directory exists
+  if (!dir.exists(cache_dir)) {
+    dir.create(cache_dir, recursive = TRUE)
+  }
+
+  # Save data
+  tryCatch(
+    {
+      data.table::fwrite(difference_data, cache_path)
+      message("save_difference_cache: Saved to ", cache_path)
+      return(TRUE)
+    },
+    error = function(e) {
+      warning("save_difference_cache: Failed to save - ", e$message)
+      return(FALSE)
+    }
+  )
+}

@@ -46,11 +46,19 @@ scanApp <- function() {
       "Interactive visualization tool using modular architecture"
     ),
     sidebar = bslib::sidebar(
-      # Use existing mainPar module for dataset selection and trait search
-      h4("📊 Dataset & Trait Selection", style = "color: #2c3e50;"),
+      width = 350, # Slightly wider to accommodate new controls
+
+      # Data import controls
+      importInput("import"),
+      shiny::hr(),
+
+      # Main parameter controls (dataset, trait, LOD threshold)
       mainParInput("main_par"),
-      mainParUI("main_par"),
-      hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
+      shiny::hr(),
+
+      # Interactive subtraction analysis controls
+      interactiveSubtractionInput("interactive_subtraction"),
+      shiny::hr(),
 
       # Add new card for Profile Plot and Correlation
       bslib::card(
@@ -70,12 +78,9 @@ scanApp <- function() {
           )
         )
       ),
-      hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
-
-      # Add chromosome controls module
-      h4("🔍 Chromosome Controls", style = "color: #2c3e50;"),
+      # Chromosome selection controls
       chromosomeControlsInput("chr_controls"),
-      hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
+      shiny::hr(),
 
       # Use existing download module
       h4("💾 Download Plots", style = "color: #2c3e50;"),
@@ -130,6 +135,13 @@ scanApp <- function() {
 
     # Initialize main parameter controls (dataset selection, trait search, LOD threshold)
     main_par <- mainParServer("main_par", import_reactives)
+
+    # Initialize interactive subtraction analysis
+    interactive_subtraction <- interactiveSubtractionServer(
+      "interactive_subtraction",
+      import_reactives,
+      main_par
+    )
 
     # Initialize chromosome controls
     chr_controls <- chromosomeControlsServer("chr_controls")

@@ -77,23 +77,43 @@ mainParServer <- function(id, import) {
         ))
       }
 
-      # FILTER DATA: Get datasets matching selected category
+      # FILTER DATA: Get datasets matching selected category AND only additive scans
       filtered_files <- dplyr::filter(
         import()$file_directory,
-        .data$dataset_category == input$dataset_category
+        .data$dataset_category == input$dataset_category,
+        .data$scan_type == "additive" # Only show additive datasets
       )
-      choices <- sort(unique(filtered_files$group)) # Extract unique dataset groups
-      selected <- if (length(choices) > 0) choices[1] else NULL
+
+      # Create simplified dataset names (remove redundant info)
+      if (nrow(filtered_files) > 0) {
+        # Extract unique combinations and create cleaner names
+        unique_datasets <- filtered_files %>%
+          dplyr::select(group, trait_compartment, trait_type, diet) %>%
+          dplyr::distinct()
+
+        # Create simplified names: "Diet Compartment Type" (e.g., "HC Liver Genes")
+        choices <- unique_datasets$group
+        names(choices) <- paste(
+          unique_datasets$diet,
+          unique_datasets$trait_compartment,
+          unique_datasets$trait_type
+        )
+
+        selected <- if (length(choices) > 0) choices[1] else NULL
+      } else {
+        choices <- character(0)
+        selected <- NULL
+      }
 
       # RENDER INPUT: Use custom styling if available
       if (exists("create_select_input", mode = "function")) {
         create_select_input(ns("selected_dataset"),
-          label = "Choose a dataset:",
+          label = "Choose a dataset (additive):",
           choices = choices, selected = selected, multiple = FALSE
         )
       } else {
         shiny::selectInput(ns("selected_dataset"),
-          label = "Choose a dataset:",
+          label = "Choose a dataset (additive):",
           choices = choices, selected = selected, multiple = FALSE
         )
       }
