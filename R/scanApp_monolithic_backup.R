@@ -133,7 +133,7 @@ scanApp <- function() {
               style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
             ),
 
-            # Conditional Interactive Analysis section for HC_HF Liver Genes
+            # Conditional Interactive Analysis section for HC_HF datasets
             shiny::uiOutput(shiny::NS("app_controller", "interactive_analysis_section")),
             hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
             h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
@@ -224,6 +224,43 @@ scanApp <- function() {
 
     # Define the %||% operator for null coalescing
     `%||%` <- function(a, b) if (!is.null(a)) a else b
+
+    # Helper function to map HC_HF dataset names to their interactive versions
+    # Only maps to datasets that actually exist in the file system
+    get_interactive_dataset_name <- function(base_dataset, interaction_type) {
+      if (is.null(interaction_type) || interaction_type == "none") {
+        return(base_dataset)
+      }
+
+      # HC_HF Liver Genes (supports both Sex and Diet interactions)
+      if (grepl("HC_HF Liver Genes", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "sex") {
+          return("HC_HF Liver Genes, interactive (Sex)")
+        } else if (interaction_type == "diet") {
+          return("HC_HF Liver Genes, interactive (Diet)")
+        }
+      }
+      # HC_HF Liver Lipids (only supports Diet interaction)
+      else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "diet") {
+          return("HC_HF Liver Lipids, interactive (Diet)")
+        }
+        # No Sex interaction available for Liver Lipids - return original
+      }
+      # HC_HF Clinical Traits (supports both Sex and Diet interactions)
+      else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "sex") {
+          return("HC_HF Systemic Clinical Traits, interactive (Sex)")
+        } else if (interaction_type == "diet") {
+          return("HC_HF Systemic Clinical Traits, interactive (Diet)")
+        }
+      }
+      # HC_HF Plasma plasma_metabolite - NO interactive datasets available
+      # Return original dataset (no interactive versions exist)
+
+      # Fallback to original dataset if no mapping found
+      return(base_dataset)
+    }
 
     trait_cache <- new.env(parent = emptyenv())
     peaks_cache <- new.env(parent = emptyenv())
@@ -454,20 +491,16 @@ scanApp <- function() {
         return(NULL)
       }
 
-      # Check if this is an HC_HF Liver Genes dataset and if an interaction is selected
-      if (grepl("HC_HF Liver Genes", selected_group, ignore.case = TRUE)) {
-        message(paste("main_selected_dataset_group: HC_HF Liver Genes detected, interaction_type is:", interaction_type))
+      # Check if this is an HC_HF dataset that supports interactive analysis
+      is_hc_hf_dataset <- grepl("^HC_HF", selected_group, ignore.case = TRUE)
 
-        if (!is.null(interaction_type) && interaction_type != "none") {
-          # Map interaction type to the interactive dataset name using the actual naming pattern
-          if (interaction_type == "sex") {
-            interactive_dataset <- "HC_HF Liver Genes, interactive (Sex)"
-          } else if (interaction_type == "diet") {
-            interactive_dataset <- "HC_HF Liver Genes, interactive (Diet)"
-          } else {
-            interactive_dataset <- selected_group # fallback
-          }
+      if (is_hc_hf_dataset) {
+        message(paste("main_selected_dataset_group: HC_HF dataset detected:", selected_group, "interaction_type is:", interaction_type))
 
+        # Use helper function to get the appropriate dataset name
+        interactive_dataset <- get_interactive_dataset_name(selected_group, interaction_type)
+
+        if (interactive_dataset != selected_group) {
           message(paste("Interactive analysis mode: Using dataset", interactive_dataset, "for interaction type:", interaction_type))
           return(interactive_dataset)
         } else {
@@ -580,17 +613,17 @@ scanApp <- function() {
 
     # When the main selected dataset changes, clear the trait_for_lod_scan_rv
     # to prevent a scan from an old selection on a new plot type.
-    # BUT preserve trait selection when switching between HC_HF Liver Genes variants (additive <-> interactive)
+    # BUT preserve trait selection when switching between HC_HF variants (additive <-> interactive)
     shiny::observeEvent(main_selected_dataset_group(),
       {
         current_dataset <- main_selected_dataset_group()
         message("scanApp: Main dataset group changed. Clearing trait_for_lod_scan_rv.")
 
-        # Check if this is just switching between HC_HF Liver Genes variants
-        is_genes_dataset_switch <- !is.null(current_dataset) &&
-          grepl("HC_HF Liver Genes", current_dataset, ignore.case = TRUE)
+        # Check if this is just switching between HC_HF dataset variants (any HC_HF dataset type)
+        is_hc_hf_dataset_switch <- !is.null(current_dataset) &&
+          grepl("^HC_HF", current_dataset, ignore.case = TRUE)
 
-        if (!is_genes_dataset_switch) {
+        if (!is_hc_hf_dataset_switch) {
           # Only clear trait selection for real dataset changes, not interaction type changes
           trait_for_lod_scan_rv(NULL) # Clear any active LOD scan
           # Clear the search input selection (choices will be updated by the other observer)
@@ -598,7 +631,7 @@ scanApp <- function() {
             selected = character(0)
           )
         } else {
-          message("scanApp: HC_HF Liver Genes dataset switch detected - preserving trait selection")
+          message("scanApp: HC_HF dataset switch detected - preserving trait selection")
         }
       },
       ignoreNULL = TRUE,
@@ -634,14 +667,36 @@ scanApp <- function() {
     # Store the current interaction type to preserve across UI re-renders
     current_interaction_type_rv <- shiny::reactiveVal("none")
 
-    # Interactive Analysis section - show only for HC_HF Liver Genes datasets
+    # Interactive Analysis section - show for all HC_HF datasets
     output[[ns_app_controller("interactive_analysis_section")]] <- shiny::renderUI({
       dataset_group <- main_selected_dataset_group()
 
-      # Show interactive analysis controls only for HC_HF Liver Genes datasets
-      if (!is.null(dataset_group) && grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
+      # Show interactive analysis controls for all HC_HF datasets (Genes, Lipids, Clinical Traits, Metabolites)
+      if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
         # Preserve the current selection when re-rendering
         current_selection <- current_interaction_type_rv()
+
+        # Determine what interaction types are available for this dataset
+        available_interactions <- c("None (Additive only)" = "none")
+
+        # Check what interactions are actually available based on dataset type
+        if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex",
+            "Diet interaction" = "diet"
+          )
+        } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Diet interaction" = "diet"
+          )
+          # No Sex interaction for Liver Lipids
+        } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex",
+            "Diet interaction" = "diet"
+          )
+        }
+        # No interactions available for Plasma metabolites
 
         tagList(
           hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
@@ -649,19 +704,15 @@ scanApp <- function() {
           shiny::selectInput(
             ns_app_controller("interaction_type"),
             label = "Select interaction analysis:",
-            choices = c(
-              "None (Additive only)" = "none",
-              "Sex interaction" = "sex",
-              "Diet interaction" = "diet"
-            ),
-            selected = current_selection,
+            choices = available_interactions,
+            selected = if (current_selection %in% available_interactions) current_selection else "none",
             width = "100%"
           ),
           shiny::conditionalPanel(
             condition = paste0("input['", ns_app_controller("interaction_type"), "'] != 'none'"),
             div(
               style = "margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #e74c3c;",
-              p("ℹ️ Interactive analysis will show comparative LOD plots when a trait is selected.",
+              p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
                 style = "font-size: 12px; color: #6c757d; margin: 0;"
               )
             )
@@ -1501,6 +1552,12 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       message("scanServer: Interactive LOD range:", min(interactive_data$LOD, na.rm = TRUE), "to", max(interactive_data$LOD, na.rm = TRUE))
       message("scanServer: Additive LOD range:", min(additive_data$LOD, na.rm = TRUE), "to", max(additive_data$LOD, na.rm = TRUE))
 
+      # Debug marker info
+      if ("markers" %in% colnames(interactive_data) && "markers" %in% colnames(additive_data)) {
+        message("scanServer: Interactive first 3 markers: ", paste(head(interactive_data$markers, 3), collapse = ", "))
+        message("scanServer: Additive first 3 markers: ", paste(head(additive_data$markers, 3), collapse = ", "))
+      }
+
       # Create difference data with error handling
       tryCatch(
         {
@@ -1515,6 +1572,35 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
           # Simple element-wise subtraction: interactive LOD - additive LOD
           # Handle NA values properly
           lod_difference <- interactive_data$LOD - additive_data$LOD
+
+          # VALIDATION: Check difference calculation at specific positions
+          if (nrow(interactive_data) >= 10) {
+            # Check first 3 positions, middle position, and last 3 positions
+            validation_indices <- c(1:3, round(nrow(interactive_data) / 2), (nrow(interactive_data) - 2):nrow(interactive_data))
+            validation_indices <- validation_indices[validation_indices <= nrow(interactive_data)]
+
+            message("scanServer: VALIDATION - Checking difference calculation at key positions:")
+            for (i in validation_indices) {
+              interactive_lod <- interactive_data$LOD[i]
+              additive_lod <- additive_data$LOD[i]
+              calculated_diff <- lod_difference[i]
+              expected_diff <- interactive_lod - additive_lod
+
+              # Check if we have position/BPcum info for more detailed validation
+              position_info <- ""
+              if ("BPcum" %in% colnames(interactive_data)) {
+                position_info <- paste0(" at BPcum=", round(interactive_data$BPcum[i], 2))
+              } else if ("position" %in% colnames(interactive_data)) {
+                position_info <- paste0(" at pos=", round(interactive_data$position[i], 2))
+              }
+
+              is_correct <- abs(calculated_diff - expected_diff) < 1e-10
+              message(sprintf(
+                "scanServer: Index %d%s: Interactive=%.3f, Additive=%.3f, Diff=%.3f, Expected=%.3f, Correct=%s",
+                i, position_info, interactive_lod, additive_lod, calculated_diff, expected_diff, is_correct
+              ))
+            }
+          }
 
           # Check for NA values
           na_count <- sum(is.na(lod_difference))
