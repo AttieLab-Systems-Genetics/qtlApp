@@ -49,4 +49,5 @@ source("R/traitProcessingModule.R")
 options(shiny.maxRequestSize = 20000 * 1024^2) # 20 GB
 
 # Launch the application
-scanApp()
+scanApp() # Comment out the old app
+# testGenesApp() # Use the new genes analysis test app

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is an R package for QTL (Quantitative Trait Loci) analysis and visualization using Shiny. The project is organized as a modular package with multiple small Shiny modules for scalable QTL analysis.
+This is an R package for QTL (Quantitative Trait Loci) analysis and visualization using Shiny. The project is organized as a modular package with multiple small Shiny modules for scalable QTL analysis with support for interactive sex/diet difference plots.
 
 ## R Language Standards
 
@@ -51,8 +51,8 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 ### Modular Design
 
 - Break functionality into small, focused Shiny modules (~50-100 lines each)
-- Each module should handle a specific task (scanning, peaks, traits, etc.)
-- Use consistent naming: `*App.R` for module files
+- Each module should handle a specific task (scanning, peaks, traits, interactive analysis, etc.)
+- Use consistent naming: `*Module.R` for module files
 - Modules should be interconnectable like "legos"
 
 ### File Organization
@@ -64,6 +64,47 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 - UI styling in `R/ui_styles.R`
 - Plot functions separated by type (ggplot, plotly, etc.)
 
+### Modular Architecture Patterns
+
+#### Core Modules
+
+- `scanPlotModule.R` - LOD scan visualization with interactive/difference plots
+- `alleleEffectsModule.R` - Strain effects visualization and peak selection
+- `interactiveAnalysisModule.R` - Sex/diet interaction controls
+- `datasetSelectionModule.R` - Dataset category and specific dataset selection
+
+#### Module Communication
+
+- Use reactive values and functions for inter-module communication
+- Pass reactive parameters explicitly to maintain clear dependencies
+- Return reactive values from modules for external access
+- Use debouncing (`shiny::debounce()`) on expensive reactive operations
+
+#### Module Patterns
+
+```r
+#' Module Server Pattern
+moduleServer <- function(id, param1_reactive, param2_reactive, ...) {
+  shiny::moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    # Local reactive values
+    local_rv <- shiny::reactiveVal(NULL)
+
+    # Debounced reactives for performance
+    expensive_computation <- shiny::reactive({
+      # computation logic
+    }) %>% shiny::debounce(200)
+
+    # Return reactive interface
+    return(list(
+      output_reactive = local_rv,
+      computed_data = expensive_computation
+    ))
+  })
+}
+```
+
 ### Shiny Best Practices
 
 - Use `bslib` for modern Bootstrap styling
@@ -74,10 +115,73 @@ This is an R package for QTL (Quantitative Trait Loci) analysis and visualizatio
 
 ### Performance Optimization
 
-- Implement trait preservation across dataset changes to maintain user workflow
-- Use reactive flags to prevent expensive auto-computations during dataset transitions
-- Add appropriate delays and notifications to guide user interactions
-- Optimize plotly interactions for specific use cases (e.g., horizontal-only zoom for LOD scans)
+#### Reactive Debouncing
+
+- Use `shiny::debounce()` on expensive reactive operations
+- Debounce ranges: 100-150ms for data processing, 200-300ms for plot creation, 200-250ms for difference plots
+- Example: `reactive_function %>% shiny::debounce(200)`
+
+#### Reactive Dependency Management
+
+- Avoid circular reactive dependencies
+- Use `shiny::isolate()` when needed to break reactive chains
+- Use `shiny::req()` to prevent premature reactive execution
+- Clear reactive flags and use timed resets for UI state management
+
+#### Trait Preservation and Auto-Search
+
+- Preserve trait selection when switching between compatible datasets (e.g., additive ↔ interactive)
+- Use `dataset_just_changed` flags to prevent auto-search during dataset transitions
+- Implement intelligent auto-search with user control (search button + auto-trigger)
+- Use server-side selectize for large trait lists with `server = TRUE`
+
+## Interactive Analysis and Difference Plots
+
+### Sex/Diet Interaction Support
+
+- Support interactive analysis for specific datasets (HC_HF Liver Genes)
+- Automatically map interaction types to correct dataset names:
+  - "none" → base dataset (additive)
+  - "sex" → "HC_HF Liver Genes, interactive (Sex)"
+  - "diet" → "HC_HF Liver Genes, interactive (Diet)"
+
+### Difference Plot Implementation
+
+- **Simple Element-wise Subtraction**: `interactive_LOD[i] - additive_LOD[i]`
+- **Data Compatibility**: Ensure both datasets have same number of rows and markers
+- **NA Handling**: Replace NA values with 0 for visualization
+- **Stacked Layout**: Show interactive plot on top, difference plot on bottom
+- **Height Management**: Split total height between two plots (`height / 2`)
+
+### Difference Plot Architecture
+
+```r
+# Store additive data when interaction type is "none"
+additive_scan_data_rv <- shiny::reactiveVal(NULL)
+
+# Create difference plot
+difference_plot_gg <- shiny::reactive({
+  interactive_data <- scan_table_chr()
+  additive_data <- additive_scan_data_rv()
+
+  # Simple subtraction with NA handling
+  lod_difference <- interactive_data$LOD - additive_data$LOD
+  lod_difference[is.na(lod_difference)] <- 0
+
+  # Create plot data
+  diff_plot_data <- interactive_data
+  diff_plot_data$LOD <- lod_difference
+
+  ggplot_qtl_scan(diff_plot_data, -Inf, selected_chr)
+}) %>% shiny::debounce(250)
+```
+
+### UI Stacking for Interactive Analysis
+
+- **Single Plot**: Standard LOD scan for additive datasets
+- **Stacked Plots**: Interactive LOD (top) + Difference LOD (bottom) for interactive datasets
+- **Plot Titles**: "Interactive LOD Scan" and "LOD Difference (Interactive - Additive)"
+- **Color Coding**: Blue spinners for main plots, red spinners for difference plots
 
 ## Package Structure
 
@@ -96,7 +200,7 @@ Source files in logical dependency order in `app.R`:
 1. helpers.R (core utilities)
 2. data_handling.R
 3. import_data.R
-4. Module files (\*App.R)
+4. Module files (\*Module.R)
 5. Visualization functions
 6. Analysis functions
 
@@ -114,6 +218,7 @@ Source files in logical dependency order in `app.R`:
 - Implement caching for expensive operations (peaks, traits)
 - Use appropriate cache invalidation strategies
 - Cache objects should be created via `create_cache()` function
+- Use local module caches: `local_cache <- new.env(parent = emptyenv())`
 
 ### File Formats
 
@@ -125,10 +230,10 @@ Source files in logical dependency order in `app.R`:
 ### Chromosome Handling
 
 - Use standardized chromosome conversion functions:
-  - `chr_to_numeric()` for converting labels to numbers
-  - `numeric_to_chr()` for converting numbers to labels
-- Handle X, Y, M chromosomes consistently (X=20, Y=21, M=22)
-- Maintain backward compatibility with `chr_XYM()` function
+  - `chr_to_numeric()` for converting labels to numbers (X=20, Y=21, M=22)
+  - `chr_XYM()` for display formatting
+- Handle X, Y, M chromosomes consistently
+- Maintain backward compatibility with existing functions
 
 ## Visualization Standards
 
@@ -147,19 +252,20 @@ Source files in logical dependency order in `app.R`:
 - `plot_enhancements.R` for styling and themes
 - `plot_null.R` for fallback/empty state plots
 
-### Strain Effects Plots
-
-- Use horizontal layout with strains on x-axis for better readability
-- Remove legends when strain names are displayed on axes
-- Apply consistent strain color mapping across all visualizations
-- Use `fixedrange = TRUE/FALSE` in plotly layout for axis-specific zoom control
-
 ### Interactive Plot Configuration
 
 - Configure plotly plots for specific interaction patterns:
   - LOD scan plots: horizontal-only zoom (`yaxis: fixedrange = TRUE`)
   - Manhattan plots: pan-only interaction (`dragmode = "pan"`)
   - Strain effects: no legend needed when strains are on axes (`guide = "none"`)
+- Use `fixedrange = TRUE/FALSE` in plotly layout for axis-specific zoom control
+
+### Strain Effects Plots
+
+- Use horizontal layout with strains on x-axis for better readability
+- Remove legends when strain names are displayed on axes
+- Apply consistent strain color mapping across all visualizations
+- Handle missing allele effects data gracefully with placeholder plots
 
 ### LOD Plot Click Enhancement
 
@@ -180,10 +286,45 @@ Source files in logical dependency order in `app.R`:
 
 ### Trait Search Workflow
 
-- Implement server-side selectize for large trait lists
+- Implement server-side selectize for large trait lists (`server = TRUE`)
 - Support both manual search button and auto-search functionality
 - Use intelligent auto-search prevention during dataset changes
 - Clear and informative placeholder text and notifications
+
+### Dynamic LOD Thresholds
+
+- Set different default thresholds based on scan type:
+  - Additive scans: 7.5
+  - Interactive scans: 10.5
+- Use debounced reactive for LOD threshold to prevent double firing
+- Update slider UI dynamically when scan type changes
+
+## Error Handling and Performance
+
+### Reactive Performance Optimization
+
+```r
+# Debouncing patterns for different operations
+scan_data <- reactive({ ... }) %>% debounce(150)      # Data loading
+plot_creation <- reactive({ ... }) %>% debounce(200)   # Plot generation
+difference_plot <- reactive({ ... }) %>% debounce(250) # Difference calculations
+lod_threshold <- reactive({ ... }) %>% debounce(300)   # LOD threshold changes
+```
+
+### Error Prevention
+
+- Always check data compatibility before operations
+- Handle NA values explicitly in calculations
+- Provide meaningful error messages to users
+- Use `tryCatch()` for external data operations
+- Implement graceful fallbacks for missing data
+
+### Memory Management
+
+- Clear caches when datasets change
+- Use local environments for module-specific caches
+- Avoid storing large objects in global reactive values
+- Use `rm()` to explicitly clear cache environments
 
 ## Git and Development
 
@@ -196,9 +337,9 @@ Source files in logical dependency order in `app.R`:
 
 ### Collaboration
 
-- Work on the same codebase to avoid divergence
+- Work on modular components to enable parallel development
 - Use GitHub for version control and collaboration
-- Follow the modular design to enable parallel development
+- Follow the modular design to minimize merge conflicts
 - Document new modules and functions thoroughly
 
 ## Testing and Quality
@@ -216,7 +357,7 @@ Source files in logical dependency order in `app.R`:
 - Use efficient data structures (data.table for large data)
 - Implement caching for expensive operations
 - Use FST format for fast I/O
-- Optimize Shiny reactivity patterns
+- Optimize Shiny reactivity patterns with debouncing
 - Monitor and prevent unnecessary trait scans during UI updates
 
 ## Specific Project Conventions
@@ -259,7 +400,7 @@ Source files in logical dependency order in `app.R`:
 ### App Architecture Patterns
 
 - Use monolithic backup file (`scanApp_monolithic_backup.R`) for stable features
-- Implement modular components for extensibility
+- Implement modular components for extensibility (`scanApp_optimized.R`)
 - Add placeholder sections for future functionality (Profile Plot, Correlation)
 - Use consistent namespace patterns across modules
 
@@ -280,8 +421,47 @@ Source files in logical dependency order in `app.R`:
 
 ## File Naming Conventions
 
-- `*App.R` for Shiny modules
+- `*Module.R` for Shiny modules
 - `*_functions.R` or descriptive names for utility functions
 - `ggplot_*.R` for ggplot2 visualization functions
 - `data_*.R` for data handling functions
 - Use lowercase with underscores for file names
+
+## Interactive Analysis Implementation Details
+
+### Dataset Mapping Logic
+
+```r
+# Determine interactive dataset name
+get_interactive_dataset_name <- function(base_dataset, interaction_type) {
+  if (interaction_type == "sex") {
+    return("HC_HF Liver Genes, interactive (Sex)")
+  } else if (interaction_type == "diet") {
+    return("HC_HF Liver Genes, interactive (Diet)")
+  }
+  return(base_dataset)  # fallback to additive
+}
+```
+
+### Difference Plot Data Flow
+
+1. **Store Additive**: When interaction_type == "none", store scan data
+2. **Calculate Difference**: When interaction_type != "none", subtract stored additive from current interactive
+3. **Handle Missing Data**: Use `is.null()` and `nrow()` checks before calculations
+4. **Element-wise Operation**: Simple `interactive$LOD - additive$LOD` with NA handling
+5. **Create Plot**: Pass difference data to `ggplot_qtl_scan()` with `-Inf` threshold
+
+### UI State Management
+
+- Use `show_stacked_plots()` reactive to determine single vs stacked layout
+- Implement proper height division for stacked plots
+- Add descriptive titles for each plot section
+- Use color-coded spinners to distinguish plot types
+
+This modular architecture enables:
+
+- **Better Performance**: Debounced reactives prevent excessive computations
+- **Maintainability**: Small, focused modules are easier to understand and modify
+- **Extensibility**: New features can be added as separate modules
+- **Reusability**: Modules can be reused across different parts of the application
+- **Testing**: Individual modules can be tested in isolation

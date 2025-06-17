@@ -132,6 +132,9 @@ scanApp <- function() {
             p("Filters peaks shown in the plot below",
               style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
             ),
+
+            # Conditional Interactive Analysis section for HC_HF Liver Genes
+            shiny::uiOutput(shiny::NS("app_controller", "interactive_analysis_section")),
             hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
             h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
               style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
@@ -227,17 +230,16 @@ scanApp <- function() {
 
     import_reactives <- importServer("import")
 
-    # Detect if current dataset is additive or interactive based on dataset name
+    # Detect if current dataset is additive or interactive based on dataset name and interaction type
     scan_type <- shiny::reactive({
-      shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
-      dataset_name <- input[[ns_app_controller("specific_dataset_selector")]]
+      dataset_name <- main_selected_dataset_group()
 
       if (is.null(dataset_name) || dataset_name == "") {
         return("additive") # Default to additive
       }
 
-      # Check if dataset name contains "interactive" or "diet_interactive"
-      if (grepl("interactive|diet_interactive", dataset_name, ignore.case = TRUE)) {
+      # Check if dataset name contains "interactive" or if interaction type is selected
+      if (grepl("interactive", dataset_name, ignore.case = TRUE)) {
         return("interactive")
       } else {
         return("additive")
@@ -264,7 +266,7 @@ scanApp <- function() {
       current_scan_type <- scan_type()
       default_threshold <- if (current_scan_type == "interactive") 10.5 else 7.5
       input[[ns_app_controller("LOD_thr")]] %||% default_threshold
-    })
+    }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
 
     # Reactive for selected chromosome (for zooming into specific chromosomes)
     selected_chromosome_rv <- shiny::reactive({
@@ -443,10 +445,36 @@ scanApp <- function() {
     main_selected_dataset_group <- shiny::reactive({
       shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
       selected_group <- input[[ns_app_controller("specific_dataset_selector")]]
+
+      # Force dependency on interaction_type_rv to ensure recalculation when it changes
+      interaction_type <- interaction_type_rv()
+
       if (is.null(selected_group) || !nzchar(selected_group) ||
         selected_group %in% c("Select category first", "No datasets in category")) {
         return(NULL)
       }
+
+      # Check if this is an HC_HF Liver Genes dataset and if an interaction is selected
+      if (grepl("HC_HF Liver Genes", selected_group, ignore.case = TRUE)) {
+        message(paste("main_selected_dataset_group: HC_HF Liver Genes detected, interaction_type is:", interaction_type))
+
+        if (!is.null(interaction_type) && interaction_type != "none") {
+          # Map interaction type to the interactive dataset name using the actual naming pattern
+          if (interaction_type == "sex") {
+            interactive_dataset <- "HC_HF Liver Genes, interactive (Sex)"
+          } else if (interaction_type == "diet") {
+            interactive_dataset <- "HC_HF Liver Genes, interactive (Diet)"
+          } else {
+            interactive_dataset <- selected_group # fallback
+          }
+
+          message(paste("Interactive analysis mode: Using dataset", interactive_dataset, "for interaction type:", interaction_type))
+          return(interactive_dataset)
+        } else {
+          message("main_selected_dataset_group: Interaction type is none or null, using additive dataset")
+        }
+      }
+
       message(paste("Main selected dataset group:", selected_group))
       return(selected_group)
     })
@@ -552,14 +580,26 @@ scanApp <- function() {
 
     # When the main selected dataset changes, clear the trait_for_lod_scan_rv
     # to prevent a scan from an old selection on a new plot type.
+    # BUT preserve trait selection when switching between HC_HF Liver Genes variants (additive <-> interactive)
     shiny::observeEvent(main_selected_dataset_group(),
       {
+        current_dataset <- main_selected_dataset_group()
         message("scanApp: Main dataset group changed. Clearing trait_for_lod_scan_rv.")
-        trait_for_lod_scan_rv(NULL) # Clear any active LOD scan
-        # Clear the search input selection (choices will be updated by the other observer)
-        updateSelectizeInput(session, ns_app_controller("trait_search_input"),
-          selected = character(0)
-        )
+
+        # Check if this is just switching between HC_HF Liver Genes variants
+        is_genes_dataset_switch <- !is.null(current_dataset) &&
+          grepl("HC_HF Liver Genes", current_dataset, ignore.case = TRUE)
+
+        if (!is_genes_dataset_switch) {
+          # Only clear trait selection for real dataset changes, not interaction type changes
+          trait_for_lod_scan_rv(NULL) # Clear any active LOD scan
+          # Clear the search input selection (choices will be updated by the other observer)
+          updateSelectizeInput(session, ns_app_controller("trait_search_input"),
+            selected = character(0)
+          )
+        } else {
+          message("scanApp: HC_HF Liver Genes dataset switch detected - preserving trait selection")
+        }
       },
       ignoreNULL = TRUE,
       ignoreInit = TRUE
@@ -591,6 +631,88 @@ scanApp <- function() {
       ignoreInit = TRUE
     )
 
+    # Store the current interaction type to preserve across UI re-renders
+    current_interaction_type_rv <- shiny::reactiveVal("none")
+
+    # Interactive Analysis section - show only for HC_HF Liver Genes datasets
+    output[[ns_app_controller("interactive_analysis_section")]] <- shiny::renderUI({
+      dataset_group <- main_selected_dataset_group()
+
+      # Show interactive analysis controls only for HC_HF Liver Genes datasets
+      if (!is.null(dataset_group) && grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
+        # Preserve the current selection when re-rendering
+        current_selection <- current_interaction_type_rv()
+
+        tagList(
+          hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
+          h5("🧬 Interactive Analysis", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
+          shiny::selectInput(
+            ns_app_controller("interaction_type"),
+            label = "Select interaction analysis:",
+            choices = c(
+              "None (Additive only)" = "none",
+              "Sex interaction" = "sex",
+              "Diet interaction" = "diet"
+            ),
+            selected = current_selection,
+            width = "100%"
+          ),
+          shiny::conditionalPanel(
+            condition = paste0("input['", ns_app_controller("interaction_type"), "'] != 'none'"),
+            div(
+              style = "margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #e74c3c;",
+              p("ℹ️ Interactive analysis will show comparative LOD plots when a trait is selected.",
+                style = "font-size: 12px; color: #6c757d; margin: 0;"
+              )
+            )
+          )
+        )
+      } else {
+        NULL # Don't show for other datasets
+      }
+    })
+
+    # Reactive to store the selected interaction type
+    interaction_type_rv <- shiny::reactive({
+      interaction_value <- input[[ns_app_controller("interaction_type")]] %||% "none"
+      message(paste("interaction_type_rv: Current value is:", interaction_value))
+      return(interaction_value)
+    })
+
+    # Observer to update stored interaction type when input changes
+    shiny::observeEvent(input[[ns_app_controller("interaction_type")]],
+      {
+        new_value <- input[[ns_app_controller("interaction_type")]]
+        if (!is.null(new_value)) {
+          current_interaction_type_rv(new_value)
+          message(paste("Updated stored interaction type to:", new_value))
+        }
+      },
+      ignoreNULL = TRUE
+    )
+
+    # Observer to trigger LOD scan when interaction type changes and we have a trait selected
+    shiny::observeEvent(interaction_type_rv(),
+      {
+        current_trait <- trait_for_lod_scan_rv()
+        interaction_type <- interaction_type_rv()
+
+        if (!is.null(current_trait) && !is.null(interaction_type)) {
+          message(paste("scanApp: Interaction type changed to:", interaction_type, "- re-triggering LOD scan for trait:", current_trait))
+
+          # Simply re-trigger the scan by setting the trait again
+          # The main_selected_dataset_group reactive will automatically return the new interactive dataset
+          current_trait_temp <- current_trait
+          trait_for_lod_scan_rv(NULL)
+
+          # Reset immediately - the reactive chain should handle the dataset change
+          trait_for_lod_scan_rv(current_trait_temp)
+        }
+      },
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
+    )
+
     # Observer for the clear LOD scan button
     shiny::observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
       message("scanApp: Clear LOD scan button clicked.")
@@ -608,7 +730,8 @@ scanApp <- function() {
       trait_to_scan = trait_for_lod_scan_rv, # Pass the reactive directly
       selected_dataset_group = main_selected_dataset_group, # Pass the reactive for the group
       import_reactives = import_reactives, # Pass the whole list of import reactives
-      main_par_inputs = active_main_par # Pass the combined main parameters (for LOD_thr, etc.)
+      main_par_inputs = active_main_par, # Pass the combined main parameters (for LOD_thr, etc.)
+      interaction_type_reactive = interaction_type_rv # Pass the interaction type reactive
     )
 
     # Render the LOD scan click details table
@@ -1131,7 +1254,7 @@ scanApp <- function() {
 }
 
 # Server logic for scan related inputs and plot
-scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactives, main_par_inputs) {
+scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactives, main_par_inputs, interaction_type_reactive = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -1197,6 +1320,13 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         stop("scanServer: import_reactives()$file_directory is not a valid data frame or missing 'group' column before calling trait_scan.")
       }
 
+      # DEBUG: Show what files will be used for this dataset
+      debug_files <- subset(file_dir_val, group == dataset_group_val & file_type == "scans")
+      message(paste0("scanServer: Files that will be used for dataset '", dataset_group_val, "':"))
+      for (i in 1:min(3, nrow(debug_files))) {
+        message(paste0("  - Chr ", debug_files$ID_code[i], ": ", basename(debug_files$File_path[i])))
+      }
+
       result <- tryCatch(
         {
           trait_scan(
@@ -1236,7 +1366,23 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         main_par_list$LOD_thr(), # Ensure the value of LOD_thr is available
         import_reactives()$markers
       )
-      QTL_plot_visualizer(scans(), current_trait_for_scan(), main_par_list$LOD_thr(), import_reactives()$markers)
+
+      # Debug QTL_plot_visualizer call
+      scan_data <- scans()
+      trait_val <- current_trait_for_scan()
+      lod_val <- main_par_list$LOD_thr()
+      markers_data <- import_reactives()$markers
+
+      message(paste("scanServer: About to call QTL_plot_visualizer with trait:", trait_val))
+      message(paste("scanServer: Scan data has", if (is.null(scan_data)) "NULL" else nrow(scan_data), "rows"))
+      message(paste("scanServer: LOD threshold:", lod_val))
+      message(paste("scanServer: Markers data has", if (is.null(markers_data)) "NULL" else nrow(markers_data), "rows"))
+
+      result <- QTL_plot_visualizer(scan_data, trait_val, lod_val, markers_data)
+
+      message(paste("scanServer: QTL_plot_visualizer completed, result has", if (is.null(result)) "NULL" else nrow(result), "rows"))
+
+      result
     })
 
     scan_table_chr <- shiny::reactive({
@@ -1260,37 +1406,228 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
         dplyr::filter(current_scan_table, chr == sel_chr_num)
       }
-    })
+    }) %>% shiny::debounce(200) # Debounce scan table chr filtering
+
+    # Reactive to store additive plot data for difference calculations
+    additive_scan_data_rv <- shiny::reactiveVal(NULL)
+
+    # Observer to store additive data when interaction type is "none"
+    shiny::observeEvent(list(scan_table_chr(), interaction_type_reactive),
+      {
+        if (!is.null(interaction_type_reactive)) {
+          interaction_type <- interaction_type_reactive()
+          if (!is.null(interaction_type) && interaction_type == "none") {
+            # Store chr-filtered data to match what will be used for interactive comparison
+            plot_data <- scan_table_chr()
+            if (!is.null(plot_data) && nrow(plot_data) > 0) {
+              additive_scan_data_rv(plot_data)
+              message("scanServer: Stored additive scan data with", nrow(plot_data), "rows")
+            }
+          }
+        }
+      },
+      ignoreInit = TRUE,
+      ignoreNULL = TRUE
+    )
 
     current_scan_plot_gg <- shiny::reactive({
+      message("scanServer: current_scan_plot_gg - Starting reactive")
+
+      # Get inputs with error handling
+      scan_data <- scan_table_chr()
       main_par_list <- main_par_inputs()
-      shiny::req(
-        scan_table_chr(),
-        main_par_list,
-        main_par_list$LOD_thr,
-        main_par_list$LOD_thr(),
-        main_par_list$selected_chr,
-        main_par_list$selected_chr()
+
+      # Early returns for missing data
+      if (is.null(scan_data) || nrow(scan_data) == 0) {
+        message("scanServer: current_scan_plot_gg - No scan data available")
+        return(NULL)
+      }
+
+      if (is.null(main_par_list) || is.null(main_par_list$LOD_thr) || is.null(main_par_list$selected_chr)) {
+        message("scanServer: current_scan_plot_gg - Missing main parameters")
+        return(NULL)
+      }
+
+      lod_threshold <- main_par_list$LOD_thr()
+      selected_chr <- main_par_list$selected_chr()
+
+      message(paste("scanServer: current_scan_plot_gg - Data:", nrow(scan_data), "rows, LOD:", lod_threshold, "Chr:", selected_chr))
+
+      tryCatch(
+        {
+          plot_result <- ggplot_qtl_scan(scan_data, lod_threshold, selected_chr)
+          message("scanServer: current_scan_plot_gg - Plot created successfully")
+          return(plot_result)
+        },
+        error = function(e) {
+          message("scanServer: current_scan_plot_gg - Error creating plot: ", e$message)
+          return(NULL)
+        }
       )
-      ggplot_qtl_scan(scan_table_chr(), main_par_list$LOD_thr(), main_par_list$selected_chr())
+    }) %>% shiny::debounce(200) # Debounce to prevent rapid re-computations
+
+    # Reactive to create difference plot (interactive - additive)
+    difference_plot_gg <- shiny::reactive({
+      if (is.null(interaction_type_reactive)) {
+        return(NULL)
+      }
+
+      interaction_type <- interaction_type_reactive()
+
+      # Only create difference plot for interactive datasets
+      if (is.null(interaction_type) || interaction_type == "none") {
+        return(NULL)
+      }
+
+      interactive_data <- scan_table_chr()
+      additive_data <- additive_scan_data_rv()
+
+      # Check if both datasets are available
+      if (is.null(interactive_data) || is.null(additive_data) ||
+        nrow(interactive_data) == 0 || nrow(additive_data) == 0) {
+        message(
+          "scanServer: Missing data for difference plot - Interactive: ",
+          if (is.null(interactive_data)) "NULL" else nrow(interactive_data),
+          " rows, Additive: ",
+          if (is.null(additive_data)) "NULL" else nrow(additive_data), " rows"
+        )
+        return(NULL)
+      }
+
+      message("scanServer: Creating difference plot - Interactive data:", nrow(interactive_data), "rows")
+      message("scanServer: Creating difference plot - Additive data:", nrow(additive_data), "rows")
+
+      # Debug data info
+      message("scanServer: Interactive LOD range:", min(interactive_data$LOD, na.rm = TRUE), "to", max(interactive_data$LOD, na.rm = TRUE))
+      message("scanServer: Additive LOD range:", min(additive_data$LOD, na.rm = TRUE), "to", max(additive_data$LOD, na.rm = TRUE))
+
+      # Create difference data with error handling
+      tryCatch(
+        {
+          # Simple check - both datasets should have same number of rows and same markers
+          if (nrow(interactive_data) != nrow(additive_data)) {
+            message("scanServer: Row count mismatch - Interactive: ", nrow(interactive_data), ", Additive: ", nrow(additive_data))
+            return(NULL)
+          }
+
+          message("scanServer: Both datasets have", nrow(interactive_data), "rows")
+
+          # Simple element-wise subtraction: interactive LOD - additive LOD
+          # Handle NA values properly
+          lod_difference <- interactive_data$LOD - additive_data$LOD
+
+          # Check for NA values
+          na_count <- sum(is.na(lod_difference))
+          if (na_count > 0) {
+            message("scanServer: Found ", na_count, " NA values in difference calculation")
+            # Replace NA values with 0 for plotting
+            lod_difference[is.na(lod_difference)] <- 0
+          }
+
+          # Create difference plot data by copying interactive structure and replacing LOD
+          diff_plot_data <- interactive_data
+          diff_plot_data$LOD <- lod_difference
+
+          message("scanServer: Difference plot data created with", nrow(diff_plot_data), "rows")
+          message("scanServer: LOD difference range:", min(diff_plot_data$LOD, na.rm = TRUE), "to", max(diff_plot_data$LOD, na.rm = TRUE))
+
+          # Get main par inputs for chromosome selection
+          main_par_list <- main_par_inputs()
+          selected_chr <- main_par_list$selected_chr()
+
+          # Create difference plot using same function - pass the data frame, not just the vector
+          diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chr) # Use -Inf threshold to show all differences
+
+          # Modify plot title to indicate it's a difference plot
+          if (!is.null(diff_plot)) {
+            diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", stringr::str_to_title(interaction_type), "- Additive"))
+          }
+
+          message("scanServer: Difference plot created successfully")
+          return(diff_plot)
+        },
+        error = function(e) {
+          message("scanServer: Error creating difference plot: ", e$message)
+          return(NULL)
+        }
+      )
+    }) %>% shiny::debounce(250) # Debounce to prevent rapid re-computations for difference plot
+
+    # Simple UI state check
+    show_stacked_plots <- shiny::reactive({
+      if (is.null(interaction_type_reactive)) {
+        return(FALSE)
+      }
+      interaction_type <- interaction_type_reactive()
+      !is.null(interaction_type) && interaction_type != "none"
     })
 
     output$scan_plot_ui_render <- shiny::renderUI({
-      shiny::req(current_scan_plot_gg()) # This will now wait until ggplot_qtl_scan is successful
-      plotly::plotlyOutput(ns("render_plotly_plot"),
-        width = paste0(plot_width_rv(), "px"),
-        height = paste0(plot_height_rv(), "px")
-      ) |>
-        shinycssloaders::withSpinner(type = 8, color = "#3498db")
+      message("scanServer: scan_plot_ui_render - Starting UI render")
+
+      # Only depend on what we absolutely need
+      plot_gg <- current_scan_plot_gg()
+      shiny::req(plot_gg)
+
+      use_stacked <- show_stacked_plots()
+
+      if (use_stacked) {
+        # Show both interactive and difference plots stacked vertically
+        message("scanServer: scan_plot_ui_render - Creating stacked plots for interactive analysis")
+
+        # Calculate height for each plot (split the total height)
+        individual_plot_height <- plot_height_rv() / 2
+
+        ui_result <- shiny::tagList(
+          # Interactive LOD plot (top)
+          shiny::div(
+            style = paste0("margin-bottom: 10px;"),
+            shiny::h5("Interactive LOD Scan", style = "text-align: center; margin-bottom: 5px;"),
+            plotly::plotlyOutput(ns("render_plotly_plot"),
+              width = paste0(plot_width_rv(), "px"),
+              height = paste0(individual_plot_height, "px")
+            ) |>
+              shinycssloaders::withSpinner(type = 8, color = "#3498db")
+          ),
+          # Difference plot (bottom)
+          shiny::div(
+            shiny::h5("LOD Difference (Interactive - Additive)", style = "text-align: center; margin-bottom: 5px;"),
+            plotly::plotlyOutput(ns("render_difference_plot"),
+              width = paste0(plot_width_rv(), "px"),
+              height = paste0(individual_plot_height, "px")
+            ) |>
+              shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
+          )
+        )
+      } else {
+        # Show only the main plot (additive or regular datasets)
+        message("scanServer: scan_plot_ui_render - Creating single plot")
+        ui_result <- plotly::plotlyOutput(ns("render_plotly_plot"),
+          width = paste0(plot_width_rv(), "px"),
+          height = paste0(plot_height_rv(), "px")
+        ) |>
+          shinycssloaders::withSpinner(type = 8, color = "#3498db")
+      }
+
+      message("scanServer: scan_plot_ui_render - UI created successfully")
+      return(ui_result)
     })
 
     output$render_plotly_plot <- plotly::renderPlotly({
-      shiny::req(current_scan_plot_gg()) # Ensure ggplot object is ready
-      plt <- plotly::ggplotly(current_scan_plot_gg(),
+      message("scanServer: render_plotly_plot - Starting plotly render")
+
+      plot_gg <- current_scan_plot_gg()
+      shiny::req(plot_gg)
+
+      message(paste("scanServer: render_plotly_plot - Got plot object:", !is.null(plot_gg)))
+
+      message("scanServer: render_plotly_plot - Creating ggplotly")
+      plt <- plotly::ggplotly(plot_gg,
         source = ns("qtl_scan_plotly"),
         tooltip = c("x", "y", "chr")
       )
 
+      message("scanServer: render_plotly_plot - Configuring plotly layout")
       plt <- plt %>% # Use the new pipe operator
         plotly::layout(
           dragmode = "zoom",
@@ -1299,11 +1636,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             text = NULL
           ),
           xaxis = list(
-            title = current_scan_plot_gg()$labels$x,
+            title = plot_gg$labels$x,
             fixedrange = FALSE # Allow x-axis zooming
           ),
           yaxis = list(
-            title = current_scan_plot_gg()$labels$y,
+            title = plot_gg$labels$y,
             fixedrange = TRUE # Prevent y-axis zooming - always show full height
           )
         ) %>% # Use the new pipe operator
@@ -1317,6 +1654,62 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
       # Register the plotly_click event here for the LOD scan plot
       plt <- plotly::event_register(plt, "plotly_click")
+      message("scanServer: render_plotly_plot - Plotly plot completed successfully")
+      plt
+    })
+
+    # Render function for the difference plot
+    output$render_difference_plot <- plotly::renderPlotly({
+      message("scanServer: render_difference_plot - Starting difference plotly render")
+
+      # Only render for interactive datasets
+      shiny::req(show_stacked_plots())
+
+      diff_plot_gg <- difference_plot_gg()
+      message(paste("scanServer: render_difference_plot - Got difference plot object:", !is.null(diff_plot_gg)))
+
+      if (is.null(diff_plot_gg)) {
+        # Show a placeholder when no difference plot is available
+        placeholder_plot <- ggplot2::ggplot() +
+          ggplot2::theme_void() +
+          ggplot2::labs(title = "No difference plot available") +
+          ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
+
+        return(plotly::ggplotly(placeholder_plot))
+      }
+
+      message("scanServer: render_difference_plot - Creating ggplotly for difference plot")
+      plt <- plotly::ggplotly(diff_plot_gg,
+        source = ns("difference_plotly"),
+        tooltip = c("x", "y", "chr")
+      )
+
+      message("scanServer: render_difference_plot - Configuring difference plotly layout")
+      plt <- plt %>%
+        plotly::layout(
+          dragmode = "zoom",
+          hovermode = "closest",
+          title = list(
+            text = NULL
+          ),
+          xaxis = list(
+            title = diff_plot_gg$labels$x,
+            fixedrange = FALSE # Allow x-axis zooming
+          ),
+          yaxis = list(
+            title = diff_plot_gg$labels$y,
+            fixedrange = TRUE # Prevent y-axis zooming - always show full height
+          )
+        ) %>%
+        plotly::config(
+          displaylogo = FALSE,
+          modeBarButtonsToRemove = c(
+            "select2d", "lasso2d", "hoverClosestCartesian",
+            "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"
+          )
+        )
+
+      message("scanServer: render_difference_plot - Difference plotly plot completed successfully")
       plt
     })
 
