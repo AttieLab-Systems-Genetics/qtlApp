@@ -26,7 +26,6 @@ source("R/scanApp_monolithic_backup.R") # Keep for scanServer function
 # Removed peakApp.R - functionality moved to alleleEffectsModule.R
 # Removed scanlyApp.R - functionality integrated into scanPlotModule.R
 # Removed qtlApp.R - old architecture, replaced by scanApp.R
-source("R/mergeApp.R")
 source("R/downloadApp.R")
 source("R/cisTransPlotApp.R")
 source("R/manhattanPlotApp.R")
