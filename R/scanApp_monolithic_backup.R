@@ -317,14 +317,16 @@ scanApp <- function() {
         return(NULL)
       }
 
-      shiny::req(main_selected_dataset_group(), import_reactives())
+      shiny::req(mapped_dataset_for_interaction(), import_reactives())
 
-      dataset_val <- main_selected_dataset_group()
+      dataset_val <- mapped_dataset_for_interaction()
 
       message(paste("scanApp: Finding peaks for trait:", trait_val, "in dataset:", dataset_val))
 
       # Determine trait type for this dataset to pass to peak_finder
-      trait_type_val <- get_trait_type(import_reactives(), dataset_val)
+      # Use the base dataset name for trait type determination
+      base_dataset <- main_selected_dataset_group()
+      trait_type_val <- get_trait_type(import_reactives(), base_dataset)
 
       # Use peak_finder to get peaks for this specific trait
       tryCatch(
@@ -483,33 +485,45 @@ scanApp <- function() {
       shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
       selected_group <- input[[ns_app_controller("specific_dataset_selector")]]
 
-      # Force dependency on interaction_type_rv to ensure recalculation when it changes
-      interaction_type <- interaction_type_rv()
+      # Remove the forced dependency on interaction_type_rv to prevent circular reactive chain
+      # Instead, we'll handle interaction type mapping in a separate reactive
 
       if (is.null(selected_group) || !nzchar(selected_group) ||
         selected_group %in% c("Select category first", "No datasets in category")) {
         return(NULL)
       }
 
-      # Check if this is an HC_HF dataset that supports interactive analysis
-      is_hc_hf_dataset <- grepl("^HC_HF", selected_group, ignore.case = TRUE)
+      message(paste("Main selected dataset group:", selected_group))
+      return(selected_group)
+    })
 
-      if (is_hc_hf_dataset) {
-        message(paste("main_selected_dataset_group: HC_HF dataset detected:", selected_group, "interaction_type is:", interaction_type))
+    # New reactive that handles the dataset name mapping for interactive analysis
+    mapped_dataset_for_interaction <- shiny::reactive({
+      base_dataset <- main_selected_dataset_group()
+      interaction_type <- interaction_type_rv()
+
+      if (is.null(base_dataset)) {
+        return(NULL)
+      }
+
+      # Check if this is an HC_HF dataset that supports interactive analysis
+      is_hc_hf_dataset <- grepl("^HC_HF", base_dataset, ignore.case = TRUE)
+
+      if (is_hc_hf_dataset && !is.null(interaction_type) && interaction_type != "none") {
+        message(paste("mapped_dataset_for_interaction: HC_HF dataset detected:", base_dataset, "interaction_type is:", interaction_type))
 
         # Use helper function to get the appropriate dataset name
-        interactive_dataset <- get_interactive_dataset_name(selected_group, interaction_type)
+        interactive_dataset <- get_interactive_dataset_name(base_dataset, interaction_type)
 
-        if (interactive_dataset != selected_group) {
+        if (interactive_dataset != base_dataset) {
           message(paste("Interactive analysis mode: Using dataset", interactive_dataset, "for interaction type:", interaction_type))
           return(interactive_dataset)
         } else {
-          message("main_selected_dataset_group: Interaction type is none or null, using additive dataset")
+          message("mapped_dataset_for_interaction: Interaction type is none or null, using additive dataset")
         }
       }
 
-      message(paste("Main selected dataset group:", selected_group))
-      return(selected_group)
+      return(base_dataset)
     })
 
     selected_dataset_category_reactive <- shiny::reactive({
@@ -742,27 +756,8 @@ scanApp <- function() {
       ignoreNULL = TRUE
     )
 
-    # Observer to trigger LOD scan when interaction type changes and we have a trait selected
-    shiny::observeEvent(interaction_type_rv(),
-      {
-        current_trait <- trait_for_lod_scan_rv()
-        interaction_type <- interaction_type_rv()
-
-        if (!is.null(current_trait) && !is.null(interaction_type)) {
-          message(paste("scanApp: Interaction type changed to:", interaction_type, "- re-triggering LOD scan for trait:", current_trait))
-
-          # Simply re-trigger the scan by setting the trait again
-          # The main_selected_dataset_group reactive will automatically return the new interactive dataset
-          current_trait_temp <- current_trait
-          trait_for_lod_scan_rv(NULL)
-
-          # Reset immediately - the reactive chain should handle the dataset change
-          trait_for_lod_scan_rv(current_trait_temp)
-        }
-      },
-      ignoreNULL = TRUE,
-      ignoreInit = TRUE
-    )
+    # NOTE: Removed the observer that re-triggered LOD scan when interaction type changes
+    # The mapped_dataset_for_interaction reactive now handles dataset switching automatically
 
     # Observer for the clear LOD scan button
     shiny::observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
@@ -779,7 +774,7 @@ scanApp <- function() {
     scan_module_outputs <- scanServer(
       id = ns_app_controller("scan_plot_module"),
       trait_to_scan = trait_for_lod_scan_rv, # Pass the reactive directly
-      selected_dataset_group = main_selected_dataset_group, # Pass the reactive for the group
+      selected_dataset_group = mapped_dataset_for_interaction, # Use mapped dataset for interactive analysis
       import_reactives = import_reactives, # Pass the whole list of import reactives
       main_par_inputs = active_main_par, # Pass the combined main parameters (for LOD_thr, etc.)
       interaction_type_reactive = interaction_type_rv # Pass the interaction type reactive
