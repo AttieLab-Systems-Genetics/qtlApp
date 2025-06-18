@@ -128,6 +128,61 @@ moduleServer <- function(id, param1_reactive, param2_reactive, ...) {
 - Use `shiny::req()` to prevent premature reactive execution
 - Clear reactive flags and use timed resets for UI state management
 
+#### Preventing Double Firing in UI Reactive Chains
+
+**Problem**: UI components that depend on reactive values which in turn depend on UI inputs can create circular reactive dependencies, causing UI to fire multiple times.
+
+**Solution Pattern**: Separate base reactives from mapped/derived reactives to break circular dependencies.
+
+```r
+# WRONG: Circular dependency causes double firing
+main_reactive <- shiny::reactive({
+  base_value <- input$base_selector
+  ui_dependent_value <- input$ui_selector  # UI depends on this reactive!
+  # Process both values together
+  process_values(base_value, ui_dependent_value)
+})
+
+# UI that depends on main_reactive creates circular dependency
+output$ui_section <- shiny::renderUI({
+  result <- main_reactive()  # This can trigger when input$ui_selector changes
+  # Render UI that includes input$ui_selector
+})
+
+# CORRECT: Separate base and mapped reactives
+base_reactive <- shiny::reactive({
+  base_value <- input$base_selector
+  # NO dependency on UI-dependent inputs
+  return(base_value)
+})
+
+mapped_reactive <- shiny::reactive({
+  base_value <- base_reactive()
+  ui_value <- input$ui_selector
+  # Only this reactive depends on UI input
+  process_values(base_value, ui_value)
+})
+
+# UI depends only on base reactive (no circular dependency)
+output$ui_section <- shiny::renderUI({
+  base_value <- base_reactive()  # Independent of input$ui_selector
+  # Render UI safely
+})
+
+# Data processing uses mapped reactive
+process_data <- function() {
+  mapped_value <- mapped_reactive()  # Gets the mapped result
+  # Use mapped value for actual processing
+}
+```
+
+**Key Principles**:
+
+- Base reactives should be independent of UI elements they influence
+- Create separate mapping reactives for conditional logic
+- UI renderUI functions should depend only on stable base reactives
+- Use mapped reactives for data processing that needs conditional values
+
 #### Trait Preservation and Auto-Search
 
 - Preserve trait selection when switching between compatible datasets (e.g., additive ↔ interactive)

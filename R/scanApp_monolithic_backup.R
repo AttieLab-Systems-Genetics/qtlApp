@@ -76,11 +76,9 @@ scanApp <- function() {
 
             # Dataset selection
             h5("Dataset Selection", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
-            shiny::selectInput(shiny::NS("app_controller", "specific_dataset_selector"),
-              "Select Specific Dataset:",
-              choices = c("Loading..." = ""),
-              width = "100%"
-            ),
+
+            # Conditional dataset selector - hidden for Genes category, shown for others
+            shiny::uiOutput(shiny::NS("app_controller", "dataset_selection_ui")),
 
             # Trait search section
             hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
@@ -133,8 +131,13 @@ scanApp <- function() {
               style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
             ),
 
-            # Conditional Interactive Analysis section for HC_HF datasets
-            shiny::uiOutput(shiny::NS("app_controller", "interactive_analysis_section")),
+            # Peak Selection Dropdown for future peak differences analysis
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
+            h5("🎯 Peak Analysis", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+            shiny::uiOutput(shiny::NS("app_controller", "peak_selection_sidebar")),
+            p("Select peaks for detailed analysis and future comparison features",
+              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
+            ),
             hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
             h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
               style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
@@ -456,6 +459,67 @@ scanApp <- function() {
       }
     })
 
+    # Conditional dataset selection UI - show info for HC_HF categories, selector for others
+    output[[ns_app_controller("dataset_selection_ui")]] <- shiny::renderUI({
+      selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
+
+      if (is.null(selected_cat) || !nzchar(selected_cat)) {
+        return(div(
+          style = "padding: 15px; text-align: center; color: #7f8c8d; background: #f8f9fa; border-radius: 5px; border: 1px solid #e9ecef;",
+          p("Select a dataset category above", style = "margin: 0; font-style: italic;")
+        ))
+      }
+
+      # Show information panel for categories that have HC_HF auto-selection
+      if (selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
+        # Determine the dataset name and interaction info based on category
+        dataset_info <- switch(selected_cat,
+          "Liver Genes" = list(
+            name = "HC_HF Liver Genes (Additive)",
+            interaction_note = "Use interaction controls for Sex/Diet effects."
+          ),
+          "Liver Lipids" = list(
+            name = "HC_HF Liver Lipids (Additive)",
+            interaction_note = "Use interaction controls for Diet effects."
+          ),
+          "Clinical Traits" = list(
+            name = "HC_HF Clinical Traits (Additive)",
+            interaction_note = "Use interaction controls for Sex/Diet effects."
+          ),
+          "Plasma Metabolites" = list(
+            name = "HC_HF Plasma Metabolites",
+            interaction_note = "No interactive analysis available for this dataset."
+          ),
+          "Liver Isoforms" = list(
+            name = "HC_HF Liver Isoforms",
+            interaction_note = "No interactive analysis available for this dataset."
+          )
+        )
+
+        return(div(
+          style = "padding: 15px; background: #e8f5e8; border-radius: 5px; border-left: 4px solid #28a745;",
+          div(
+            style = "display: flex; align-items: center; gap: 10px;",
+            span("✓", style = "color: #28a745; font-weight: bold; font-size: 16px;"),
+            div(
+              h6(dataset_info$name, style = "color: #155724; margin: 0; font-weight: bold;"),
+              p(paste("Auto-selected for streamlined analysis.", dataset_info$interaction_note),
+                style = "color: #155724; margin: 5px 0 0 0; font-size: 12px;"
+              )
+            )
+          )
+        ))
+      } else {
+        # For other categories, show normal selector
+        return(shiny::selectInput(
+          ns_app_controller("specific_dataset_selector"),
+          "Select Specific Dataset:",
+          choices = c("Loading..." = ""),
+          width = "100%"
+        ))
+      }
+    })
+
     shiny::observe({
       shiny::req(file_index_dt(), input[[ns_app_controller("dataset_category_selector")]])
       selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
@@ -464,15 +528,51 @@ scanApp <- function() {
         datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
         specific_datasets_choices <- unique(datasets_in_category$group)
 
-        if (length(specific_datasets_choices) > 0) {
+        # Auto-select HC_HF datasets for all categories that have them
+        hc_hf_dataset <- NULL
+
+        if (selected_cat == "Liver Genes") {
+          # Look for HC_HF Liver Genes dataset (additive version)
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Genes", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Liver Lipids") {
+          # Look for HC_HF Liver Lipids dataset (additive version)
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Lipid", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Clinical Traits") {
+          # Look for HC_HF Clinical Traits dataset (additive version)
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Clinical", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Plasma Metabolites") {
+          # Look for HC_HF Plasma Metabolites dataset
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Liver Isoforms") {
+          # Look for HC_HF Liver Isoforms dataset
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        }
+
+        if (!is.null(hc_hf_dataset) && length(hc_hf_dataset) > 0) {
+          message(paste("Auto-selecting HC_HF dataset for", selected_cat, ":", hc_hf_dataset[1]))
+          # Set choices to just the HC_HF dataset (hide the dropdown essentially)
           shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
-            choices = stats::setNames(specific_datasets_choices, specific_datasets_choices),
-            selected = specific_datasets_choices[1]
+            choices = stats::setNames(hc_hf_dataset[1], hc_hf_dataset[1]),
+            selected = hc_hf_dataset[1]
           )
         } else {
-          shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
-            choices = c("No datasets in category" = ""), selected = ""
-          )
+          # Fallback to normal behavior if HC_HF dataset not found
+          message(paste("Warning: No HC_HF dataset found for", selected_cat, ", showing all options"))
+          if (length(specific_datasets_choices) > 0) {
+            shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
+              choices = stats::setNames(specific_datasets_choices, specific_datasets_choices),
+              selected = specific_datasets_choices[1]
+            )
+          } else {
+            shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
+              choices = c("No datasets in category" = ""), selected = ""
+            )
+          }
         }
       } else {
         shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
@@ -482,6 +582,44 @@ scanApp <- function() {
     })
 
     main_selected_dataset_group <- shiny::reactive({
+      selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
+
+      # Auto-select HC_HF datasets for categories that have them
+      if (!is.null(selected_cat) && selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
+        shiny::req(file_index_dt())
+        datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
+        specific_datasets_choices <- unique(datasets_in_category$group)
+
+        # Find the appropriate HC_HF dataset based on category
+        hc_hf_dataset <- NULL
+
+        if (selected_cat == "Liver Genes") {
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Genes", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Liver Lipids") {
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Lipid", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Clinical Traits") {
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Clinical", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Plasma Metabolites") {
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        } else if (selected_cat == "Liver Isoforms") {
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
+            !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+        }
+
+        if (!is.null(hc_hf_dataset) && length(hc_hf_dataset) > 0) {
+          message(paste("Auto-selected dataset for", selected_cat, "category:", hc_hf_dataset[1]))
+          return(hc_hf_dataset[1])
+        } else {
+          message(paste("Warning: No HC_HF dataset found in", selected_cat, "category"))
+          return(NULL)
+        }
+      }
+
+      # Normal handling for other categories
       shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
       selected_group <- input[[ns_app_controller("specific_dataset_selector")]]
 
@@ -678,9 +816,6 @@ scanApp <- function() {
       ignoreInit = TRUE
     )
 
-    # Store the current interaction type to preserve across UI re-renders
-    current_interaction_type_rv <- shiny::reactiveVal("none")
-
     # Interactive Analysis section - show for all HC_HF datasets
     output[[ns_app_controller("interactive_analysis_section")]] <- shiny::renderUI({
       dataset_group <- main_selected_dataset_group()
@@ -750,7 +885,19 @@ scanApp <- function() {
         new_value <- input[[ns_app_controller("interaction_type")]]
         if (!is.null(new_value)) {
           current_interaction_type_rv(new_value)
-          message(paste("Updated stored interaction type to:", new_value))
+          message(paste("Updated main UI interaction type to:", new_value))
+        }
+      },
+      ignoreNULL = TRUE
+    )
+
+    # Observer to update sidebar interaction type when input changes (independent of main UI)
+    shiny::observeEvent(input[[ns_app_controller("sidebar_interaction_type")]],
+      {
+        new_value <- input[[ns_app_controller("sidebar_interaction_type")]]
+        if (!is.null(new_value)) {
+          sidebar_interaction_type_rv(new_value)
+          message(paste("Updated sidebar interaction type to:", new_value, "(for future peak comparison)"))
         }
       },
       ignoreNULL = TRUE
@@ -828,14 +975,20 @@ scanApp <- function() {
           id = "lod_scan_plot_card",
           bslib::card_header(paste("LOD Scan for Trait:", trait_for_lod_scan_rv())),
           bslib::card_body(
-            # Chromosome selector
+            # Interactive Analysis section for HC_HF datasets - moved from sidebar
+            shiny::uiOutput(ns_app_controller("interactive_analysis_section")),
+
+            # Compact chromosome selector
             div(
-              style = "margin-bottom: 15px; background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #bdc3c7;",
+              style = "margin-bottom: 15px; background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #bdc3c7;",
               div(
-                style = "display: flex; align-items: center; gap: 15px; flex-wrap: wrap;",
+                style = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap;",
                 div(
-                  style = "flex: 1; min-width: 200px;",
-                  h6("🔍 Chromosome View", style = "color: #2c3e50; margin: 0 0 8px 0; font-weight: bold;"),
+                  style = "flex: 0 0 auto;",
+                  h6("🔍 Chr:", style = "color: #2c3e50; margin: 0; font-weight: bold; font-size: 12px;")
+                ),
+                div(
+                  style = "flex: 0 0 120px;",
                   shiny::selectInput(
                     ns_app_controller("selected_chr"),
                     label = NULL,
@@ -849,18 +1002,18 @@ scanApp <- function() {
                   )
                 ),
                 div(
-                  style = "display: flex; align-items: end; gap: 10px;",
+                  style = "flex: 0 0 auto; display: flex; gap: 5px;",
                   shiny::actionButton(
                     ns_app_controller("zoom_to_chr"),
-                    "🔍 Zoom to Chromosome",
-                    class = "btn btn-primary",
-                    style = "background: #3498db; border: none; color: white; font-weight: bold;"
+                    "🔍 Zoom",
+                    class = "btn btn-sm btn-primary",
+                    style = "background: #3498db; border: none; color: white; font-size: 11px; padding: 4px 8px;"
                   ),
                   shiny::actionButton(
                     ns_app_controller("reset_chr_view"),
-                    "🌐 Show All",
-                    class = "btn btn-secondary",
-                    style = "background: #7f8c8d; border: none; color: white;"
+                    "🌐 All",
+                    class = "btn btn-sm btn-secondary",
+                    style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
                   )
                 )
               )
@@ -1295,6 +1448,90 @@ scanApp <- function() {
           yaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
         )
     })
+
+    # Store the current interaction type to preserve across UI re-renders
+    current_interaction_type_rv <- shiny::reactiveVal("none")
+
+    # Store the sidebar interaction type separately (for future peak comparison features)
+    sidebar_interaction_type_rv <- shiny::reactiveVal("none")
+
+    # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
+    output[[ns_app_controller("peak_selection_sidebar")]] <- shiny::renderUI({
+      dataset_group <- main_selected_dataset_group()
+      available_peaks <- available_peaks_for_trait()
+
+      # Show interaction analysis controls for all HC_HF datasets (independent of main UI)
+      if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
+        # Determine what interaction types are available for this dataset
+        available_interactions <- c("None (Additive only)" = "none")
+
+        # Check what interactions are actually available based on dataset type
+        if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex",
+            "Diet interaction" = "diet"
+          )
+        } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Diet interaction" = "diet"
+          )
+          # No Sex interaction for Liver Lipids
+        } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex",
+            "Diet interaction" = "diet"
+          )
+        }
+        # No interactions available for Plasma metabolites
+
+        peak_section <- NULL
+        if (!is.null(available_peaks) && nrow(available_peaks) > 0) {
+          # Create choices for dropdown with peak info
+          peak_choices <- setNames(
+            available_peaks$marker,
+            paste0(available_peaks$marker, " (Chr", available_peaks$qtl_chr, ", LOD:", round(available_peaks$qtl_lod, 2), ")")
+          )
+
+          peak_section <- tagList(
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
+            h6("Select Peak:", style = "color: #2c3e50; margin-bottom: 8px; font-weight: bold; font-size: 12px;"),
+            shiny::selectInput(
+              ns_app_controller("sidebar_peak_selector"),
+              label = NULL,
+              choices = peak_choices,
+              selected = peak_choices[1], # Default to highest peak
+              width = "100%"
+            )
+          )
+        }
+
+        tagList(
+          h6("Interaction Analysis:", style = "color: #2c3e50; margin-bottom: 8px; font-weight: bold; font-size: 12px;"),
+          shiny::selectInput(
+            ns_app_controller("sidebar_interaction_type"),
+            label = NULL,
+            choices = available_interactions,
+            selected = "none",
+            width = "100%"
+          ),
+          peak_section,
+          div(
+            style = "margin-top: 10px; padding: 8px; background-color: #e8f4fd; border-radius: 3px; border-left: 3px solid #3498db;",
+            p("🔬 Independent controls for future peak comparison across interaction conditions",
+              style = "font-size: 10px; color: #2c3e50; margin: 0; font-style: italic;"
+            )
+          )
+        )
+      } else {
+        div(
+          style = "padding: 10px; text-align: center; color: #7f8c8d;",
+          p("No peak analysis available", style = "margin: 0; font-size: 12px;"),
+          p("Select an HC_HF dataset to enable analysis", style = "margin: 5px 0 0 0; font-size: 10px; font-style: italic;")
+        )
+      }
+    })
+
+    # Interactive Analysis section - show for all HC_HF datasets
   }
   shiny::shinyApp(ui = ui, server = server)
 }
