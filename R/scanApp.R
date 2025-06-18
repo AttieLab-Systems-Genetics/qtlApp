@@ -1,286 +1,473 @@
-#' Refactored Scan App Module
+#' Modular Scan App
 #'
-#' This is a streamlined version that uses existing modules:
-#' - mainParApp for dataset selection and trait search
-#' - chromosomeControlsApp for chromosome zoom functionality
-#' - downloadApp for plot downloads
-#' - existing plot modules (manhattanPlotApp, cisTransPlotApp, scanlyApp)
+#' @param id shiny identifier
 #'
-#' @importFrom shiny moduleServer reactive renderText req selectInput shinyApp
-#'             uiOutput observeEvent tags
-#' @importFrom bslib page_sidebar sidebar layout_columns card card_header card_body nav_panel nav_pills
+#' @importFrom DT DTOutput renderDT datatable
+#' @importFrom shiny actionButton h4 moduleServer NS plotOutput reactive reactiveVal
+#'             reactiveValues renderPlot renderUI req setProgress shinyApp selectInput
+#'             uiOutput withProgress div downloadButton numericInput tagList
+#'             observeEvent updateNumericInput downloadHandler tabsetPanel tabPanel
+#'             observe
+#' @importFrom plotly plotlyOutput renderPlotly ggplotly event_data layout config
+#' @importFrom bslib card card_header page_sidebar sidebar layout_columns navset_tab nav_panel card_body
+#' @importFrom shinycssloaders withSpinner
+#' @importFrom dplyr across mutate where filter select
+#' @importFrom stringr str_split str_remove
+#' @importFrom ggplot2 ggsave
 #' @importFrom shinyjs useShinyjs
-#' @importFrom htmltools tagList div h4 hr h5
+#' @importFrom htmltools tagList tags
+#' @importFrom stats setNames
+#'
 #' @export
 scanApp <- function() {
+  # Source required module files
+  source("R/importApp.R")
+  source("R/datasetSelectionModule.R")
+  source("R/traitSearchModule.R")
+  source("R/interactiveAnalysisModule.R")
+  source("R/scanPlotModule.R")
+  source("R/alleleEffectsModule.R")
+  source("R/manhattanPlotApp.R")
+  source("R/cisTransPlotApp.R")
+  source("R/profilePlotApp.R")
+  source("R/correlationApp.R")
+
+  # Source helper functions
+  source("R/helpers.R")
+  source("R/data_handling.R")
+  source("R/scanApp_monolithic_backup.R")
+
   # Ensure ui_styles.R is sourced
   if (!exists("custom_css", mode = "character")) {
     source("R/ui_styles.R")
   }
 
-  # Source required modules
-  if (!exists("mainParServer", mode = "function")) {
-    source("R/mainParApp.R")
-  }
-  if (!exists("chromosomeControlsServer", mode = "function")) {
-    source("R/chromosomeControlsApp.R")
-  }
-  if (!exists("downloadServer", mode = "function")) {
-    source("R/downloadApp.R")
-  }
-  if (!exists("plot_null", mode = "function")) {
-    source("R/plot_null.R")
-  }
-  if (!exists("profilePlotServer", mode = "function")) {
-    source("R/profilePlotApp.R")
-  }
-  if (!exists("correlationServer", mode = "function")) {
-    source("R/correlationApp.R")
-  }
-
   ui <- bslib::page_sidebar(
     shinyjs::useShinyjs(),
-    tags$head(tags$style(custom_css)),
-    create_title_panel(
-      "QTL Scan Visualizer",
-      "Interactive visualization tool using modular architecture"
+    tags$head(
+      # Viewport meta tag for responsive design
+      tags$meta(name = "viewport", content = "width=device-width, initial-scale=1.0, user-scalable=yes"),
+
+      # Autosizing CSS and JavaScript
+      tags$link(rel = "stylesheet", type = "text/css", href = "autosize.css"),
+      tags$script(src = "autosize.js"),
+
+      # Custom app styles
+      tags$style(custom_css)
     ),
+
+    # Dataset selection UI (includes top navigation bar)
+    datasetSelectionUI("dataset_selection"),
     sidebar = bslib::sidebar(
-      width = 1500, # Slightly wider to accommodate new controls
+      width = 600, # Increased sidebar width for better screen coverage
+      # Tabbed sidebar content
+      bslib::navset_pill(
+        id = "sidebar_tabs",
 
-      # Data import controls
-      importInput("import"),
-      shiny::hr(),
+        # Tab 1: Dataset Selection and Controls
+        bslib::nav_panel(
+          "Data Search",
+          # Trait search module
+          traitSearchUI("trait_search"),
+        ),
 
-      # Main parameter controls (dataset, trait, LOD threshold)
-      mainParInput("main_par"),
-      shiny::hr(),
+        # Tab 2: Overview Plot (Manhattan/Cis-Trans)
+        bslib::nav_panel(
+          "LOD peaks",
+          div(
+            style = "padding: 10px;",
 
-      # Interactive subtraction analysis controls
-      interactiveSubtractionInput("interactive_subtraction"),
-      shiny::hr(),
-
-      # Add new card for Profile Plot and Correlation
-      bslib::card(
-        bslib::card_header("📈 Additional Analyses"),
-        bslib::card_body(
-          bslib::nav_pills(
-            bslib::nav_panel(
-              "Profile Plot",
-              profilePlotInput("profile_plot"),
-              profilePlotUI("profile_plot")
+            # LOD Threshold Control (moved here from Data Search tab)
+            h5("Peak Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+            # Dynamic LOD threshold slider that updates based on scan type
+            uiOutput("lod_threshold_slider"),
+            p("Filters peaks shown in the plot below",
+              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
             ),
-            bslib::nav_panel(
-              "Correlation",
-              correlationInput("correlation"),
-              correlationUI("correlation")
+
+            # Peak Selection Dropdown for future peak differences analysis
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
+            h5("🎯 Peak Analysis", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+            p("Select peaks for detailed analysis and future comparison features",
+              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
+            ),
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
+            h5(shiny::textOutput("plot_title"),
+              style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
+            ),
+            div(
+              id = "overview-plot-container",
+              class = "overview-plot-container",
+              style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
+              shiny::uiOutput("conditional_plot_ui")
+            ),
+            p("Click on points to view detailed LOD scans",
+              style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
             )
           )
         )
       ),
-      # Chromosome selection controls
-      chromosomeControlsInput("chr_controls"),
-      shiny::hr(),
-
-      # Use existing download module
-      h4("💾 Download Plots", style = "color: #2c3e50;"),
-      downloadInput("download"),
-      downloadOutput("download")
     ),
 
-    # Main content area with plot outputs
-    bslib::layout_columns(
-      col_widths = bslib::breakpoints(
-        sm = c(12, 12),
-        md = c(3, 9) # Make first column much smaller (1/4) and second much larger (3/4)
-      ),
-
-      # Primary plot (Manhattan or Cis/Trans based on dataset category)
-      bslib::card(
-        id = "primary_plot_card",
-        style = "border: 5px solid red; background-color: #ffe6e6;",
-        bslib::card_header(
-          style = "background-color: red; color: white;",
-          shiny::textOutput("plot_title")
-        ),
-        bslib::card_body(
-          shiny::uiOutput("conditional_plot_ui")
-        )
-      ),
-
-      # LOD scan plot (when trait is selected)
-      bslib::card(
-        id = "lod_scan_card",
-        bslib::card_header("LOD Scan"),
-        bslib::card_body(
-          scanlyOutput("scanly"),
-          scanlyUI("scanly")
-        )
-      )
-    ),
-
-    # Download preview section
+    # Simplified main area - just the LOD scan plot
     bslib::card(
-      id = "download_preview_card",
-      bslib::card_header("📋 Download Preview"),
+      id = "lod_scan_card",
+      bslib::card_header("LOD Scan - Detailed View"),
       bslib::card_body(
-        downloadUI("download")
+        shiny::uiOutput("lod_scan_plot_ui_placeholder")
       )
     )
   )
 
   server <- function(input, output, session) {
+    # Source helper for allele plots if not already available
+    if (!exists("ggplot_alleles", mode = "function")) {
+      source("R/ggplot_alleles.R")
+    }
+
     # Initialize data import
     import_reactives <- importServer("import")
 
-    # Initialize main parameter controls (dataset selection, trait search, LOD threshold)
-    main_par <- mainParServer("main_par", import_reactives)
+    # Initialize dataset selection module
+    dataset_selection <- datasetSelectionServer("dataset_selection", import_reactives)
 
-    # Initialize interactive subtraction analysis
-    interactive_subtraction <- interactiveSubtractionServer(
-      "interactive_subtraction",
-      import_reactives,
-      main_par
+    # Initialize trait search module
+    trait_search <- traitSearchServer("trait_search", import_reactives, dataset_selection$selected_dataset)
+
+    # Initialize interactive analysis module
+    interactive_analysis <- interactiveAnalysisServer("interactive_analysis", dataset_selection$selected_dataset)
+
+    # Create cache environments
+    trait_cache <- new.env(parent = emptyenv())
+    peaks_cache <- new.env(parent = emptyenv())
+
+    # Clear caches when dataset changes
+    shiny::observeEvent(dataset_selection$selected_dataset(),
+      {
+        selected_ds_val <- dataset_selection$selected_dataset()
+
+        if (!is.null(selected_ds_val)) {
+          message(paste("Clearing caches for dataset:", selected_ds_val))
+          rm(list = ls(envir = trait_cache), envir = trait_cache)
+          rm(list = ls(envir = peaks_cache), envir = peaks_cache)
+        } else {
+          message("No dataset selected or selected_dataset is NULL, not clearing caches.")
+        }
+      },
+      ignoreNULL = FALSE,
+      ignoreInit = TRUE
     )
 
-    # Initialize chromosome controls
-    chr_controls <- chromosomeControlsServer("chr_controls")
+    # Detect if current dataset is additive or interactive based on dataset name and interaction type
+    scan_type <- shiny::reactive({
+      dataset_name <- interactive_analysis$mapped_dataset()
 
-    # Initialize profile plot and correlation modules
-    profilePlotServer("profile_plot", import_reactives, main_par)
-    correlationServer("correlation", import_reactives, main_par)
+      if (is.null(dataset_name) || dataset_name == "") {
+        return("additive") # Default to additive
+      }
 
-    # Determine plot type based on dataset category
-    plot_type <- shiny::reactive({
-      shiny::req(main_par$dataset_category())
-      category <- main_par$dataset_category()
-      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
-        "manhattan"
-      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
-        "cistrans"
+      # Check if dataset name contains "interactive" or if interaction type is selected
+      if (grepl("interactive", dataset_name, ignore.case = TRUE)) {
+        return("interactive")
       } else {
-        "unknown"
+        return("additive")
       }
     })
 
-    # Dynamic plot title
-    output$plot_title <- shiny::renderText({
-      shiny::req(main_par$dataset_category(), main_par$selected_dataset())
-      category <- main_par$dataset_category()
-      dataset <- main_par$selected_dataset()
+    # Dynamic LOD threshold slider based on scan type
+    output$lod_threshold_slider <- shiny::renderUI({
+      current_scan_type <- scan_type()
 
-      plot_type_text <- switch(plot_type(),
-        "manhattan" = "Manhattan Plot",
-        "cistrans" = "Cis/Trans Plot",
-        "Plot"
-      )
+      # Set different minimums based on scan type
+      min_val <- if (current_scan_type == "interactive") 10.5 else 7.5
+      default_val <- min_val # Start at minimum value
 
-      paste0(plot_type_text, " for: ", dataset, " (", category, ")")
-    })
-
-    # Dynamic plot UI based on dataset category
-    output$conditional_plot_ui <- shiny::renderUI({
-      switch(plot_type(),
-        "manhattan" = manhattanPlotUI("manhattan_plot"),
-        "cistrans" = tagList(
-          cisTransPlotInput("cistrans_plot"),
-          cisTransPlotUI("cistrans_plot")
-        ),
-        shiny::p("No plot type configured for this dataset category.")
+      sliderInput("LOD_thr",
+        label = paste("LOD Threshold (", current_scan_type, "scan):"),
+        min = min_val, max = 20, value = default_val, step = 0.5,
+        width = "100%"
       )
     })
 
-    # Initialize plot servers with shared cache
-    peaks_cache <- new.env(parent = emptyenv())
-    trait_cache <- new.env(parent = emptyenv())
+    # Our own LOD threshold reactive
+    lod_threshold_rv <- shiny::reactive({
+      current_scan_type <- scan_type()
+      default_threshold <- if (current_scan_type == "interactive") 10.5 else 7.5
+      input$LOD_thr %||% default_threshold
+    }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
 
-    # Combined main_par that includes chromosome selection
-    enhanced_main_par <- shiny::reactive({
+    # Reactive for selected chromosome (for zooming into specific chromosomes)
+    selected_chromosome_rv <- shiny::reactive({
+      input$selected_chr %||% "All" # Default to "All" chromosomes
+    })
+
+    # Create our own main_par structure (compatible with existing modules)
+    active_main_par <- shiny::reactive({
+      # Create a compatible structure with the expected reactives
       list(
-        dataset_category = main_par$dataset_category,
-        selected_dataset = main_par$selected_dataset,
-        which_trait = main_par$which_trait,
-        LOD_thr = main_par$LOD_thr,
-        selected_chr = chr_controls$selected_chr # Add chromosome selection
+        selected_dataset = interactive_analysis$mapped_dataset, # Mapped dataset for interaction
+        LOD_thr = lod_threshold_rv, # Our LOD threshold
+        selected_chr = selected_chromosome_rv, # Selected chromosome
+        which_trait = trait_search$trait_for_lod_scan, # Currently searched trait
+        dataset_category = dataset_selection$dataset_category # Our dataset category
       )
     })
 
-    # Initialize plot servers
-    manhattan_outputs <- manhattanPlotServer("manhattan_plot",
+    # Instantiate plot modules and capture their outputs
+    manhattan_plot_outputs <- manhattanPlotServer("manhattan_plot_module",
       import_reactives = import_reactives,
-      main_par = enhanced_main_par
+      main_par = active_main_par
     )
 
-    cistrans_outputs <- cisTransPlotServer("cistrans_plot",
+    cistrans_plot_outputs <- cisTransPlotServer("cistrans_plot_module",
       import_reactives = import_reactives,
-      main_par = enhanced_main_par,
+      main_par = active_main_par,
       peaks_cache = peaks_cache
     )
 
-    # Initialize scan server for LOD scans
-    scan_outputs <- scanServer("scan_list", enhanced_main_par, import_reactives, trait_cache)
-    peak_outputs <- peakServer("peak_list", enhanced_main_par, import_reactives, peaks_cache)
-
-    # Initialize scanly server for interactive LOD plots
-    scanlyServer("scanly", enhanced_main_par, scan_outputs, peak_outputs, peaks_cache = peaks_cache)
-
-    # Create download list structure
-    download_list <- shiny::reactiveValues(
-      filename = shiny::reactive({
-        dataset_name <- main_par$selected_dataset()
-        if (is.null(dataset_name)) dataset_name <- "qtl_analysis"
-        trait_name <- main_par$which_trait()
-        base_name <- if (!is.null(trait_name) && nzchar(trait_name)) {
-          paste(dataset_name, trait_name, sep = "_")
-        } else {
-          dataset_name
+    # Observe clicks from Manhattan plot
+    shiny::observeEvent(manhattan_plot_outputs$clicked_phenotype_for_lod_scan(),
+      {
+        clicked_trait <- manhattan_plot_outputs$clicked_phenotype_for_lod_scan()
+        if (!is.null(clicked_trait)) {
+          trait_search$trait_for_lod_scan(clicked_trait)
+          message(paste("scanApp: Manhattan plot click detected. Trait for LOD scan:", clicked_trait))
         }
-        gsub("[^A-Za-z0-9_-]", "_", base_name)
-      }),
-      plots = shiny::reactiveValues(
-        manhattan = shiny::reactive({
-          if (plot_type() == "manhattan" && !is.null(manhattan_outputs)) {
-            # We need to get the actual ggplot object from manhattanPlotServer
-            # This would require modifying manhattanPlotServer to return plot objects
-            plot_null("Manhattan plot available but needs ggplot export")
-          } else {
-            plot_null("Manhattan plot not available")
-          }
-        }),
-        cistrans = shiny::reactive({
-          if (plot_type() == "cistrans" && !is.null(cistrans_outputs)) {
-            plot_null("Cis/Trans plot available but needs ggplot export")
-          } else {
-            plot_null("Cis/Trans plot not available")
-          }
-        }),
-        lod_scan = shiny::reactive({
-          if (!is.null(scan_outputs$plots$scan)) {
-            scan_outputs$plots$scan()
-          } else {
-            plot_null("LOD scan plot not available")
-          }
-        })
-      ),
-      tables = shiny::reactiveValues(
-        scan_data = shiny::reactive({
-          if (!is.null(scan_outputs$tables$scan)) {
-            scan_outputs$tables$scan()
-          } else {
-            data.frame(Info = "No scan data available")
-          }
-        })
-      )
+      },
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
     )
 
-    # Initialize download server
-    downloadServer("download", download_list)
+    # Observe clicks from Cis/Trans plot
+    shiny::observeEvent(cistrans_plot_outputs$clicked_phenotype_for_lod_scan(),
+      {
+        clicked_trait <- cistrans_plot_outputs$clicked_phenotype_for_lod_scan()
+        if (!is.null(clicked_trait)) {
+          trait_search$trait_for_lod_scan(clicked_trait)
+          message(paste("scanApp: Cis/Trans plot click detected. Trait for LOD scan:", clicked_trait))
+        }
+      },
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
+    )
 
-    # Clear caches when dataset changes
-    shiny::observeEvent(main_par$selected_dataset(), {
-      rm(list = ls(envir = trait_cache), envir = trait_cache)
-      rm(list = ls(envir = peaks_cache), envir = peaks_cache)
+    output$plot_title <- shiny::renderText({
+      category <- dataset_selection$dataset_category()
+      group <- dataset_selection$selected_dataset()
+      if (is.null(category) || is.null(group)) {
+        return("Select Dataset Category and Specific Dataset")
+      }
+
+      plot_type_text <- "Plot"
+      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
+        plot_type_text <- "Manhattan Plot"
+      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
+        plot_type_text <- "Cis/Trans Plot"
+      }
+      return(paste0(plot_type_text, " for: ", group, " (", category, ")"))
     })
+
+    output$conditional_plot_ui <- shiny::renderUI({
+      category <- dataset_selection$dataset_category()
+      shiny::req(category)
+
+      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
+        tagList(
+          manhattanPlotUI("manhattan_plot_module")
+        )
+      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
+        tagList(
+          cisTransPlotInput("cistrans_plot_module"),
+          cisTransPlotUI("cistrans_plot_module")
+        )
+      } else {
+        shiny::p(paste("No specific plot type configured for category:", category))
+      }
+    })
+
+    # Initialize scan plot module
+    scan_plot_outputs <- scanPlotServer(
+      id = "scan_plot_module",
+      trait_to_scan = trait_search$trait_for_lod_scan,
+      selected_dataset_group = interactive_analysis$mapped_dataset,
+      import_reactives = import_reactives,
+      main_par_inputs = active_main_par,
+      interaction_type_reactive = interactive_analysis$interaction_type
+    )
+
+    # Initialize allele effects module
+    allele_effects_outputs <- alleleEffectsServer(
+      id = "allele_effects",
+      trait_for_lod_scan_reactive = trait_search$trait_for_lod_scan,
+      selected_dataset_reactive = interactive_analysis$mapped_dataset,
+      import_reactives = import_reactives,
+      lod_threshold_reactive = lod_threshold_rv
+    )
+
+    # UI for LOD Scan plot - only appears when a trait is selected
+    output$lod_scan_plot_ui_placeholder <- shiny::renderUI({
+      if (!is.null(trait_search$trait_for_lod_scan())) {
+        bslib::card(
+          id = "lod_scan_plot_card",
+          bslib::card_header(paste("LOD Scan for Trait:", trait_search$trait_for_lod_scan())),
+          bslib::card_body(
+            # Interactive Analysis section for HC_HF datasets
+            interactiveAnalysisUI("interactive_analysis"),
+
+            # Debug: Show interaction type
+            div(
+              style = "padding: 10px; background: #f0f0f0; margin: 10px 0;",
+              h6("Debug Info:", style = "margin: 0;"),
+              textOutput("debug_interaction_type")
+            ),
+
+            # Compact chromosome selector
+            div(
+              style = "margin-bottom: 15px; background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #bdc3c7;",
+              div(
+                style = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap;",
+                div(
+                  style = "flex: 0 0 auto;",
+                  h6("🔍 Chr:", style = "color: #2c3e50; margin: 0; font-weight: bold; font-size: 12px;")
+                ),
+                div(
+                  style = "flex: 0 0 120px;",
+                  shiny::selectInput(
+                    "selected_chr",
+                    label = NULL,
+                    choices = c(
+                      "All" = "All",
+                      setNames(as.character(1:19), paste("Chr", 1:19)),
+                      "X" = "X", "Y" = "Y", "M" = "M"
+                    ),
+                    selected = "All",
+                    width = "100%"
+                  )
+                ),
+                div(
+                  style = "flex: 0 0 auto; display: flex; gap: 5px;",
+                  shiny::actionButton(
+                    "zoom_to_chr",
+                    "🔍 Zoom",
+                    class = "btn btn-sm btn-primary",
+                    style = "background: #3498db; border: none; color: white; font-size: 11px; padding: 4px 8px;"
+                  ),
+                  shiny::actionButton(
+                    "reset_chr_view",
+                    "🌐 All",
+                    class = "btn btn-sm btn-secondary",
+                    style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
+                  )
+                )
+              )
+            ),
+            # LOD scan plot module
+            scanPlotUI("scan_plot_module"),
+            # Clicked point details table
+            div(
+              style = "margin-top: 15px;",
+              h6("Click on plot to see point details:",
+                style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
+              ),
+              DT::DTOutput("lod_scan_click_table")
+            ),
+            # Allele effects module
+            alleleEffectsUI("allele_effects")
+          )
+        )
+      } else {
+        NULL # Don't show the card if no trait is selected for scanning
+      }
+    })
+
+    # Render the LOD scan click details table
+    output$lod_scan_click_table <- DT::renderDT({
+      # Check if we have scan module outputs and clicked point details
+      if (!is.null(scan_plot_outputs) && !is.null(scan_plot_outputs$clicked_point_details)) {
+        clicked_details <- scan_plot_outputs$clicked_point_details()
+
+        if (!is.null(clicked_details) && nrow(clicked_details) > 0) {
+          # Format the clicked point data for display
+          display_data <- data.frame(
+            Chromosome = if ("chr" %in% colnames(clicked_details)) clicked_details$chr else "N/A",
+            Marker = if ("markers" %in% colnames(clicked_details)) clicked_details$markers else "N/A",
+            Position = if ("position" %in% colnames(clicked_details)) paste0(clicked_details$position, " Mb") else "N/A",
+            LOD = if ("LOD" %in% colnames(clicked_details)) clicked_details$LOD else "N/A"
+          )
+
+          message(paste("scanApp: Displaying clicked point details for marker:", display_data$Marker))
+
+          return(DT::datatable(
+            display_data,
+            options = list(
+              dom = "t",
+              paging = FALSE,
+              searching = FALSE,
+              columnDefs = list(list(targets = "_all", className = "dt-center"))
+            ),
+            rownames = FALSE,
+            selection = "none",
+            class = "compact hover"
+          ))
+        }
+      }
+
+      # Default message when no point is clicked
+      return(DT::datatable(
+        data.frame(Info = "Click on a point in the LOD scan plot to see details"),
+        options = list(dom = "t", paging = FALSE, searching = FALSE),
+        rownames = FALSE,
+        selection = "none"
+      ))
+    })
+
+    # CHROMOSOME ZOOM FUNCTIONALITY
+    # Observer for "Zoom to Chromosome" button
+    observeEvent(input$zoom_to_chr, {
+      selected_chr <- input$selected_chr
+      if (!is.null(selected_chr) && selected_chr != "All") {
+        message(paste("scanApp: Zooming to chromosome:", selected_chr))
+        shiny::showNotification(
+          paste("Zoomed to chromosome", selected_chr),
+          type = "message",
+          duration = 2
+        )
+      } else {
+        shiny::showNotification(
+          "Please select a specific chromosome to zoom to",
+          type = "warning",
+          duration = 3
+        )
+      }
+    })
+
+    # Observer for "Show All Chromosomes" button
+    observeEvent(input$reset_chr_view, {
+      message("scanApp: Resetting to show all chromosomes")
+      shiny::updateSelectInput(session, "selected_chr",
+        selected = "All"
+      )
+      shiny::showNotification(
+        "Showing all chromosomes",
+        type = "message",
+        duration = 2
+      )
+    })
+
+    # Debug output for interaction type
+    output$debug_interaction_type <- shiny::renderText({
+      interaction_type <- interactive_analysis$interaction_type()
+      mapped_dataset <- interactive_analysis$mapped_dataset()
+
+      paste(
+        "Interaction Type:", interaction_type %||% "NULL",
+        "| Mapped Dataset:", mapped_dataset %||% "NULL",
+        "| Scan Type:", interactive_analysis$scan_type() %||% "NULL"
+      )
+    })
+
+    # Define the %||% operator for null coalescing
+    `%||%` <- function(a, b) if (!is.null(a)) a else b
   }
 
   shiny::shinyApp(ui = ui, server = server)

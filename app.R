@@ -21,11 +21,11 @@ source("R/helpers.R")
 source("R/data_handling.R")
 source("R/import_data.R")
 source("R/importApp.R")
-source("R/mainParApp.R")
-source("R/scanApp_monolithic_backup.R")
-source("R/peakApp.R")
-source("R/scanlyApp.R")
-source("R/qtlApp.R")
+# Removed mainParApp.R - functionality moved to modules
+source("R/scanApp_monolithic_backup.R") # Keep for scanServer function
+# Removed peakApp.R - functionality moved to alleleEffectsModule.R
+# Removed scanlyApp.R - functionality integrated into scanPlotModule.R
+# Removed qtlApp.R - old architecture, replaced by scanApp.R
 source("R/mergeApp.R")
 source("R/downloadApp.R")
 source("R/cisTransPlotApp.R")
@@ -42,12 +42,14 @@ source("R/peak_info.R")
 source("R/QTL_plot_visualizer.R")
 source("R/fst_rows.R")
 source("R/traitApp.R")
-source("R/traitTypeApp.R")
+# Removed traitTypeApp.R - simple utility, doesn't need full module
 source("R/traitProcessingModule.R")
+
+# Source the new modular scanApp
+source("R/scanApp.R")
 
 # Set maximum file upload size
 options(shiny.maxRequestSize = 20000 * 1024^2) # 20 GB
 
-# Launch the application
-scanApp() # Comment out the old app
-# testGenesApp() # Use the new genes analysis test app
+# Launch the new modular application
+scanApp()
