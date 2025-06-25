@@ -486,13 +486,27 @@ lod_threshold <- reactive({ ... }) %>% debounce(300)   # LOD threshold changes
 
 ### Dataset Mapping Logic
 
+**Supported Interactive Datasets:**
+
+- **HC_HF Liver Genes**: Supports both Sex and Diet interactions
+  - Sex: `"HC_HF Liver Genes, interactive (Sex)"`
+  - Diet: `"HC_HF Liver Genes, interactive (Diet)"`
+- **HC_HF Liver Lipids**: Supports Diet interaction only
+  - Diet: `"HC_HF Liver Lipids, interactive (Diet)"`
+- **HC_HF Clinical Traits**: Supports both Sex and Diet interactions
+  - Sex: `"HC_HF Systemic Clinical Traits, interactive (Sex)"`
+  - Diet: `"HC_HF Systemic Clinical Traits, interactive (Diet)"`
+- **HC_HF Plasma Metabolites**: Supports Sex interaction only
+  - Sex: `"HC_HF Plasma Metabolites, interactive (Sex)"`
+- **HC_HF Liver Isoforms**: No interactive analysis available
+
 ```r
 # Determine interactive dataset name
 get_interactive_dataset_name <- function(base_dataset, interaction_type) {
   if (interaction_type == "sex") {
-    return("HC_HF Liver Genes, interactive (Sex)")
+    return("HC_HF Liver Genes, interactive (Sex)")  # Also supports HC_HF Plasma Metabolites
   } else if (interaction_type == "diet") {
-    return("HC_HF Liver Genes, interactive (Diet)")
+    return("HC_HF Liver Genes, interactive (Diet)")  # Also supports other HC_HF datasets
   }
   return(base_dataset)  # fallback to additive
 }

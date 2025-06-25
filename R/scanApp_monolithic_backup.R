@@ -258,8 +258,13 @@ scanApp <- function() {
           return("HC_HF Systemic Clinical Traits, interactive (Diet)")
         }
       }
-      # HC_HF Plasma plasma_metabolite - NO interactive datasets available
-      # Return original dataset (no interactive versions exist)
+      # HC_HF Plasma Metabolites (supports Sex interaction)
+      else if (grepl("HC_HF.*Plasma.*plasma_metabolite", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "sex") {
+          return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
+        }
+        # No Diet interaction available for Plasma Metabolites - return original
+      }
 
       # Fallback to original dataset if no mapping found
       return(base_dataset)
@@ -487,8 +492,8 @@ scanApp <- function() {
             interaction_note = "Use interaction controls for Sex/Diet effects."
           ),
           "Plasma Metabolites" = list(
-            name = "HC_HF Plasma Metabolites",
-            interaction_note = "No interactive analysis available for this dataset."
+            name = "HC_HF Plasma Metabolites (Additive)",
+            interaction_note = "Use interaction controls for Sex effects."
           ),
           "Liver Isoforms" = list(
             name = "HC_HF Liver Isoforms",
@@ -844,8 +849,12 @@ scanApp <- function() {
             "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
+        } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex"
+          )
+          # No Diet interaction available for Plasma Metabolites
         }
-        # No interactions available for Plasma metabolites
 
         tagList(
           hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
@@ -1481,8 +1490,12 @@ scanApp <- function() {
             "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
+        } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex"
+          )
+          # No Diet interaction available for Plasma Metabolites
         }
-        # No interactions available for Plasma metabolites
 
         peak_section <- NULL
         if (!is.null(available_peaks) && nrow(available_peaks) > 0) {
