@@ -1470,7 +1470,15 @@ scanApp <- function() {
     # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
     output[[ns_app_controller("peak_selection_sidebar")]] <- shiny::renderUI({
       dataset_group <- main_selected_dataset_group()
-      available_peaks <- available_peaks_for_trait()
+
+      # Check if there's a current trait selected before attempting to get peaks
+      current_trait <- trait_for_lod_scan_rv()
+      available_peaks <- NULL
+
+      # Only get peaks if trait is selected and use isolate to prevent reactive invalidation during tab switches
+      if (!is.null(current_trait)) {
+        available_peaks <- shiny::isolate(available_peaks_for_trait())
+      }
 
       # Show interaction analysis controls for all HC_HF datasets (independent of main UI)
       if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
@@ -1660,29 +1668,21 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       shiny::req(
         scans(),
         current_trait_for_scan(),
-        main_par_list, # Ensure the list itself is available
-        main_par_list$LOD_thr, # Ensure the reactive for LOD_thr is in the list
-        main_par_list$LOD_thr(), # Ensure the value of LOD_thr is available
+        main_par_list,
+        main_par_list$LOD_thr,
+        main_par_list$LOD_thr(),
         import_reactives()$markers
       )
 
-      # Debug QTL_plot_visualizer call
+      # Streamlined processing - reduce debug messages
       scan_data <- scans()
       trait_val <- current_trait_for_scan()
       lod_val <- main_par_list$LOD_thr()
       markers_data <- import_reactives()$markers
 
-      message(paste("scanServer: About to call QTL_plot_visualizer with trait:", trait_val))
-      message(paste("scanServer: Scan data has", if (is.null(scan_data)) "NULL" else nrow(scan_data), "rows"))
-      message(paste("scanServer: LOD threshold:", lod_val))
-      message(paste("scanServer: Markers data has", if (is.null(markers_data)) "NULL" else nrow(markers_data), "rows"))
-
       result <- QTL_plot_visualizer(scan_data, trait_val, lod_val, markers_data)
-
-      message(paste("scanServer: QTL_plot_visualizer completed, result has", if (is.null(result)) "NULL" else nrow(result), "rows"))
-
       result
-    })
+    }) %>% shiny::debounce(150) # Add debouncing to prevent rapid re-computation
 
     scan_table_chr <- shiny::reactive({
       main_par_list <- main_par_inputs()
@@ -1714,23 +1714,32 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     additive_scan_data_background <- shiny::reactive({
       trait_val <- current_trait_for_scan()
       dataset_group_val <- selected_dataset_group()
+      interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
 
-      # Only load additive data for HC_HF datasets that support interactive analysis
-      if (is.null(trait_val) || is.null(dataset_group_val) || !grepl("^HC_HF", dataset_group_val, ignore.case = TRUE)) {
+      # Only load if we're in interactive mode and haven't already loaded
+      if (is.null(trait_val) || is.null(dataset_group_val) ||
+        !grepl("^HC_HF", dataset_group_val, ignore.case = TRUE) ||
+        interaction_type == "none") {
         return(NULL)
       }
 
-      # Check if this is already an interactive dataset - if so, get the base dataset name
+      # Check if we already have additive data cached
+      current_additive <- additive_scan_data_rv()
+      if (!is.null(current_additive) && nrow(current_additive) > 0) {
+        message("scanServer: Using cached additive data")
+        return(current_additive)
+      }
+
+      # Extract base dataset name for additive loading
       base_dataset <- dataset_group_val
       if (grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
-        # Extract base dataset name by removing interactive suffix
         base_dataset <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
         base_dataset <- trimws(base_dataset)
       }
 
       message("scanServer: Loading additive data in background for trait:", trait_val, "base dataset:", base_dataset)
 
-      # Get additive scan data (use the base dataset, not interactive version)
+      # Streamlined loading - minimal processing
       result <- tryCatch(
         {
           file_dir_val <- import_reactives()$file_directory
@@ -1738,45 +1747,31 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
           scan_data <- trait_scan(
             file_dir = file_dir_val,
-            selected_dataset = base_dataset, # Use base dataset, not interactive
+            selected_dataset = base_dataset,
             selected_trait = trait_val,
             cache_env = NULL
           )
 
           if (!is.null(scan_data) && nrow(scan_data) > 0) {
-            message("scanServer: Background loaded additive data with", nrow(scan_data), "rows")
-
-            # Process through QTL_plot_visualizer
+            # Basic processing only - defer complex operations
             main_par_list <- main_par_inputs()
             req(main_par_list$LOD_thr, import_reactives()$markers)
 
             processed_data <- QTL_plot_visualizer(scan_data, trait_val, main_par_list$LOD_thr(), import_reactives()$markers)
-            message("scanServer: Background processed additive data with", if (is.null(processed_data)) "NULL" else nrow(processed_data), "rows")
 
-            # Apply chromosome filtering if needed
-            selected_chromosome <- main_par_list$selected_chr()
-            if (!is.null(selected_chromosome) && selected_chromosome != "All") {
-              sel_chr_num <- selected_chromosome
-              if (selected_chromosome == "X") sel_chr_num <- 20
-              if (selected_chromosome == "Y") sel_chr_num <- 21
-              if (selected_chromosome == "M") sel_chr_num <- 22
-              sel_chr_num <- as.numeric(sel_chr_num)
-
-              processed_data <- dplyr::filter(processed_data, chr == sel_chr_num)
-              message("scanServer: Background filtered additive data to", nrow(processed_data), "rows for chr", selected_chromosome)
+            if (!is.null(processed_data) && nrow(processed_data) > 0) {
+              message("scanServer: Background loaded additive data with", nrow(processed_data), "rows")
+              return(processed_data)
             }
-
-            return(processed_data)
-          } else {
-            return(NULL)
           }
+          return(NULL)
         },
         error = function(e) {
           message("scanServer: Error loading additive data:", e$message)
           return(NULL)
         }
       )
-    }) %>% shiny::debounce(300) # Debounce to prevent excessive loading
+    }) %>% shiny::debounce(500) # Increased debounce to reduce excessive loading
 
     # Observer to store additive data automatically for any trait
     shiny::observeEvent(additive_scan_data_background(),
@@ -1811,40 +1806,28 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     )
 
     current_scan_plot_gg <- shiny::reactive({
-      message("scanServer: current_scan_plot_gg - Starting reactive")
-
-      # Get inputs with error handling
+      # Get inputs with early validation
       scan_data <- scan_table_chr()
       main_par_list <- main_par_inputs()
 
       # Early returns for missing data
-      if (is.null(scan_data) || nrow(scan_data) == 0) {
-        message("scanServer: current_scan_plot_gg - No scan data available")
-        return(NULL)
-      }
-
-      if (is.null(main_par_list) || is.null(main_par_list$LOD_thr) || is.null(main_par_list$selected_chr)) {
-        message("scanServer: current_scan_plot_gg - Missing main parameters")
+      if (is.null(scan_data) || nrow(scan_data) == 0 ||
+        is.null(main_par_list) || is.null(main_par_list$LOD_thr) || is.null(main_par_list$selected_chr)) {
         return(NULL)
       }
 
       lod_threshold <- main_par_list$LOD_thr()
       selected_chr <- main_par_list$selected_chr()
 
-      message(paste("scanServer: current_scan_plot_gg - Data:", nrow(scan_data), "rows, LOD:", lod_threshold, "Chr:", selected_chr))
-
+      # Streamlined plot creation
       tryCatch(
-        {
-          plot_result <- ggplot_qtl_scan(scan_data, lod_threshold, selected_chr)
-          message("scanServer: current_scan_plot_gg - Plot created successfully")
-          return(plot_result)
-        },
+        ggplot_qtl_scan(scan_data, lod_threshold, selected_chr),
         error = function(e) {
-          message("scanServer: current_scan_plot_gg - Error creating plot: ", e$message)
+          message("scanServer: Error creating plot: ", e$message)
           return(NULL)
         }
       )
-    }) %>% shiny::debounce(200) # Debounce to prevent rapid re-computations
+    }) %>% shiny::debounce(150) # Optimized debounce timing
 
     # Reactive to create difference plot (interactive - additive)
     difference_plot_gg <- shiny::reactive({
@@ -1862,137 +1845,77 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       interactive_data <- scan_table_chr()
       additive_data <- additive_scan_data_rv()
 
-      # Check if both datasets are available
+      # Early exit if data is missing
       if (is.null(interactive_data) || is.null(additive_data) ||
         nrow(interactive_data) == 0 || nrow(additive_data) == 0) {
-        message(
-          "scanServer: Missing data for difference plot - Interactive: ",
-          if (is.null(interactive_data)) "NULL" else nrow(interactive_data),
-          " rows, Additive: ",
-          if (is.null(additive_data)) "NULL" else nrow(additive_data), " rows"
-        )
         return(NULL)
       }
 
-      message("scanServer: Creating difference plot - Interactive data:", nrow(interactive_data), "rows")
-      message("scanServer: Creating difference plot - Additive data:", nrow(additive_data), "rows")
-
-      # Debug data info
-      message("scanServer: Interactive LOD range:", min(interactive_data$LOD, na.rm = TRUE), "to", max(interactive_data$LOD, na.rm = TRUE))
-      message("scanServer: Additive LOD range:", min(additive_data$LOD, na.rm = TRUE), "to", max(additive_data$LOD, na.rm = TRUE))
-
-      # Debug marker info
-      if ("markers" %in% colnames(interactive_data) && "markers" %in% colnames(additive_data)) {
-        message("scanServer: Interactive first 3 markers: ", paste(head(interactive_data$markers, 3), collapse = ", "))
-        message("scanServer: Additive first 3 markers: ", paste(head(additive_data$markers, 3), collapse = ", "))
-      }
-
-      # Create difference data with error handling
+      # Optimized difference calculation
       tryCatch(
         {
           # Handle datasets with different numbers of rows by joining on markers
           if (nrow(interactive_data) != nrow(additive_data)) {
-            message("scanServer: Row count mismatch - Interactive: ", nrow(interactive_data), ", Additive: ", nrow(additive_data))
-            message("scanServer: Attempting to align datasets by markers...")
-
             # Check if both datasets have markers column
             if (!("markers" %in% colnames(interactive_data)) || !("markers" %in% colnames(additive_data))) {
-              message("scanServer: Cannot align datasets - missing 'markers' column")
               return(NULL)
             }
 
-            # Join datasets on markers to align them
-            library(dplyr)
-            aligned_data <- interactive_data %>%
-              dplyr::inner_join(additive_data, by = "markers", suffix = c("_interactive", "_additive"))
+            # Efficient join using data.table if available
+            if (requireNamespace("data.table", quietly = TRUE)) {
+              # Use data.table for faster joins
+              interactive_dt <- data.table::as.data.table(interactive_data)
+              additive_dt <- data.table::as.data.table(additive_data)
 
-            if (nrow(aligned_data) == 0) {
-              message("scanServer: No common markers found between datasets")
-              return(NULL)
-            }
+              aligned_data <- merge(interactive_dt, additive_dt, by = "markers", suffixes = c("_int", "_add"))
 
-            message("scanServer: Successfully aligned datasets - ", nrow(aligned_data), " common markers found")
-
-            # Create aligned datasets for difference calculation
-            interactive_aligned <- aligned_data %>%
-              dplyr::select(markers,
-                chr = chr_interactive, position = position_interactive,
-                LOD = LOD_interactive, BPcum = BPcum_interactive
-              )
-            additive_aligned <- aligned_data %>%
-              dplyr::select(markers,
-                chr = chr_additive, position = position_additive,
-                LOD = LOD_additive, BPcum = BPcum_additive
-              )
-
-            # Use aligned data for subtraction
-            interactive_data <- interactive_aligned
-            additive_data <- additive_aligned
-          }
-
-          message("scanServer: Both datasets have", nrow(interactive_data), "rows")
-
-          # Simple element-wise subtraction: interactive LOD - additive LOD
-          # Handle NA values properly
-          lod_difference <- interactive_data$LOD - additive_data$LOD
-
-          # VALIDATION: Check difference calculation at specific positions
-          if (nrow(interactive_data) >= 10) {
-            # Check first 3 positions, middle position, and last 3 positions
-            validation_indices <- c(1:3, round(nrow(interactive_data) / 2), (nrow(interactive_data) - 2):nrow(interactive_data))
-            validation_indices <- validation_indices[validation_indices <= nrow(interactive_data)]
-
-            message("scanServer: VALIDATION - Checking difference calculation at key positions:")
-            for (i in validation_indices) {
-              interactive_lod <- interactive_data$LOD[i]
-              additive_lod <- additive_data$LOD[i]
-              calculated_diff <- lod_difference[i]
-              expected_diff <- interactive_lod - additive_lod
-
-              # Check if we have position/BPcum info for more detailed validation
-              position_info <- ""
-              if ("BPcum" %in% colnames(interactive_data)) {
-                position_info <- paste0(" at BPcum=", round(interactive_data$BPcum[i], 2))
-              } else if ("position" %in% colnames(interactive_data)) {
-                position_info <- paste0(" at pos=", round(interactive_data$position[i], 2))
+              if (nrow(aligned_data) == 0) {
+                return(NULL)
               }
 
-              is_correct <- abs(calculated_diff - expected_diff) < 1e-10
-              message(sprintf(
-                "scanServer: Index %d%s: Interactive=%.3f, Additive=%.3f, Diff=%.3f, Expected=%.3f, Correct=%s",
-                i, position_info, interactive_lod, additive_lod, calculated_diff, expected_diff, is_correct
-              ))
+              # Create difference efficiently
+              diff_plot_data <- aligned_data[, .(
+                markers = markers,
+                chr = chr_int,
+                position = position_int,
+                BPcum = BPcum_int,
+                LOD = LOD_int - LOD_add
+              )]
+            } else {
+              # Fallback to dplyr
+              aligned_data <- interactive_data %>%
+                dplyr::inner_join(additive_data, by = "markers", suffix = c("_int", "_add"))
+
+              if (nrow(aligned_data) == 0) {
+                return(NULL)
+              }
+
+              diff_plot_data <- aligned_data %>%
+                dplyr::mutate(LOD = LOD_int - LOD_add) %>%
+                dplyr::select(markers,
+                  chr = chr_int, position = position_int,
+                  BPcum = BPcum_int, LOD
+                )
             }
+          } else {
+            # Simple case - same number of rows
+            diff_plot_data <- interactive_data
+            diff_plot_data$LOD <- interactive_data$LOD - additive_data$LOD
           }
 
-          # Check for NA values
-          na_count <- sum(is.na(lod_difference))
-          if (na_count > 0) {
-            message("scanServer: Found ", na_count, " NA values in difference calculation")
-            # Replace NA values with 0 for plotting
-            lod_difference[is.na(lod_difference)] <- 0
-          }
+          # Handle NA values efficiently
+          diff_plot_data$LOD[is.na(diff_plot_data$LOD)] <- 0
 
-          # Create difference plot data by copying interactive structure and replacing LOD
-          diff_plot_data <- interactive_data
-          diff_plot_data$LOD <- lod_difference
-
-          message("scanServer: Difference plot data created with", nrow(diff_plot_data), "rows")
-          message("scanServer: LOD difference range:", min(diff_plot_data$LOD, na.rm = TRUE), "to", max(diff_plot_data$LOD, na.rm = TRUE))
-
-          # Get main par inputs for chromosome selection
+          # Create plot
           main_par_list <- main_par_inputs()
           selected_chr <- main_par_list$selected_chr()
 
-          # Create difference plot using same function - pass the data frame, not just the vector
-          diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chr) # Use -Inf threshold to show all differences
+          diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chr)
 
-          # Modify plot title to indicate it's a difference plot
           if (!is.null(diff_plot)) {
             diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", stringr::str_to_title(interaction_type), "- Additive"))
           }
 
-          message("scanServer: Difference plot created successfully")
           return(diff_plot)
         },
         error = function(e) {
@@ -2000,7 +1923,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
           return(NULL)
         }
       )
-    }) %>% shiny::debounce(250) # Debounce to prevent rapid re-computations for difference plot
+    }) %>% shiny::debounce(300) # Optimized debounce timing
 
     # Simple UI state check
     show_stacked_plots <- shiny::reactive({
@@ -2012,25 +1935,20 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     })
 
     output$scan_plot_ui_render <- shiny::renderUI({
-      message("scanServer: scan_plot_ui_render - Starting UI render")
-
-      # Only depend on what we absolutely need
+      # Minimal dependencies for faster rendering
       plot_gg <- current_scan_plot_gg()
       shiny::req(plot_gg)
 
       use_stacked <- show_stacked_plots()
 
       if (use_stacked) {
-        # Show both interactive and difference plots stacked vertically
-        message("scanServer: scan_plot_ui_render - Creating stacked plots for interactive analysis")
-
         # Calculate height for each plot (split the total height)
         individual_plot_height <- plot_height_rv() / 2
 
-        ui_result <- shiny::tagList(
+        shiny::tagList(
           # Interactive LOD plot (top)
           shiny::div(
-            style = paste0("margin-bottom: 10px;"),
+            style = "margin-bottom: 10px;",
             shiny::h5("Interactive LOD Scan", style = "text-align: center; margin-bottom: 5px;"),
             plotly::plotlyOutput(ns("render_plotly_plot"),
               width = paste0(plot_width_rv(), "px"),
@@ -2050,72 +1968,54 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         )
       } else {
         # Show only the main plot (additive or regular datasets)
-        message("scanServer: scan_plot_ui_render - Creating single plot")
-        ui_result <- plotly::plotlyOutput(ns("render_plotly_plot"),
+        plotly::plotlyOutput(ns("render_plotly_plot"),
           width = paste0(plot_width_rv(), "px"),
           height = paste0(plot_height_rv(), "px")
         ) |>
           shinycssloaders::withSpinner(type = 8, color = "#3498db")
       }
-
-      message("scanServer: scan_plot_ui_render - UI created successfully")
-      return(ui_result)
     })
 
     output$render_plotly_plot <- plotly::renderPlotly({
-      message("scanServer: render_plotly_plot - Starting plotly render")
-
       plot_gg <- current_scan_plot_gg()
       shiny::req(plot_gg)
 
-      message(paste("scanServer: render_plotly_plot - Got plot object:", !is.null(plot_gg)))
-
-      message("scanServer: render_plotly_plot - Creating ggplotly")
+      # Streamlined plotly creation
       plt <- plotly::ggplotly(plot_gg,
         source = ns("qtl_scan_plotly"),
         tooltip = c("x", "y", "chr")
-      )
-
-      message("scanServer: render_plotly_plot - Configuring plotly layout")
-      plt <- plt %>% # Use the new pipe operator
+      ) %>%
         plotly::layout(
           dragmode = "zoom",
           hovermode = "closest",
-          title = list(
-            text = NULL
-          ),
+          title = list(text = NULL),
           xaxis = list(
             title = plot_gg$labels$x,
-            fixedrange = FALSE # Allow x-axis zooming
+            fixedrange = FALSE
           ),
           yaxis = list(
             title = plot_gg$labels$y,
-            fixedrange = TRUE # Prevent y-axis zooming - always show full height
+            fixedrange = TRUE
           )
-        ) %>% # Use the new pipe operator
+        ) %>%
         plotly::config(
           displaylogo = FALSE,
           modeBarButtonsToRemove = c(
             "select2d", "lasso2d", "hoverClosestCartesian",
             "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"
           )
-        )
+        ) %>%
+        plotly::event_register("plotly_click")
 
-      # Register the plotly_click event here for the LOD scan plot
-      plt <- plotly::event_register(plt, "plotly_click")
-      message("scanServer: render_plotly_plot - Plotly plot completed successfully")
       plt
     })
 
     # Render function for the difference plot
     output$render_difference_plot <- plotly::renderPlotly({
-      message("scanServer: render_difference_plot - Starting difference plotly render")
-
       # Only render for interactive datasets
       shiny::req(show_stacked_plots())
 
       diff_plot_gg <- difference_plot_gg()
-      message(paste("scanServer: render_difference_plot - Got difference plot object:", !is.null(diff_plot_gg)))
 
       if (is.null(diff_plot_gg)) {
         # Show a placeholder when no difference plot is available
@@ -2127,27 +2027,22 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         return(plotly::ggplotly(placeholder_plot))
       }
 
-      message("scanServer: render_difference_plot - Creating ggplotly for difference plot")
-      plt <- plotly::ggplotly(diff_plot_gg,
+      # Streamlined difference plot creation
+      plotly::ggplotly(diff_plot_gg,
         source = ns("difference_plotly"),
         tooltip = c("x", "y", "chr")
-      )
-
-      message("scanServer: render_difference_plot - Configuring difference plotly layout")
-      plt <- plt %>%
+      ) %>%
         plotly::layout(
           dragmode = "zoom",
           hovermode = "closest",
-          title = list(
-            text = NULL
-          ),
+          title = list(text = NULL),
           xaxis = list(
             title = diff_plot_gg$labels$x,
-            fixedrange = FALSE # Allow x-axis zooming
+            fixedrange = FALSE
           ),
           yaxis = list(
             title = diff_plot_gg$labels$y,
-            fixedrange = TRUE # Prevent y-axis zooming - always show full height
+            fixedrange = TRUE
           )
         ) %>%
         plotly::config(
@@ -2157,9 +2052,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"
           )
         )
-
-      message("scanServer: render_difference_plot - Difference plotly plot completed successfully")
-      plt
     })
 
     shiny::observeEvent(plotly::event_data("plotly_click", source = ns("qtl_scan_plotly")), {
