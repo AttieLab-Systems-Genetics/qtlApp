@@ -150,12 +150,28 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       }
     })
 
+    # Add caching for raw peaks data
     raw_peaks_data <- shiny::reactive({
       shiny::req(selected_peaks_file())
       file_path <- selected_peaks_file()
+
+      # Create cache key from file path and modification time
+      cache_key <- paste0(file_path, "_", file.info(file_path)$mtime)
+
+      # Check if data is already cached
+      if (exists("manhattan_cache", envir = .GlobalEnv)) {
+        if (cache_key %in% names(.GlobalEnv$manhattan_cache)) {
+          message("ManhattanPlot: Using cached peaks data")
+          return(.GlobalEnv$manhattan_cache[[cache_key]])
+        }
+      } else {
+        .GlobalEnv$manhattan_cache <- list()
+      }
+
       tryCatch(
         {
-          dt <- data.table::fread(file_path)
+          message(paste("ManhattanPlot: Loading and caching peaks data from:", basename(file_path)))
+          dt <- data.table::fread(file_path, showProgress = FALSE)
           req_cols <- c("phenotype_class", "phenotype", "qtl_lod", "qtl_chr", "qtl_pos")
           missing_cols <- req_cols[!req_cols %in% colnames(dt)]
           if (length(missing_cols) > 0) {
@@ -164,139 +180,103 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
             )
             return(NULL)
           }
-          return(data.table::as.data.table(dt))
+
+          # Convert to data.table and optimize column types upfront
+          dt <- data.table::as.data.table(dt)
+          if ("qtl_lod" %in% colnames(dt)) dt[, qtl_lod := as.numeric(qtl_lod)]
+          if ("qtl_pos" %in% colnames(dt)) dt[, qtl_pos := as.numeric(qtl_pos)]
+          if ("lod_diff" %in% colnames(dt)) dt[, lod_diff := as.numeric(lod_diff)]
+
+          # Cache the processed data
+          .GlobalEnv$manhattan_cache[[cache_key]] <- dt
+
+          # Keep cache size manageable (max 5 datasets)
+          if (length(.GlobalEnv$manhattan_cache) > 5) {
+            .GlobalEnv$manhattan_cache <- .GlobalEnv$manhattan_cache[-(1:2)]
+          }
+
+          return(dt)
         },
         error = function(e) {
           shiny::showNotification(paste("Error loading peaks file (", basename(file_path), "):", e$message), type = "error", duration = NULL)
           return(NULL)
         }
       )
-    })
+    }) %>% shiny::debounce(100)
 
     plot_data_prep <- shiny::reactive({
       shiny::req(raw_peaks_data(), main_par(), main_par()$selected_dataset, main_par()$LOD_thr, import_reactives(), import_reactives()$file_directory)
 
-      peaks_dt <- data.table::copy(raw_peaks_data())
-      selected_group_name <- main_par()$selected_dataset() # This is the 'group' name from file_index
-      lod_threshold <- main_par()$LOD_thr() # Get the LOD threshold from the slider
+      # Get reactive values once to avoid multiple evaluations
+      peaks_dt <- raw_peaks_data() # Already a data.table, no need to copy unless modifying
+      selected_group_name <- main_par()$selected_dataset()
+      lod_threshold <- main_par()$LOD_thr()
       file_index <- data.table::as.data.table(import_reactives()$file_directory)
-
-      # Check if this is qtlxcovar data (has lod_diff column) for difference plotting
       interaction_type <- if (!is.null(sidebar_interaction_type)) sidebar_interaction_type() else "none"
-      is_qtlxcovar_data <- "lod_diff" %in% colnames(peaks_dt)
 
-      message(paste("ManhattanPlot: plot_data_prep. Interaction type:", interaction_type, "Has lod_diff column:", is_qtlxcovar_data))
-
-      # Determine the dataset_category for the selected_group_name
-      current_dataset_info <- file_index[group == selected_group_name]
-      current_dataset_category <- NULL
-      if (nrow(current_dataset_info) > 0) {
-        current_dataset_category <- current_dataset_info$dataset_category[1]
-      } else {
-        shiny::showNotification(paste("ManhattanPlot: Could not find 'group'", selected_group_name, "in file_index.csv to determine category."), type = "warning")
-        return(NULL) # Or an empty data.table
-      }
-
-      shiny::validate(
-        shiny::need(current_dataset_category, "ManhattanPlot: Dataset category could not be determined.")
-      )
-
-      # Determine the phenotype_class string to filter by, based on the dataset category
-      target_phenotype_class_values <- NULL
-      if (current_dataset_category == "Clinical Traits") {
-        target_phenotype_class_values <- c("clinical_trait")
-      } else if (current_dataset_category == "Liver Lipids") {
-        target_phenotype_class_values <- c("liver_lipid")
-      } else if (current_dataset_category == "Plasma Metabolites") {
-        target_phenotype_class_values <- c("plasma_13C_metabolite", "plasma_2H_metabolite")
-      } else {
-        # Fallback or error if the category is unexpected for Manhattan plots
-        shiny::showNotification(paste("ManhattanPlot: Unexpected dataset category '", current_dataset_category, "' for Manhattan plot."), type = "warning")
-        return(NULL) # Or an empty data.table
-      }
-
-      message(paste0(
-        "ManhattanPlot DEBUG: For group '", selected_group_name, "' (category '", current_dataset_category, "'), ",
-        "filtering by phenotype_class = '", paste(target_phenotype_class_values, collapse = ", "), "'."
-      ))
-
-      if (nrow(peaks_dt) > 0 && "phenotype_class" %in% colnames(peaks_dt)) {
-        message(paste0("ManhattanPlot DEBUG: Unique 'phenotype_class' values BEFORE filtering: ", paste(unique(peaks_dt$phenotype_class), collapse = ", ")))
-      } else if (nrow(peaks_dt) == 0) {
-        message("ManhattanPlot DEBUG: raw_peaks_data for plot_data_prep is empty BEFORE filtering.")
-      } else {
-        message("ManhattanPlot DEBUG: 'phenotype_class' column not found in raw_peaks_data for plot_data_prep.")
-        return(NULL) # Critical column missing
-      }
-
-      # Actual filtering based on the determined target_phenotype_class_values (using %in% for multiple values)
-      peaks_dt <- peaks_dt[phenotype_class %in% target_phenotype_class_values]
-
-      if (nrow(peaks_dt) == 0) {
-        shiny::showNotification(
-          paste0(
-            "No data after filtering for phenotype classes: ", paste(target_phenotype_class_values, collapse = ", "),
-            " (for dataset '", selected_group_name, "'). Check if the peaks file contains these phenotype classes."
-          ),
-          type = "warning", duration = 10
-        )
-
-        return(data.table::data.table()) # Return empty table to avoid plot errors
-      } else {
-        message(paste0("ManhattanPlot DEBUG: Filtering for '", paste(target_phenotype_class_values, collapse = ", "), "' resulted in ", nrow(peaks_dt), " rows."))
-      }
-
-      # For qtlxcovar data, use lod_diff for the plot instead of qtl_lod
-      if (is_qtlxcovar_data && interaction_type != "none") {
-        message("ManhattanPlot: Using lod_diff values for interaction difference plot")
-
-        # Ensure lod_diff is numeric
-        if (!is.numeric(peaks_dt$lod_diff)) {
-          peaks_dt[, lod_diff := as.numeric(as.character(lod_diff))]
-        }
-        peaks_dt <- peaks_dt[!is.na(lod_diff)]
-
-        # Create a plotting LOD column that uses lod_diff values
-        peaks_dt[, plot_lod := abs(lod_diff)] # Use absolute value for threshold filtering
-        peaks_dt[, plot_lod_signed := lod_diff] # Keep signed values for plotting
-        lod_col_name <- "plot_lod"
-        lod_col_signed <- "plot_lod_signed"
-      } else {
-        message("ManhattanPlot: Using qtl_lod values for standard plot")
-
-        # Ensure qtl_lod is numeric for regular peaks
-        if (!is.numeric(peaks_dt$qtl_lod)) {
-          peaks_dt[, qtl_lod := as.numeric(as.character(qtl_lod))]
-        }
-        peaks_dt <- peaks_dt[!is.na(qtl_lod)]
-
-        peaks_dt[, plot_lod := qtl_lod]
-        peaks_dt[, plot_lod_signed := qtl_lod]
-        lod_col_name <- "plot_lod"
-        lod_col_signed <- "plot_lod_signed"
-      }
-
-      # FILTER BY LOD THRESHOLD - Only show points at or above the threshold
-      message(paste0("ManhattanPlot DEBUG: Applying LOD threshold filter. Before: ", nrow(peaks_dt), " rows, threshold: ", lod_threshold))
-      peaks_dt <- peaks_dt[get(lod_col_name) >= lod_threshold]
-      message(paste0("ManhattanPlot DEBUG: After LOD threshold filter: ", nrow(peaks_dt), " rows"))
-
-      peaks_dt[, chr_factor := factor(qtl_chr,
-        levels = c(as.character(1:19), "X", "Y", "M"),
-        ordered = TRUE
-      )]
-      peaks_dt <- peaks_dt[!is.na(chr_factor)]
-
-      if (!is.numeric(peaks_dt$qtl_pos)) {
-        peaks_dt[, qtl_pos := as.numeric(as.character(qtl_pos))]
-      }
-      peaks_dt <- peaks_dt[!is.na(qtl_pos)]
-
-      if (nrow(peaks_dt) == 0) {
-        message("ManhattanPlot DEBUG: No data remaining after all filters")
+      # Early exit checks
+      if (is.null(peaks_dt) || nrow(peaks_dt) == 0) {
         return(data.table::data.table())
       }
 
+      # Check if this is qtlxcovar data (already determined during loading)
+      is_qtlxcovar_data <- "lod_diff" %in% colnames(peaks_dt)
+
+      # Fast dataset category lookup (memoize this lookup)
+      current_dataset_info <- file_index[group == selected_group_name]
+      if (nrow(current_dataset_info) == 0) {
+        shiny::showNotification(paste("ManhattanPlot: No data found for group:", selected_group_name), type = "warning")
+        return(data.table::data.table())
+      }
+      current_dataset_category <- current_dataset_info$dataset_category[1]
+
+      # Streamlined phenotype class mapping
+      target_phenotype_class_values <- switch(current_dataset_category,
+        "Clinical Traits" = "clinical_trait",
+        "Liver Lipids" = "liver_lipid",
+        "Plasma Metabolites" = c("plasma_13C_metabolite", "plasma_2H_metabolite"),
+        NULL
+      )
+
+      if (is.null(target_phenotype_class_values)) {
+        shiny::showNotification(paste("ManhattanPlot: Unsupported category:", current_dataset_category), type = "warning")
+        return(data.table::data.table())
+      }
+
+      # Efficient filtering chain
+      peaks_dt <- peaks_dt[phenotype_class %in% target_phenotype_class_values]
+
+      if (nrow(peaks_dt) == 0) {
+        return(data.table::data.table())
+      }
+
+      # Streamlined LOD column setup (columns already numeric from caching)
+      if (is_qtlxcovar_data && interaction_type != "none") {
+        peaks_dt <- peaks_dt[!is.na(lod_diff)]
+        peaks_dt[, `:=`(plot_lod = abs(lod_diff), plot_lod_signed = lod_diff)]
+        lod_col_name <- "plot_lod"
+      } else {
+        peaks_dt <- peaks_dt[!is.na(qtl_lod)]
+        peaks_dt[, `:=`(plot_lod = qtl_lod, plot_lod_signed = qtl_lod)]
+        lod_col_name <- "plot_lod"
+      }
+
+      # Apply LOD threshold filter
+      peaks_dt <- peaks_dt[get(lod_col_name) >= lod_threshold]
+
+      if (nrow(peaks_dt) == 0) {
+        return(data.table::data.table())
+      }
+
+      # Efficient chromosome factor creation
+      peaks_dt[, chr_factor := factor(qtl_chr, levels = c(as.character(1:19), "X", "Y", "M"), ordered = TRUE)]
+      peaks_dt <- peaks_dt[!is.na(chr_factor) & !is.na(qtl_pos)]
+
+      if (nrow(peaks_dt) == 0) {
+        return(data.table::data.table())
+      }
+
+      # Set key for faster operations
       data.table::setkey(peaks_dt, chr_factor, qtl_pos)
 
       # Add metadata for plot creation
@@ -304,7 +284,7 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       attr(peaks_dt, "interaction_type") <- interaction_type
 
       return(peaks_dt)
-    })
+    }) %>% shiny::debounce(150)
 
     output$manhattan_plot_output <- plotly::renderPlotly({
       df_to_plot <- plot_data_prep()
@@ -313,73 +293,105 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       # Get metadata from plot data
       is_qtlxcovar_data <- attr(df_to_plot, "is_qtlxcovar_data") %||% FALSE
       interaction_type <- attr(df_to_plot, "interaction_type") %||% "none"
+      lod_display_col <- "plot_lod_signed"
 
-      # Determine plot title and axis labels based on data type
-      if (is_qtlxcovar_data && interaction_type != "none") {
-        plot_title <- paste("Manhattan Plot -", stringr::str_to_title(interaction_type), "Interaction Difference")
-        y_axis_label <- "LOD Difference"
-        lod_display_col <- "plot_lod_signed"
-      } else {
-        plot_title <- paste("Manhattan Plot for", main_par()$selected_dataset())
-        y_axis_label <- "LOD Score"
-        lod_display_col <- "plot_lod_signed"
+      # Optimize for large datasets - sample points if too many
+      if (nrow(df_to_plot) > 5000) {
+        # Keep top peaks and random sample of others
+        top_peaks <- df_to_plot[order(-get(lod_display_col))][1:min(2000, nrow(df_to_plot))]
+        if (nrow(df_to_plot) > 2000) {
+          # Use anti-join to get remaining rows - ensure marker column exists
+          if ("marker" %in% colnames(df_to_plot)) {
+            remaining <- df_to_plot[!top_peaks, on = "marker"]
+          } else {
+            # Fallback: use row indexing if marker column doesn't exist
+            top_indices <- df_to_plot[order(-get(lod_display_col))][1:min(2000, nrow(df_to_plot)), which = TRUE]
+            remaining <- df_to_plot[-top_indices]
+          }
+          sampled <- remaining[sample(.N, min(3000, .N))]
+          df_to_plot <- rbind(top_peaks, sampled)
+        } else {
+          df_to_plot <- top_peaks
+        }
+        data.table::setkey(df_to_plot, chr_factor, qtl_pos)
       }
 
-      df_to_plot[, hover_text := paste(
-        "Phenotype:", phenotype, # Original phenotype for display
-        "<br>Marker:", marker,
-        "<br>", y_axis_label, ":", round(get(lod_display_col), 2),
-        "<br>Chr:", qtl_chr,
-        "<br>Pos (Mbp):", round(qtl_pos, 2)
+      # Streamlined hover text creation
+      df_to_plot[, hover_text := paste0(
+        "Phenotype: ", phenotype,
+        "<br>Marker: ", marker,
+        "<br>", if (is_qtlxcovar_data && interaction_type != "none") "LOD Difference" else "LOD Score", ": ", round(get(lod_display_col), 2),
+        "<br>Chr: ", qtl_chr,
+        "<br>Pos (Mbp): ", round(qtl_pos, 2)
       )]
 
-      # Set y-axis limits - use minimum of 4 for interactive difference plots
-      if (is_qtlxcovar_data && interaction_type != "none") {
-        # For interactive difference plots, set minimum y-axis to 4
-        y_min <- 4
-        y_max <- max(abs(df_to_plot[[lod_display_col]]), na.rm = TRUE) * 1.1
-        y_axis_limits <- c(y_min, y_max)
+      # Pre-calculate y-axis limits
+      y_axis_limits <- if (is_qtlxcovar_data && interaction_type != "none") {
+        c(4, max(abs(df_to_plot[[lod_display_col]]), na.rm = TRUE) * 1.1)
       } else {
-        # For regular Manhattan plots, use default scaling
-        y_axis_limits <- NULL
+        NULL
       }
 
-      p <- ggplot(df_to_plot, aes(x = qtl_pos, y = get(lod_display_col), text = hover_text, key = marker, customdata = phenotype)) +
-        geom_point(alpha = 0.7, size = 1.5, color = "#2c3e50") +
+      # Streamlined plot creation
+      p <- ggplot2::ggplot(df_to_plot, ggplot2::aes(x = qtl_pos, y = get(lod_display_col), text = hover_text, key = marker, customdata = phenotype)) +
+        ggplot2::geom_point(alpha = 0.6, size = 1.2, color = "#2c3e50") +
         {
           if (is.null(y_axis_limits)) {
-            scale_y_continuous(name = y_axis_label, expand = expansion(mult = c(0.05, 0.05)))
+            ggplot2::scale_y_continuous(
+              name = if (is_qtlxcovar_data && interaction_type != "none") "LOD Difference" else "LOD Score",
+              expand = ggplot2::expansion(mult = c(0.05, 0.05))
+            )
           } else {
-            scale_y_continuous(name = y_axis_label, limits = y_axis_limits, expand = expansion(mult = c(0.02, 0.05)))
+            ggplot2::scale_y_continuous(
+              name = "LOD Difference", limits = y_axis_limits,
+              expand = ggplot2::expansion(mult = c(0.02, 0.05))
+            )
           }
         } +
-        labs(title = paste(plot_title, "(|LOD| ≥", main_par()$LOD_thr(), ")"), x = "Position (Mbp)") +
-        facet_grid(. ~ chr_factor, scales = "free_x", space = "free_x", switch = "x") + # Facet by chromosome
-        theme_minimal(base_size = 11) +
-        theme(
-          panel.spacing.x = unit(0.1, "lines"), # Reduced space between facets
-          strip.background = element_blank(), # Remove facet label background
-          strip.placement = "outside", # Place facet labels outside plot
-          axis.text.x = element_text(angle = 45, hjust = 1, size = 8), # Angled X-axis text for readability
-          panel.grid.major.x = element_blank(),
-          panel.grid.minor.x = element_blank(),
-          plot.title = element_text(hjust = 0.5, face = "bold")
+        ggplot2::labs(
+          title = paste0(
+            if (is_qtlxcovar_data && interaction_type != "none") {
+              paste("Manhattan Plot -", stringr::str_to_title(interaction_type), "Interaction Difference")
+            } else {
+              paste("Manhattan Plot for", main_par()$selected_dataset())
+            },
+            " (|LOD| ≥ ", main_par()$LOD_thr(), ")"
+          ),
+          x = "Position (Mbp)"
+        ) +
+        ggplot2::facet_grid(. ~ chr_factor, scales = "free_x", space = "free_x", switch = "x") +
+        ggplot2::theme_minimal(base_size = 10) +
+        ggplot2::theme(
+          panel.spacing.x = ggplot2::unit(0.1, "lines"),
+          strip.background = ggplot2::element_blank(),
+          strip.placement = "outside",
+          axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, size = 7),
+          panel.grid.major.x = ggplot2::element_blank(),
+          panel.grid.minor.x = ggplot2::element_blank(),
+          plot.title = ggplot2::element_text(hjust = 0.5, face = "bold", size = 11)
         )
 
-      # Add horizontal line at y=0 for difference plots
+      # Add horizontal line for difference plots
       if (is_qtlxcovar_data && interaction_type != "none") {
-        p <- p + geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7)
+        p <- p + ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7)
       }
 
+      # Optimized plotly conversion
       plotly_p <- plotly::ggplotly(p, tooltip = "text", source = ns("manhattan_plotly")) %>%
-        plotly::layout(dragmode = "pan") %>%
-        plotly::config(displaylogo = FALSE)
-
-      # Register the plotly_click event
-      plotly_p <- plotly::event_register(plotly_p, "plotly_click")
+        plotly::layout(
+          dragmode = "pan",
+          showlegend = FALSE,
+          autosize = TRUE
+        ) %>%
+        plotly::config(
+          displaylogo = FALSE,
+          modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines"),
+          responsive = TRUE
+        ) %>%
+        plotly::event_register("plotly_click")
 
       return(plotly_p)
-    })
+    }) %>% shiny::debounce(200)
 
     clicked_phenotype_for_lod_scan_rv <- shiny::reactiveVal(NULL)
 
