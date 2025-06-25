@@ -56,6 +56,7 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                     return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
                 }
             }
+
             # Fallback to original dataset if no mapping found
             return(base_dataset)
         }
@@ -160,7 +161,6 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                         "Sex interaction" = "sex",
                         "Diet interaction" = "diet"
                     )
-                    # No Diet interaction available for Plasma Metabolites - keeping both for now
                 }
 
                 tagList(

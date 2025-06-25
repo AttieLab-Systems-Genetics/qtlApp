@@ -274,22 +274,6 @@ scanApp <- function() {
 
     import_reactives <- importServer("import")
 
-    # Detect if current dataset is additive or interactive based on dataset name and interaction type
-    scan_type <- shiny::reactive({
-      dataset_name <- main_selected_dataset_group()
-
-      if (is.null(dataset_name) || dataset_name == "") {
-        return("additive") # Default to additive
-      }
-
-      # Check if dataset name contains "interactive" or if interaction type is selected
-      if (grepl("interactive", dataset_name, ignore.case = TRUE)) {
-        return("interactive")
-      } else {
-        return("additive")
-      }
-    })
-
     # Dynamic LOD threshold slider based on scan type
     output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
       current_scan_type <- scan_type()
@@ -317,126 +301,7 @@ scanApp <- function() {
       input[[ns_app_controller("selected_chr")]] %||% "All" # Default to "All" chromosomes
     })
 
-    # Reactive to find peak data for the selected trait
-    peaks_data_for_trait <- shiny::reactive({
-      trait_val <- trait_for_lod_scan_rv()
-      if (is.null(trait_val)) {
-        return(NULL)
-      }
 
-      shiny::req(mapped_dataset_for_interaction(), import_reactives())
-
-      dataset_val <- mapped_dataset_for_interaction()
-
-      message(paste("scanApp: Finding peaks for trait:", trait_val, "in dataset:", dataset_val))
-
-      # Determine trait type for this dataset to pass to peak_finder
-      # Use the base dataset name for trait type determination
-      base_dataset <- main_selected_dataset_group()
-      trait_type_val <- get_trait_type(import_reactives(), base_dataset)
-
-      # Use peak_finder to get peaks for this specific trait
-      tryCatch(
-        {
-          peaks <- peak_finder(
-            file_dir = import_reactives()$file_directory,
-            selected_dataset = dataset_val,
-            selected_trait = trait_val,
-            trait_type = trait_type_val,
-            cache_env = peaks_cache,
-            use_cache = TRUE
-          )
-          message(paste("scanApp: Found", if (is.null(peaks)) 0 else nrow(peaks), "peaks for trait:", trait_val))
-          peaks
-        },
-        error = function(e) {
-          message(paste("scanApp: Error finding peaks for trait", trait_val, ":", e$message))
-          NULL
-        }
-      )
-    })
-
-    # Reactive to get ALL peaks above threshold for the selected trait
-    available_peaks_for_trait <- shiny::reactive({
-      peaks <- peaks_data_for_trait()
-      if (is.null(peaks) || nrow(peaks) == 0) {
-        return(NULL)
-      }
-
-      # Filter by LOD threshold
-      lod_thr <- lod_threshold_rv()
-      shiny::req(lod_thr)
-
-      # Check what columns are available
-      message(paste("scanApp: Peak data columns:", paste(colnames(peaks), collapse = ", ")))
-
-      # Use qtl_lod column (from peak_finder) instead of lod
-      if (!"qtl_lod" %in% colnames(peaks)) {
-        message("scanApp: No qtl_lod column found in peaks data")
-        return(NULL)
-      }
-
-      # Filter by LOD threshold and sort by LOD descending
-      filtered_peaks <- peaks[peaks$qtl_lod >= lod_thr, ]
-      if (nrow(filtered_peaks) == 0) {
-        message(paste("scanApp: No peaks above LOD threshold", lod_thr, "for trait:", trait_for_lod_scan_rv()))
-        return(NULL)
-      }
-
-      # Sort by qtl_lod descending
-      filtered_peaks <- filtered_peaks[order(-filtered_peaks$qtl_lod), ]
-
-      message(paste("scanApp: Found", nrow(filtered_peaks), "peaks above threshold for trait:", trait_for_lod_scan_rv()))
-      filtered_peaks
-    })
-
-    # Reactive value to store the selected peak marker from dropdown
-    selected_peak_from_dropdown <- shiny::reactiveVal(NULL)
-
-    # Reactive to get the currently selected peak marker (either from dropdown or default to highest)
-    selected_peak_marker <- shiny::reactive({
-      available_peaks <- available_peaks_for_trait()
-      if (is.null(available_peaks) || nrow(available_peaks) == 0) {
-        return(NULL)
-      }
-
-      # Use dropdown selection if available, otherwise default to highest peak
-      dropdown_selection <- selected_peak_from_dropdown()
-      if (!is.null(dropdown_selection) && dropdown_selection %in% available_peaks$marker) {
-        selected_marker <- dropdown_selection
-        selected_peak_info <- available_peaks[available_peaks$marker == selected_marker, ]
-        message(paste("scanApp: Using dropdown-selected peak:", selected_marker, "with LOD:", selected_peak_info$qtl_lod[1]))
-      } else {
-        # Default to highest peak
-        selected_marker <- available_peaks$marker[1]
-        message(paste("scanApp: Using highest peak (default):", selected_marker, "with LOD:", available_peaks$qtl_lod[1]))
-      }
-
-      selected_marker
-    })
-
-    # Reactive to prepare allele effects data
-    allele_effects_data <- shiny::reactive({
-      peaks <- peaks_data_for_trait()
-      marker <- selected_peak_marker()
-
-      if (is.null(peaks) || is.null(marker)) {
-        return(NULL)
-      }
-
-      # Use pivot_peaks helper function to reshape data for plotting
-      reshaped_data <- pivot_peaks(peaks, marker)
-
-      if (is.null(reshaped_data) || nrow(reshaped_data) == 0) {
-        message(paste("scanApp: No allele effects data available for marker:", marker))
-        return(NULL)
-      }
-
-      # Add trait name to the data for plot labeling
-      reshaped_data$trait <- trait_for_lod_scan_rv()
-      message(paste("scanApp: Prepared allele effects data for marker:", marker, "with", nrow(reshaped_data), "strain effects"))
-      reshaped_data
-    })
 
     file_index_dt <- shiny::reactive({
       shiny::req(import_reactives()$file_directory)
@@ -491,8 +356,8 @@ scanApp <- function() {
             interaction_note = "Use interaction controls for Sex/Diet effects."
           ),
           "Plasma Metabolites" = list(
-            name = "HC_HF Plasma Metabolites",
-            interaction_note = "No interactive analysis available for this dataset."
+            name = "HC_HF Plasma Metabolites (Additive)",
+            interaction_note = "Use interaction controls for Sex effects."
           ),
           "Liver Isoforms" = list(
             name = "HC_HF Liver Isoforms",
@@ -668,6 +533,143 @@ scanApp <- function() {
       return(base_dataset)
     })
 
+    # Detect if current dataset is additive or interactive based on dataset name and interaction type
+    scan_type <- shiny::reactive({
+      dataset_name <- main_selected_dataset_group()
+
+      if (is.null(dataset_name) || dataset_name == "") {
+        return("additive") # Default to additive
+      }
+
+      # Check if dataset name contains "interactive" or if interaction type is selected
+      if (grepl("interactive", dataset_name, ignore.case = TRUE)) {
+        return("interactive")
+      } else {
+        return("additive")
+      }
+    })
+
+    # Reactive to find peak data for the selected trait
+    peaks_data_for_trait <- shiny::reactive({
+      trait_val <- trait_for_lod_scan_rv()
+      if (is.null(trait_val)) {
+        return(NULL)
+      }
+
+      shiny::req(mapped_dataset_for_interaction(), import_reactives())
+
+      dataset_val <- mapped_dataset_for_interaction()
+
+      message(paste("scanApp: Finding peaks for trait:", trait_val, "in dataset:", dataset_val))
+
+      # Determine trait type for this dataset to pass to peak_finder
+      # Use the base dataset name for trait type determination
+      base_dataset <- main_selected_dataset_group()
+      trait_type_val <- get_trait_type(import_reactives(), base_dataset)
+
+      # Use peak_finder to get peaks for this specific trait
+      tryCatch(
+        {
+          peaks <- peak_finder(
+            file_dir = import_reactives()$file_directory,
+            selected_dataset = dataset_val,
+            selected_trait = trait_val,
+            trait_type = trait_type_val,
+            cache_env = peaks_cache,
+            use_cache = TRUE
+          )
+          message(paste("scanApp: Found", if (is.null(peaks)) 0 else nrow(peaks), "peaks for trait:", trait_val))
+          peaks
+        },
+        error = function(e) {
+          message(paste("scanApp: Error finding peaks for trait", trait_val, ":", e$message))
+          NULL
+        }
+      )
+    })
+
+    # Reactive to get ALL peaks above threshold for the selected trait
+    available_peaks_for_trait <- shiny::reactive({
+      peaks <- peaks_data_for_trait()
+      if (is.null(peaks) || nrow(peaks) == 0) {
+        return(NULL)
+      }
+
+      # Filter by LOD threshold
+      lod_thr <- lod_threshold_rv()
+      shiny::req(lod_thr)
+
+      # Check what columns are available
+      message(paste("scanApp: Peak data columns:", paste(colnames(peaks), collapse = ", ")))
+
+      # Use qtl_lod column (from peak_finder) instead of lod
+      if (!"qtl_lod" %in% colnames(peaks)) {
+        message("scanApp: No qtl_lod column found in peaks data")
+        return(NULL)
+      }
+
+      # Filter by LOD threshold and sort by LOD descending
+      filtered_peaks <- peaks[peaks$qtl_lod >= lod_thr, ]
+      if (nrow(filtered_peaks) == 0) {
+        message(paste("scanApp: No peaks above LOD threshold", lod_thr, "for trait:", trait_for_lod_scan_rv()))
+        return(NULL)
+      }
+
+      # Sort by qtl_lod descending
+      filtered_peaks <- filtered_peaks[order(-filtered_peaks$qtl_lod), ]
+
+      message(paste("scanApp: Found", nrow(filtered_peaks), "peaks above threshold for trait:", trait_for_lod_scan_rv()))
+      filtered_peaks
+    })
+
+    # Reactive value to store the selected peak marker from dropdown
+    selected_peak_from_dropdown <- shiny::reactiveVal(NULL)
+
+    # Reactive to get the currently selected peak marker (either from dropdown or default to highest)
+    selected_peak_marker <- shiny::reactive({
+      available_peaks <- available_peaks_for_trait()
+      if (is.null(available_peaks) || nrow(available_peaks) == 0) {
+        return(NULL)
+      }
+
+      # Use dropdown selection if available, otherwise default to highest peak
+      dropdown_selection <- selected_peak_from_dropdown()
+      if (!is.null(dropdown_selection) && dropdown_selection %in% available_peaks$marker) {
+        selected_marker <- dropdown_selection
+        selected_peak_info <- available_peaks[available_peaks$marker == selected_marker, ]
+        message(paste("scanApp: Using dropdown-selected peak:", selected_marker, "with LOD:", selected_peak_info$qtl_lod[1]))
+      } else {
+        # Default to highest peak
+        selected_marker <- available_peaks$marker[1]
+        message(paste("scanApp: Using highest peak (default):", selected_marker, "with LOD:", available_peaks$qtl_lod[1]))
+      }
+
+      selected_marker
+    })
+
+    # Reactive to prepare allele effects data
+    allele_effects_data <- shiny::reactive({
+      peaks <- peaks_data_for_trait()
+      marker <- selected_peak_marker()
+
+      if (is.null(peaks) || is.null(marker)) {
+        return(NULL)
+      }
+
+      # Use pivot_peaks helper function to reshape data for plotting
+      reshaped_data <- pivot_peaks(peaks, marker)
+
+      if (is.null(reshaped_data) || nrow(reshaped_data) == 0) {
+        message(paste("scanApp: No allele effects data available for marker:", marker))
+        return(NULL)
+      }
+
+      # Add trait name to the data for plot labeling
+      reshaped_data$trait <- trait_for_lod_scan_rv()
+      message(paste("scanApp: Prepared allele effects data for marker:", marker, "with", nrow(reshaped_data), "strain effects"))
+      reshaped_data
+    })
+
     selected_dataset_category_reactive <- shiny::reactive({
       shiny::req(main_selected_dataset_group(), file_index_dt())
       info <- file_index_dt()[group == main_selected_dataset_group()]
@@ -676,6 +678,8 @@ scanApp <- function() {
       }
       return(NULL)
     })
+
+
 
     output[[ns_app_controller("plot_title")]] <- shiny::renderText({
       category <- selected_dataset_category_reactive()
@@ -1706,7 +1710,88 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     # Reactive to store additive plot data for difference calculations
     additive_scan_data_rv <- shiny::reactiveVal(NULL)
 
-    # Observer to store additive data when interaction type is "none"
+    # Reactive to automatically load additive data in background for any trait
+    additive_scan_data_background <- shiny::reactive({
+      trait_val <- current_trait_for_scan()
+      dataset_group_val <- selected_dataset_group()
+
+      # Only load additive data for HC_HF datasets that support interactive analysis
+      if (is.null(trait_val) || is.null(dataset_group_val) || !grepl("^HC_HF", dataset_group_val, ignore.case = TRUE)) {
+        return(NULL)
+      }
+
+      # Check if this is already an interactive dataset - if so, get the base dataset name
+      base_dataset <- dataset_group_val
+      if (grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
+        # Extract base dataset name by removing interactive suffix
+        base_dataset <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
+        base_dataset <- trimws(base_dataset)
+      }
+
+      message("scanServer: Loading additive data in background for trait:", trait_val, "base dataset:", base_dataset)
+
+      # Get additive scan data (use the base dataset, not interactive version)
+      result <- tryCatch(
+        {
+          file_dir_val <- import_reactives()$file_directory
+          req(file_dir_val)
+
+          scan_data <- trait_scan(
+            file_dir = file_dir_val,
+            selected_dataset = base_dataset, # Use base dataset, not interactive
+            selected_trait = trait_val,
+            cache_env = NULL
+          )
+
+          if (!is.null(scan_data) && nrow(scan_data) > 0) {
+            message("scanServer: Background loaded additive data with", nrow(scan_data), "rows")
+
+            # Process through QTL_plot_visualizer
+            main_par_list <- main_par_inputs()
+            req(main_par_list$LOD_thr, import_reactives()$markers)
+
+            processed_data <- QTL_plot_visualizer(scan_data, trait_val, main_par_list$LOD_thr(), import_reactives()$markers)
+            message("scanServer: Background processed additive data with", if (is.null(processed_data)) "NULL" else nrow(processed_data), "rows")
+
+            # Apply chromosome filtering if needed
+            selected_chromosome <- main_par_list$selected_chr()
+            if (!is.null(selected_chromosome) && selected_chromosome != "All") {
+              sel_chr_num <- selected_chromosome
+              if (selected_chromosome == "X") sel_chr_num <- 20
+              if (selected_chromosome == "Y") sel_chr_num <- 21
+              if (selected_chromosome == "M") sel_chr_num <- 22
+              sel_chr_num <- as.numeric(sel_chr_num)
+
+              processed_data <- dplyr::filter(processed_data, chr == sel_chr_num)
+              message("scanServer: Background filtered additive data to", nrow(processed_data), "rows for chr", selected_chromosome)
+            }
+
+            return(processed_data)
+          } else {
+            return(NULL)
+          }
+        },
+        error = function(e) {
+          message("scanServer: Error loading additive data:", e$message)
+          return(NULL)
+        }
+      )
+    }) %>% shiny::debounce(300) # Debounce to prevent excessive loading
+
+    # Observer to store additive data automatically for any trait
+    shiny::observeEvent(additive_scan_data_background(),
+      {
+        background_data <- additive_scan_data_background()
+        if (!is.null(background_data) && nrow(background_data) > 0) {
+          additive_scan_data_rv(background_data)
+          message("scanServer: Stored background additive scan data with", nrow(background_data), "rows")
+        }
+      },
+      ignoreInit = TRUE,
+      ignoreNULL = TRUE
+    )
+
+    # Observer to store additive data when interaction type is "none" (keep existing behavior)
     shiny::observeEvent(list(scan_table_chr(), interaction_type_reactive),
       {
         if (!is.null(interaction_type_reactive)) {
@@ -1716,7 +1801,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             plot_data <- scan_table_chr()
             if (!is.null(plot_data) && nrow(plot_data) > 0) {
               additive_scan_data_rv(plot_data)
-              message("scanServer: Stored additive scan data with", nrow(plot_data), "rows")
+              message("scanServer: Stored additive scan data with", nrow(plot_data), "rows (from none mode)")
             }
           }
         }
