@@ -1,5 +1,42 @@
 # R/manhattanPlotApp.R
 
+#' Helper function to map dataset and interaction type to qtlxcovar file path for Manhattan plots
+get_qtlxcovar_file_path_manhattan <- function(base_dataset, interaction_type) {
+  qtlxcovar_dir <- "/data/dev/miniViewer_3.0"
+
+  # Map dataset categories to file prefixes
+  if (grepl("Clinical", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_clinical_traits_all_mice"
+  } else if (grepl("Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_liver_lipids_all_mice"
+  } else if (grepl("Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_plasma_metabolites_all_mice"
+  } else {
+    message("get_qtlxcovar_file_path_manhattan: Unknown dataset category for:", base_dataset)
+    return(NULL)
+  }
+
+  # Map interaction type to file suffix
+  if (interaction_type == "sex") {
+    file_suffix <- "qtlxsex_peaks.csv"
+  } else if (interaction_type == "diet") {
+    file_suffix <- "qtlxdiet_peaks.csv"
+  } else {
+    message("get_qtlxcovar_file_path_manhattan: Unknown interaction type:", interaction_type)
+    return(NULL)
+  }
+
+  file_path <- file.path(qtlxcovar_dir, paste0(file_prefix, "_", file_suffix))
+
+  if (file.exists(file_path)) {
+    message(paste("get_qtlxcovar_file_path_manhattan: Found qtlxcovar file:", file_path))
+    return(file_path)
+  } else {
+    message(paste("get_qtlxcovar_file_path_manhattan: File not found:", file_path))
+    return(NULL)
+  }
+}
+
 #' Manhattan Plot Module UI
 #'
 #' @param id Module ID.
@@ -45,7 +82,7 @@ manhattanPlotUI <- function(id) {
 #' @import ggplot2
 #' @import plotly
 #' @export
-manhattanPlotServer <- function(id, import_reactives, main_par) {
+manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interaction_type = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -62,11 +99,26 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       # selected_dataset_group_name is the 'group' from file_index.csv, passed by scanApp
       selected_dataset_group_name <- main_par()$selected_dataset()
 
-      message(paste("ManhattanPlot: Received selected_dataset_group_name:", selected_dataset_group_name))
+      # Check if we should use qtlxcovar data
+      interaction_type <- if (!is.null(sidebar_interaction_type)) sidebar_interaction_type() else "none"
+      base_dataset <- selected_dataset_group_name
+
+      message(paste("ManhattanPlot: Received selected_dataset_group_name:", selected_dataset_group_name, "interaction_type:", interaction_type))
 
       if (is.null(selected_dataset_group_name) || !nzchar(selected_dataset_group_name)) {
         shiny::showNotification("ManhattanPlot: No dataset group selected from main app.", type = "warning")
         return(NULL)
+      }
+
+      # Check if we should use qtlxcovar data instead of regular peaks
+      if (!is.null(interaction_type) && interaction_type != "none") {
+        qtlxcovar_file <- get_qtlxcovar_file_path_manhattan(base_dataset, interaction_type)
+        if (!is.null(qtlxcovar_file)) {
+          message(paste("ManhattanPlot: Using qtlxcovar file for", interaction_type, "interaction:", qtlxcovar_file))
+          return(qtlxcovar_file)
+        } else {
+          message(paste("ManhattanPlot: No qtlxcovar file found for", interaction_type, "interaction, falling back to regular peaks"))
+        }
       }
 
       # Find the row for this specific group that is a 'peaks' file.
@@ -129,6 +181,12 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       lod_threshold <- main_par()$LOD_thr() # Get the LOD threshold from the slider
       file_index <- data.table::as.data.table(import_reactives()$file_directory)
 
+      # Check if this is qtlxcovar data (has lod_diff column) for difference plotting
+      interaction_type <- if (!is.null(sidebar_interaction_type)) sidebar_interaction_type() else "none"
+      is_qtlxcovar_data <- "lod_diff" %in% colnames(peaks_dt)
+
+      message(paste("ManhattanPlot: plot_data_prep. Interaction type:", interaction_type, "Has lod_diff column:", is_qtlxcovar_data))
+
       # Determine the dataset_category for the selected_group_name
       current_dataset_info <- file_index[group == selected_group_name]
       current_dataset_category <- NULL
@@ -188,15 +246,39 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
         message(paste0("ManhattanPlot DEBUG: Filtering for '", paste(target_phenotype_class_values, collapse = ", "), "' resulted in ", nrow(peaks_dt), " rows."))
       }
 
-      # Ensure all subsequent code uses peaks_dt_filtered
-      if (!is.numeric(peaks_dt$qtl_lod)) {
-        peaks_dt[, qtl_lod := as.numeric(as.character(qtl_lod))]
+      # For qtlxcovar data, use lod_diff for the plot instead of qtl_lod
+      if (is_qtlxcovar_data && interaction_type != "none") {
+        message("ManhattanPlot: Using lod_diff values for interaction difference plot")
+
+        # Ensure lod_diff is numeric
+        if (!is.numeric(peaks_dt$lod_diff)) {
+          peaks_dt[, lod_diff := as.numeric(as.character(lod_diff))]
+        }
+        peaks_dt <- peaks_dt[!is.na(lod_diff)]
+
+        # Create a plotting LOD column that uses lod_diff values
+        peaks_dt[, plot_lod := abs(lod_diff)] # Use absolute value for threshold filtering
+        peaks_dt[, plot_lod_signed := lod_diff] # Keep signed values for plotting
+        lod_col_name <- "plot_lod"
+        lod_col_signed <- "plot_lod_signed"
+      } else {
+        message("ManhattanPlot: Using qtl_lod values for standard plot")
+
+        # Ensure qtl_lod is numeric for regular peaks
+        if (!is.numeric(peaks_dt$qtl_lod)) {
+          peaks_dt[, qtl_lod := as.numeric(as.character(qtl_lod))]
+        }
+        peaks_dt <- peaks_dt[!is.na(qtl_lod)]
+
+        peaks_dt[, plot_lod := qtl_lod]
+        peaks_dt[, plot_lod_signed := qtl_lod]
+        lod_col_name <- "plot_lod"
+        lod_col_signed <- "plot_lod_signed"
       }
-      peaks_dt <- peaks_dt[!is.na(qtl_lod)]
 
       # FILTER BY LOD THRESHOLD - Only show points at or above the threshold
       message(paste0("ManhattanPlot DEBUG: Applying LOD threshold filter. Before: ", nrow(peaks_dt), " rows, threshold: ", lod_threshold))
-      peaks_dt <- peaks_dt[qtl_lod >= lod_threshold]
+      peaks_dt <- peaks_dt[get(lod_col_name) >= lod_threshold]
       message(paste0("ManhattanPlot DEBUG: After LOD threshold filter: ", nrow(peaks_dt), " rows"))
 
       peaks_dt[, chr_factor := factor(qtl_chr,
@@ -217,6 +299,10 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
 
       data.table::setkey(peaks_dt, chr_factor, qtl_pos)
 
+      # Add metadata for plot creation
+      attr(peaks_dt, "is_qtlxcovar_data") <- is_qtlxcovar_data
+      attr(peaks_dt, "interaction_type") <- interaction_type
+
       return(peaks_dt)
     })
 
@@ -224,18 +310,33 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
       df_to_plot <- plot_data_prep()
       shiny::req(df_to_plot, nrow(df_to_plot) > 0)
 
+      # Get metadata from plot data
+      is_qtlxcovar_data <- attr(df_to_plot, "is_qtlxcovar_data") %||% FALSE
+      interaction_type <- attr(df_to_plot, "interaction_type") %||% "none"
+
+      # Determine plot title and axis labels based on data type
+      if (is_qtlxcovar_data && interaction_type != "none") {
+        plot_title <- paste("Manhattan Plot -", stringr::str_to_title(interaction_type), "Interaction Difference")
+        y_axis_label <- "LOD Difference"
+        lod_display_col <- "plot_lod_signed"
+      } else {
+        plot_title <- paste("Manhattan Plot for", main_par()$selected_dataset())
+        y_axis_label <- "LOD Score"
+        lod_display_col <- "plot_lod_signed"
+      }
+
       df_to_plot[, hover_text := paste(
         "Phenotype:", phenotype, # Original phenotype for display
         "<br>Marker:", marker,
-        "<br>LOD:", round(qtl_lod, 2),
+        "<br>", y_axis_label, ":", round(get(lod_display_col), 2),
         "<br>Chr:", qtl_chr,
         "<br>Pos (Mbp):", round(qtl_pos, 2)
       )]
 
-      p <- ggplot(df_to_plot, aes(x = qtl_pos, y = qtl_lod, text = hover_text, key = marker, customdata = phenotype)) +
+      p <- ggplot(df_to_plot, aes(x = qtl_pos, y = get(lod_display_col), text = hover_text, key = marker, customdata = phenotype)) +
         geom_point(alpha = 0.7, size = 1.5, color = "#2c3e50") +
-        scale_y_continuous(name = "LOD Score", expand = expansion(mult = c(0, 0.05))) +
-        labs(title = paste("Manhattan Plot for", main_par()$selected_dataset(), "(LOD ≥", main_par()$LOD_thr(), ")"), x = "Position (Mbp)") +
+        scale_y_continuous(name = y_axis_label, expand = expansion(mult = c(0.05, 0.05))) +
+        labs(title = paste(plot_title, "(|LOD| ≥", main_par()$LOD_thr(), ")"), x = "Position (Mbp)") +
         facet_grid(. ~ chr_factor, scales = "free_x", space = "free_x", switch = "x") + # Facet by chromosome
         theme_minimal(base_size = 11) +
         theme(
@@ -247,6 +348,11 @@ manhattanPlotServer <- function(id, import_reactives, main_par) {
           panel.grid.minor.x = element_blank(),
           plot.title = element_text(hjust = 0.5, face = "bold")
         )
+
+      # Add horizontal line at y=0 for difference plots
+      if (is_qtlxcovar_data && interaction_type != "none") {
+        p <- p + geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7)
+      }
 
       plotly_p <- plotly::ggplotly(p, tooltip = "text", source = ns("manhattan_plotly")) %>%
         plotly::layout(dragmode = "pan") %>%

@@ -14,7 +14,7 @@
 #' @importFrom bslib card card_header page_sidebar sidebar layout_columns navset_tab nav_panel card_body
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr across mutate where filter select
-#' @importFrom stringr str_split str_remove
+#' @importFrom stringr str_split str_remove str_to_title
 #' @importFrom ggplot2 ggsave
 #' @importFrom shinyjs useShinyjs
 #' @importFrom htmltools tagList tags
@@ -257,12 +257,11 @@ scanApp <- function() {
         } else if (interaction_type == "diet") {
           return("HC_HF Systemic Clinical Traits, interactive (Diet)")
         }
-      } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", base_dataset, ignore.case = TRUE)) {
-        if (interaction_type == "sex") {
-          return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
-        } else if (interaction_type == "diet") {
+      } else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "diet") {
           return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
         }
+        # No Sex interaction available for Plasma Metabolites - return original
       }
 
       # Fallback to original dataset if no mapping found
@@ -357,7 +356,7 @@ scanApp <- function() {
           ),
           "Plasma Metabolites" = list(
             name = "HC_HF Plasma Metabolites (Additive)",
-            interaction_note = "Use interaction controls for Sex effects."
+            interaction_note = "Use interaction controls for Diet effects."
           ),
           "Liver Isoforms" = list(
             name = "HC_HF Liver Isoforms",
@@ -414,7 +413,7 @@ scanApp <- function() {
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Plasma Metabolites") {
           # Look for HC_HF Plasma Metabolites dataset
-          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*plasma_metabolite", specific_datasets_choices, ignore.case = TRUE) &
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Liver Isoforms") {
           # Look for HC_HF Liver Isoforms dataset
@@ -472,7 +471,7 @@ scanApp <- function() {
           hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Clinical", specific_datasets_choices, ignore.case = TRUE) &
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Plasma Metabolites") {
-          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*plasma_metabolite", specific_datasets_choices, ignore.case = TRUE) &
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Liver Isoforms") {
           hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
@@ -731,13 +730,15 @@ scanApp <- function() {
     # Instantiate plot modules and capture their outputs
     manhattan_plot_outputs <- manhattanPlotServer(ns_app_controller("manhattan_plot_module"),
       import_reactives = import_reactives,
-      main_par = active_main_par
+      main_par = active_main_par,
+      sidebar_interaction_type = sidebar_interaction_type_rv
     )
 
     cistrans_plot_outputs <- cisTransPlotServer(ns_app_controller("cistrans_plot_module"),
       import_reactives = import_reactives,
       main_par = active_main_par,
-      peaks_cache = peaks_cache
+      peaks_cache = peaks_cache,
+      sidebar_interaction_type = sidebar_interaction_type_rv
     )
 
     # Reactive value to store the trait selected from either plot for LOD scanning
@@ -852,11 +853,11 @@ scanApp <- function() {
             "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
-        } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
+        } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
           available_interactions <- c(available_interactions,
-            "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
+          # No Sex interaction for Plasma Metabolites
         }
 
         tagList(
@@ -909,10 +910,26 @@ scanApp <- function() {
         new_value <- input[[ns_app_controller("sidebar_interaction_type")]]
         if (!is.null(new_value)) {
           sidebar_interaction_type_rv(new_value)
-          message(paste("Updated sidebar interaction type to:", new_value, "(for future peak comparison)"))
+          message(paste("Updated sidebar interaction type to:", new_value, "(for sidebar plots only)"))
         }
       },
       ignoreNULL = TRUE
+    )
+
+    # Observer to preserve sidebar interaction type during UI updates
+    shiny::observeEvent(trait_for_lod_scan_rv(),
+      {
+        # When a new trait is selected, update the sidebar selectInput to preserve the current selection
+        current_sidebar_type <- sidebar_interaction_type_rv()
+        if (!is.null(current_sidebar_type) && current_sidebar_type != "none") {
+          shiny::updateSelectInput(session, ns_app_controller("sidebar_interaction_type"),
+            selected = current_sidebar_type
+          )
+          message(paste("Preserved sidebar interaction type:", current_sidebar_type, "during trait change"))
+        }
+      },
+      ignoreNULL = FALSE,
+      ignoreInit = TRUE
     )
 
     # NOTE: Removed the observer that re-triggered LOD scan when interaction type changes
@@ -1464,7 +1481,7 @@ scanApp <- function() {
     # Store the current interaction type to preserve across UI re-renders
     current_interaction_type_rv <- shiny::reactiveVal("none")
 
-    # Store the sidebar interaction type separately (for future peak comparison features)
+    # Store the sidebar interaction type separately (for independent sidebar plot control)
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
     # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
@@ -1501,11 +1518,11 @@ scanApp <- function() {
             "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
-        } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
+        } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
           available_interactions <- c(available_interactions,
-            "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
+          # No Sex interaction for Plasma Metabolites
         }
 
         peak_section <- NULL
@@ -1530,18 +1547,18 @@ scanApp <- function() {
         }
 
         tagList(
-          h6("Interaction Analysis:", style = "color: #2c3e50; margin-bottom: 8px; font-weight: bold; font-size: 12px;"),
+          h6("Sidebar Plot Analysis:", style = "color: #2c3e50; margin-bottom: 8px; font-weight: bold; font-size: 12px;"),
           shiny::selectInput(
             ns_app_controller("sidebar_interaction_type"),
             label = NULL,
             choices = available_interactions,
-            selected = "none",
+            selected = if (sidebar_interaction_type_rv() %in% available_interactions) sidebar_interaction_type_rv() else "none",
             width = "100%"
           ),
           peak_section,
           div(
             style = "margin-top: 10px; padding: 8px; background-color: #e8f4fd; border-radius: 3px; border-left: 3px solid #3498db;",
-            p("🔬 Independent controls for future peak comparison across interaction conditions",
+            p("🔬 Independent control for sidebar Manhattan/Cis-Trans plots",
               style = "font-size: 10px; color: #2c3e50; margin: 0; font-style: italic;"
             )
           )

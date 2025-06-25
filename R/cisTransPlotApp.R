@@ -7,6 +7,34 @@
 library(ggplot2)
 library(dplyr)
 
+#' Helper function to map dataset and interaction type to qtlxcovar file path
+get_qtlxcovar_file_path <- function(base_dataset, interaction_type) {
+  qtlxcovar_dir <- "/data/dev/miniViewer_3.0"
+
+  # Map dataset categories to file prefixes
+  if (grepl("Liver.*Genes", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_liver_genes_all_mice"
+  } else if (grepl("Clinical", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_clinical_traits_all_mice"
+  } else {
+    message("get_qtlxcovar_file_path: Unknown dataset category for:", base_dataset)
+    return(NULL)
+  }
+
+  # Map interaction type to file suffix
+  if (interaction_type == "sex") {
+    file_suffix <- "qtlxsex_peaks.csv"
+  } else if (interaction_type == "diet") {
+    file_suffix <- "qtlxdiet_peaks.csv"
+  } else {
+    message("get_qtlxcovar_file_path: Unknown interaction type:", interaction_type)
+    return(NULL)
+  }
+
+  file_path <- file.path(qtlxcovar_dir, paste0(file_prefix, "_", file_suffix))
+  return(file_path)
+}
+
 #' @param id Module ID
 #' @export
 cisTransPlotInput <- function(id) {
@@ -40,7 +68,7 @@ cisTransPlotUI <- function(id) {
 #' @param main_par A REACTIVE that returns a list, expected to contain selected_dataset (which is a reactive group name)
 #' @param peaks_cache Environment for caching peak finder results.
 #' @export
-cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
+cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, sidebar_interaction_type = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -64,19 +92,64 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache) {
     })
 
 
+    # Create a debounced reactive for interaction type to prevent excessive reloads
+    interaction_type_debounced <- shiny::reactive({
+      if (!is.null(sidebar_interaction_type)) sidebar_interaction_type() else "none"
+    }) %>% shiny::debounce(500) # Debounce to prevent rapid firing
+
     peaks_data <- shiny::reactive({
       shiny::req(import_reactives(), selected_dataset(), trait_type())
-      message("cisTransPlotServer: Calling peak_finder with dataset: ", selected_dataset(), ", trait_type: ", trait_type())
 
-      current_peaks_cache <- if (is.environment(peaks_cache)) peaks_cache else NULL
+      # Check if we should use qtlxcovar data
+      interaction_type <- interaction_type_debounced()
+      base_dataset <- selected_dataset()
 
-      # Ensure import_reactives() is called to get the list
-      found_peaks <- peak_finder(import_reactives()$file_directory,
-        selected_dataset(),
-        trait_type = trait_type(),
-        cache_env = current_peaks_cache,
-        use_cache = TRUE
-      )
+      message("cisTransPlotServer: peaks_data reactive. Dataset:", base_dataset, "Interaction:", interaction_type)
+
+      # Use qtlxcovar data for HC_HF datasets with interaction types
+      use_qtlxcovar <- !is.null(interaction_type) && interaction_type != "none" &&
+        !is.null(base_dataset) && grepl("^HC_HF", base_dataset, ignore.case = TRUE)
+
+      if (use_qtlxcovar) {
+        message("cisTransPlotServer: Using qtlxcovar peaks for interaction:", interaction_type)
+
+        # Map dataset to qtlxcovar file
+        qtlxcovar_file <- get_qtlxcovar_file_path(base_dataset, interaction_type)
+
+        if (!is.null(qtlxcovar_file) && file.exists(qtlxcovar_file)) {
+          message("cisTransPlotServer: Loading qtlxcovar file:", qtlxcovar_file)
+          found_peaks <- tryCatch(
+            {
+              data.table::fread(qtlxcovar_file)
+            },
+            error = function(e) {
+              message("cisTransPlotServer: Error reading qtlxcovar file:", e$message)
+              return(NULL)
+            }
+          )
+
+          if (!is.null(found_peaks) && nrow(found_peaks) > 0) {
+            message("cisTransPlotServer: Loaded", nrow(found_peaks), "qtlxcovar peaks")
+          } else {
+            message("cisTransPlotServer: No qtlxcovar peaks loaded")
+          }
+        } else {
+          message("cisTransPlotServer: QTLxcovar file not found or invalid path:", qtlxcovar_file)
+          found_peaks <- NULL
+        }
+      } else {
+        message("cisTransPlotServer: Using regular peaks via peak_finder")
+
+        current_peaks_cache <- if (is.environment(peaks_cache)) peaks_cache else NULL
+
+        # Ensure import_reactives() is called to get the list
+        found_peaks <- peak_finder(import_reactives()$file_directory,
+          selected_dataset(),
+          trait_type = trait_type(),
+          cache_env = current_peaks_cache,
+          use_cache = TRUE
+        )
+      }
       message("cisTransPlotServer: Data returned by peak_finder:")
       if (is.data.frame(found_peaks)) {
         message("peak_finder returned a data.frame with ", nrow(found_peaks), " rows and columns: ", paste(colnames(found_peaks), collapse = ", "))
