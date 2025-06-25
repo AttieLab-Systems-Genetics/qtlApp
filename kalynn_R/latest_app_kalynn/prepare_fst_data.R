@@ -191,7 +191,7 @@ main <- function() {
         # list(type = "genes", pattern = "chromosome[0-9XYM]+_DO_NOT_USE_data\.fst$"), # Example for gene files, adjust pattern
         # list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\.fst$") # Adjust pattern as needed
         # list(type = "clinical", pattern = "chromosome[0-9XYM]+_clinical_traits_HF_mice_additive_data\.fst$"),
-        list(type = "plasma_metabolites", pattern = "chromosome[0-9XYM]+_plasma_metabolites_all_mice_additive_data\\.fst$")
+        list(type = "plasma_metabolites", pattern = "chromosome[0-9XYM]+_plasma_metabolites_all_mice_diet_interactive_data\\.fst$")
     )
 
     all_processed_paths <- character(0)

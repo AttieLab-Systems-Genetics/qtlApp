@@ -166,7 +166,7 @@ datasetSelectionServer <- function(id, import_reactives) {
                         interaction_note = "Use interaction controls for Sex/Diet effects."
                     ),
                     "Plasma Metabolites" = list(
-                        name = "HC_HF Plasma Metabolites",
+                        name = "HC_HF Plasma Metabolites (Additive)",
                         interaction_note = "No interactive analysis available for this dataset."
                     ),
                     "Liver Isoforms" = list(

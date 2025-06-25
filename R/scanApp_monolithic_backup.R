@@ -257,9 +257,13 @@ scanApp <- function() {
         } else if (interaction_type == "diet") {
           return("HC_HF Systemic Clinical Traits, interactive (Diet)")
         }
+      } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "sex") {
+          return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
+        } else if (interaction_type == "diet") {
+          return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
+        }
       }
-      # HC_HF Plasma plasma_metabolite - NO interactive datasets available
-      # Return original dataset (no interactive versions exist)
 
       # Fallback to original dataset if no mapping found
       return(base_dataset)
@@ -545,7 +549,7 @@ scanApp <- function() {
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Plasma Metabolites") {
           # Look for HC_HF Plasma Metabolites dataset
-          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*plasma_metabolite", specific_datasets_choices, ignore.case = TRUE) &
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Liver Isoforms") {
           # Look for HC_HF Liver Isoforms dataset
@@ -603,7 +607,7 @@ scanApp <- function() {
           hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Clinical", specific_datasets_choices, ignore.case = TRUE) &
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Plasma Metabolites") {
-          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
+          hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*plasma_metabolite", specific_datasets_choices, ignore.case = TRUE) &
             !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         } else if (selected_cat == "Liver Isoforms") {
           hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
@@ -844,8 +848,12 @@ scanApp <- function() {
             "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
+        } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex",
+            "Diet interaction" = "diet"
+          )
         }
-        # No interactions available for Plasma metabolites
 
         tagList(
           hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
@@ -1481,8 +1489,12 @@ scanApp <- function() {
             "Sex interaction" = "sex",
             "Diet interaction" = "diet"
           )
+        } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
+          available_interactions <- c(available_interactions,
+            "Sex interaction" = "sex",
+            "Diet interaction" = "diet"
+          )
         }
-        # No interactions available for Plasma metabolites
 
         peak_section <- NULL
         if (!is.null(available_peaks) && nrow(available_peaks) > 0) {
@@ -1793,10 +1805,44 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       # Create difference data with error handling
       tryCatch(
         {
-          # Simple check - both datasets should have same number of rows and same markers
+          # Handle datasets with different numbers of rows by joining on markers
           if (nrow(interactive_data) != nrow(additive_data)) {
             message("scanServer: Row count mismatch - Interactive: ", nrow(interactive_data), ", Additive: ", nrow(additive_data))
-            return(NULL)
+            message("scanServer: Attempting to align datasets by markers...")
+
+            # Check if both datasets have markers column
+            if (!("markers" %in% colnames(interactive_data)) || !("markers" %in% colnames(additive_data))) {
+              message("scanServer: Cannot align datasets - missing 'markers' column")
+              return(NULL)
+            }
+
+            # Join datasets on markers to align them
+            library(dplyr)
+            aligned_data <- interactive_data %>%
+              dplyr::inner_join(additive_data, by = "markers", suffix = c("_interactive", "_additive"))
+
+            if (nrow(aligned_data) == 0) {
+              message("scanServer: No common markers found between datasets")
+              return(NULL)
+            }
+
+            message("scanServer: Successfully aligned datasets - ", nrow(aligned_data), " common markers found")
+
+            # Create aligned datasets for difference calculation
+            interactive_aligned <- aligned_data %>%
+              dplyr::select(markers,
+                chr = chr_interactive, position = position_interactive,
+                LOD = LOD_interactive, BPcum = BPcum_interactive
+              )
+            additive_aligned <- aligned_data %>%
+              dplyr::select(markers,
+                chr = chr_additive, position = position_additive,
+                LOD = LOD_additive, BPcum = BPcum_additive
+              )
+
+            # Use aligned data for subtraction
+            interactive_data <- interactive_aligned
+            additive_data <- additive_aligned
           }
 
           message("scanServer: Both datasets have", nrow(interactive_data), "rows")

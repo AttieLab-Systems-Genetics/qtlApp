@@ -49,10 +49,13 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                 } else if (interaction_type == "diet") {
                     return("HC_HF Systemic Clinical Traits, interactive (Diet)")
                 }
+            } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", base_dataset, ignore.case = TRUE)) {
+                if (interaction_type == "sex") {
+                    return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
+                } else if (interaction_type == "diet") {
+                    return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
+                }
             }
-            # HC_HF Plasma plasma_metabolite - NO interactive datasets available
-            # Return original dataset (no interactive versions exist)
-
             # Fallback to original dataset if no mapping found
             return(base_dataset)
         }
@@ -152,8 +155,13 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                         "Sex interaction" = "sex",
                         "Diet interaction" = "diet"
                     )
+                } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
+                    available_interactions <- c(available_interactions,
+                        "Sex interaction" = "sex",
+                        "Diet interaction" = "diet"
+                    )
+                    # No Diet interaction available for Plasma Metabolites - keeping both for now
                 }
-                # No interactions available for Plasma metabolites
 
                 tagList(
                     hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
