@@ -41,34 +41,73 @@ scanApp <- function() {
       tags$style(custom_css)
     ),
 
-    # Top navigation bar for dataset category selection
+    # Top navigation bar
     div(
-      style = "background: linear-gradient(135deg, #2c3e50, #3498db); padding: 15px; margin-bottom: 20px; border-radius: 8px;",
-      div(
-        style = "display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;",
-        h3("QTL Scan Visualizer",
-          style = "color: white; margin: 0; font-weight: bold;"
-        ),
-        div(
-          style = "display: flex; align-items: center; gap: 15px;",
-          h5("Dataset Category:",
-            style = "color: white; margin: 0; font-weight: bold;"
-          ),
-          shiny::selectInput(shiny::NS("app_controller", "dataset_category_selector"),
-            NULL,
-            choices = c("Loading..." = ""),
-            width = "200px"
-          )
-        )
+      style = "background: linear-gradient(135deg, #2c3e50, #3498db); padding: 15px; margin-bottom: 20px; border-radius: 8px; text-align: center;",
+      h3("QTL Scan Visualizer",
+        style = "color: white; margin: 0; font-weight: bold;"
       )
     ),
     sidebar = bslib::sidebar(
       width = 600, # Increased sidebar width a bit more for better screen coverage
+
+      # Dataset Category Selection - above all tabs
+      div(
+        style = "padding: 15px; margin-bottom: 20px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 8px; border: 2px solid #3498db;",
+        h4("Dataset Category", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold; text-align: center;"),
+        shiny::selectInput(shiny::NS("app_controller", "dataset_category_selector"),
+          NULL,
+          choices = c("Loading..." = ""),
+          width = "100%"
+        ),
+        p("Select the type of biological data to analyze",
+          style = "font-size: 12px; color: #6c757d; margin: 5px 0 0 0; text-align: center;"
+        )
+      ),
+
       # Tabbed sidebar content
       bslib::navset_pill(
         id = "sidebar_tabs",
+        selected = "LOD peaks", # Set default tab to LOD peaks
 
-        # Tab 1: Dataset Selection and Controls
+        # Tab 1: Overview Plot (Manhattan/Cis-Trans) - now the default tab
+        bslib::nav_panel(
+          "LOD peaks",
+          div(
+            style = "padding: 10px;",
+
+            # LOD Threshold Control
+            h5("Peak Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+            # Dynamic LOD threshold slider that updates based on scan type
+            uiOutput(shiny::NS("app_controller", "lod_threshold_slider")),
+            p("Filters peaks shown in the plot below",
+              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
+            ),
+
+            # Peak Selection Dropdown for future peak differences analysis
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
+            h5("🎯 Peak Analysis", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+            shiny::uiOutput(shiny::NS("app_controller", "peak_selection_sidebar")),
+            p("Control interaction analysis for the overview plots below",
+              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
+            ),
+            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
+            h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
+              style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
+            ),
+            div(
+              id = "overview-plot-container",
+              class = "overview-plot-container",
+              style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
+              shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
+            ),
+            p("Click on points to view detailed LOD scans",
+              style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
+            )
+          )
+        ),
+
+        # Tab 2: Data Search and Controls - now secondary
         bslib::nav_panel(
           "Data Search",
           div(
@@ -116,43 +155,6 @@ scanApp <- function() {
             )
           )
         ),
-
-        # Tab 2: Overview Plot (Manhattan/Cis-Trans)
-        bslib::nav_panel(
-          "LOD peaks",
-          div(
-            style = "padding: 10px;",
-
-            # LOD Threshold Control (moved here from Data Search tab)
-            h5("Peak Filtering", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
-            # Dynamic LOD threshold slider that updates based on scan type
-            uiOutput(shiny::NS("app_controller", "lod_threshold_slider")),
-            p("Filters peaks shown in the plot below",
-              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
-            ),
-
-            # Peak Selection Dropdown for future peak differences analysis
-            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
-            h5("🎯 Peak Analysis", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
-            shiny::uiOutput(shiny::NS("app_controller", "peak_selection_sidebar")),
-            p("Select peaks for detailed analysis and future comparison features",
-              style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
-            ),
-            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
-            h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
-              style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
-            ),
-            div(
-              id = "overview-plot-container",
-              class = "overview-plot-container",
-              style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
-              shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
-            ),
-            p("Click on points to view detailed LOD scans",
-              style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
-            )
-          )
-        )
       ),
 
       # Horizontal separator
@@ -1525,26 +1527,7 @@ scanApp <- function() {
           # No Sex interaction for Plasma Metabolites
         }
 
-        peak_section <- NULL
-        if (!is.null(available_peaks) && nrow(available_peaks) > 0) {
-          # Create choices for dropdown with peak info
-          peak_choices <- setNames(
-            available_peaks$marker,
-            paste0(available_peaks$marker, " (Chr", available_peaks$qtl_chr, ", LOD:", round(available_peaks$qtl_lod, 2), ")")
-          )
-
-          peak_section <- tagList(
-            hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
-            h6("Select Peak:", style = "color: #2c3e50; margin-bottom: 8px; font-weight: bold; font-size: 12px;"),
-            shiny::selectInput(
-              ns_app_controller("sidebar_peak_selector"),
-              label = NULL,
-              choices = peak_choices,
-              selected = peak_choices[1], # Default to highest peak
-              width = "100%"
-            )
-          )
-        }
+        # Remove peak selection dropdown - it's handled in the main LOD scan area
 
         tagList(
           h6("Sidebar Plot Analysis:", style = "color: #2c3e50; margin-bottom: 8px; font-weight: bold; font-size: 12px;"),
@@ -1555,7 +1538,6 @@ scanApp <- function() {
             selected = if (sidebar_interaction_type_rv() %in% available_interactions) sidebar_interaction_type_rv() else "none",
             width = "100%"
           ),
-          peak_section,
           div(
             style = "margin-top: 10px; padding: 8px; background-color: #e8f4fd; border-radius: 3px; border-left: 3px solid #3498db;",
             p("🔬 Independent control for sidebar Manhattan/Cis-Trans plots",

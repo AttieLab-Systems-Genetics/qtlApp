@@ -333,9 +333,26 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
         "<br>Pos (Mbp):", round(qtl_pos, 2)
       )]
 
+      # Set y-axis limits - use minimum of 4 for interactive difference plots
+      if (is_qtlxcovar_data && interaction_type != "none") {
+        # For interactive difference plots, set minimum y-axis to 4
+        y_min <- 4
+        y_max <- max(abs(df_to_plot[[lod_display_col]]), na.rm = TRUE) * 1.1
+        y_axis_limits <- c(y_min, y_max)
+      } else {
+        # For regular Manhattan plots, use default scaling
+        y_axis_limits <- NULL
+      }
+
       p <- ggplot(df_to_plot, aes(x = qtl_pos, y = get(lod_display_col), text = hover_text, key = marker, customdata = phenotype)) +
         geom_point(alpha = 0.7, size = 1.5, color = "#2c3e50") +
-        scale_y_continuous(name = y_axis_label, expand = expansion(mult = c(0.05, 0.05))) +
+        {
+          if (is.null(y_axis_limits)) {
+            scale_y_continuous(name = y_axis_label, expand = expansion(mult = c(0.05, 0.05)))
+          } else {
+            scale_y_continuous(name = y_axis_label, limits = y_axis_limits, expand = expansion(mult = c(0.02, 0.05)))
+          }
+        } +
         labs(title = paste(plot_title, "(|LOD| ≥", main_par()$LOD_thr(), ")"), x = "Position (Mbp)") +
         facet_grid(. ~ chr_factor, scales = "free_x", space = "free_x", switch = "x") + # Facet by chromosome
         theme_minimal(base_size = 11) +
