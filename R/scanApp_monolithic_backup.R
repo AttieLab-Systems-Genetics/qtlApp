@@ -1097,20 +1097,27 @@ scanApp <- function() {
               choices = peak_choices,
               selected = default_selection,
               width = "100%"
-            ),
-            # Add peak summary info
+            )
+          ),
+          # Use layout_columns to place peak info and plot side-by-side
+          bslib::layout_columns(
+            col_widths = c(5, 7), # Allocate space for info and plot
+
+            # Peak summary info
             if (!is.null(current_peak_info)) {
               div(
                 id = ns_app_controller("peak_summary_info"),
-                style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db;",
+                style = "background: #f8f9fa; padding: 10px; border-radius: 5px; border-left: 4px solid #3498db; height: 450px; overflow-y: auto;",
                 shiny::uiOutput(ns_app_controller("peak_info_display"))
               )
             } else {
-              NULL
-            }
-          ),
-          shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "350px") %>%
-            shinycssloaders::withSpinner(type = 8, color = "#3498db")
+              div() # Placeholder to maintain layout
+            },
+
+            # Allele effects plot (now square)
+            shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "450px", width = "450px") %>%
+              shinycssloaders::withSpinner(type = 8, color = "#3498db")
+          )
         )
       } else {
         message("scanApp: No allele effects section - no peaks above threshold")

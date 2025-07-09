@@ -526,6 +526,62 @@ lod_threshold <- reactive({ ... }) %>% debounce(300)   # LOD threshold changes
 - Format confidence intervals and coordinates consistently
 - Display founder allele effects with clear strain labeling
 
+### Founder Allele Effects Display
+
+**Enhanced Display Format**: Show actual founder allele effect values instead of just listing available columns.
+
+**Implementation Pattern**:
+
+```r
+# Map A-H columns to strain names
+allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
+available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
+
+# Extract actual values
+allele_effects <- list()
+for (i in seq_along(available_alleles)) {
+  col <- available_alleles[i]
+  value <- peak_info[[col]]
+  if (!is.na(value) && !is.null(value)) {
+    strain <- strain_names[i]
+    allele_effects[[length(allele_effects) + 1]] <- paste0(strain, ": ", round(value, 3))
+  }
+}
+
+# Display in monospace format
+tags$div(
+  style = "margin-left: 10px; font-family: monospace; font-size: 11px;",
+  lapply(allele_effects, function(effect) {
+    tags$div(effect, style = "margin: 2px 0;")
+  })
+)
+```
+
+**Display Format**:
+
+- **Before**: "Founder Effects: 8 available (A, B, C, D, E, F, G, H)"
+- **After**:
+  ```
+  Founder Effects:
+    AJ: -0.136
+    B6: 0.078
+    129: 0.182
+    NOD: 0.114
+    NZO: 0.017
+    CAST: -0.073
+    PWK: -0.109
+    WSB: -0.074
+  ```
+
+**Key Requirements**:
+
+- Use strain names (AJ, B6, 129, NOD, NZO, CAST, PWK, WSB) instead of A-H columns
+- Round values to 3 decimal places for readability
+- Use monospace font for proper alignment
+- Fallback to old format if no valid effects are found
+- Handle both modular (`alleleEffectsModule.R`) and monolithic versions
+
 ## File Naming Conventions
 
 - `*Module.R` for Shiny modules
