@@ -388,8 +388,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
 
       fig <- plotly::ggplotly(g, tooltip = "text", source = ns("cistrans_plotly")) %>%
         plotly::layout(
-          hovermode = "closest",
-          dragmode = "pan"
+          hovermode = "closest"
         ) %>%
         plotly::config(
           displaylogo = FALSE,
