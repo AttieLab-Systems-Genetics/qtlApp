@@ -380,6 +380,53 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       plotly_p <- plotly::ggplotly(p, tooltip = "text", source = ns("manhattan_plotly")) %>%
         plotly::layout(
           dragmode = "pan",
+          margin = list(l = 60, r = 40, b = 40, t = 60, pad = 4), # Add plot margins
+          xaxis = list(
+            title = "Chromosome",
+            showgrid = FALSE,
+            tickangle = -45,
+            tickfont = list(size = 10),
+            tickmode = "array",
+            tickvals = 1:20,
+            ticktext = c(1:19, "X", "Y", "M"),
+            range = c(0.5, 20.5)
+          ),
+          yaxis = list(
+            title = if (is_qtlxcovar_data && interaction_type != "none") "LOD Difference" else "LOD Score",
+            showgrid = TRUE,
+            gridcolor = "lightgray",
+            gridwidth = 0.5,
+            zeroline = TRUE,
+            zerolinecolor = "black",
+            zerolinewidth = 1,
+            tickfont = list(size = 10),
+            range = y_axis_limits
+          ),
+          hovermode = "closest",
+          hoverlabel = list(
+            bgcolor = "white",
+            bordercolor = "gray",
+            font = list(size = 12)
+          ),
+          legend = list(
+            orientation = "h",
+            x = 0.5,
+            y = -0.1,
+            font = list(size = 10)
+          ),
+          title = list(
+            text = paste0(
+              if (is_qtlxcovar_data && interaction_type != "none") {
+                paste("Manhattan Plot -", stringr::str_to_title(interaction_type), "Interaction Difference")
+              } else {
+                paste("Manhattan Plot for", main_par()$selected_dataset())
+              },
+              " (|LOD| ≥ ", main_par()$LOD_thr(), ")"
+            ),
+            x = 0.5,
+            y = 0.95,
+            font = list(size = 12, face = "bold")
+          ),
           showlegend = FALSE,
           autosize = TRUE
         ) %>%
