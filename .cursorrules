@@ -384,19 +384,33 @@ Source files in logical dependency order in `app.R`:
 
 ## User Experience Patterns
 
-### Dataset Switching
+### Dataset Switching and State Management
 
-- Preserve trait selection when switching between datasets in the same category
-- Prevent automatic expensive computations during dataset transitions
-- Use `reactiveVal` flags with timed resets to control auto-search behavior
-- Provide clear notifications about preserved selections and required actions
+- **Preserve Trait Selection**: Preserve trait selection when switching between compatible datasets (e.g., additive ↔ interactive).
+- **Prevent Auto-Search**: Use `dataset_just_changed` flags to prevent automatic expensive computations during dataset transitions.
+- **Default to Additive**: When the main dataset category changes, both main and sidebar interaction analysis controls **must** be reset to "none" (additive) to ensure a clean state.
+  ```r
+  # Observer to reset interaction types to default when dataset category changes
+  shiny::observeEvent(input$dataset_category_selector, {
+      current_interaction_type_rv("none")
+      sidebar_interaction_type_rv("none")
+  }, ignoreInit = TRUE)
+  ```
+
+### LOD Scan View Controls
+
+- **Dynamic Title**: The main plot card header should be dynamic, updating to show the currently scanned trait (e.g., "LOD Scan for Trait: [Trait Name]").
+- **Consolidated Controls**: Interaction Analysis and Chromosome selectors should be located inside the main plot area, only appearing when a trait is selected for scanning.
+- **Control Layout**: The "Interaction Analysis" dropdown should be on the left, and the "Chromosome" selector on the right.
+- **No Redundant Buttons**: Remove any extra "Zoom" buttons. The chromosome selection dropdown is sufficient. Use a "Reset Zoom" button to return to the "All" chromosome view.
+- **No Redundant Headers**: Remove static text headers like "Click on plot to see point details:". The plot and its data table should be self-explanatory.
 
 ### Trait Search Workflow
 
-- Implement server-side selectize for large trait lists (`server = TRUE`)
-- Support both manual search button and auto-search functionality
-- Use intelligent auto-search prevention during dataset changes
-- Clear and informative placeholder text and notifications
+- **Server-Side Selectize**: Implement server-side selectize for large trait lists (`server = TRUE`) to ensure performance.
+- **Support both manual search button and auto-search functionality**
+- **Use intelligent auto-search prevention during dataset changes**
+- **Clear and informative placeholder text and notifications**
 
 ### Dynamic LOD Thresholds
 
@@ -448,6 +462,14 @@ lod_threshold <- reactive({ ... }) %>% debounce(300)   # LOD threshold changes
 - Use GitHub for version control and collaboration
 - Follow the modular design to minimize merge conflicts
 - Document new modules and functions thoroughly
+
+### Development Environment
+
+- If file changes are not being reflected in the running application, it is likely due to Docker's layer caching. Rebuild the Docker image using the `--no-cache` flag to force a clean build.
+  ```bash
+  # Example command
+  docker build --no-cache -t your-image-name .
+  ```
 
 ## Testing and Quality
 
@@ -608,6 +630,26 @@ tags$div(
   - Sex: `"HC_HF Plasma Metabolites, interactive (Sex)"`
 - **HC_HF Liver Isoforms**: No interactive analysis available
 
+### On-the-Fly Difference Plot Data Flow (LOD Scan)
+
+1.  **Derive Additive Dataset Name**: When an interactive analysis is selected, the corresponding additive dataset name **must** be correctly derived. The standard logic is to remove the interactive part from the name and append ", additive".
+    ```r
+    # Correct logic for deriving additive dataset name
+    base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", interactive_dataset_name)
+    additive_dataset_name <- paste0(trimws(base_name), ", additive")
+    ```
+2.  **Load Additive Data**: In the background, load the scan data for the derived additive dataset name (`additive_dataset_name`). This data should be stored in a reactive value (e.g., `additive_scan_data_rv`).
+3.  **Prevent Incorrect Caching**: When storing additive scan data from a "none" interaction type, ensure the source data is genuinely from an additive dataset, not an interactive one that happens to have its interaction type set to "none".
+    ```r
+    # GOOD: Guard against incorrect caching
+    if (!grepl("interactive", current_dataset_name, ignore.case = TRUE)) {
+      additive_scan_data_rv(plot_data)
+    }
+    ```
+4.  **Calculate Difference**: Subtract the stored additive LOD scores from the interactive LOD scores.
+5.  **Handle Missing Data**: Use `is.null()` and `nrow()` checks before calculations.
+6.  **Create Plot**: Pass the difference data to `ggplot_qtl_scan()` with `-Inf` threshold.
+
 ### QTLxCovar File Handling
 
 #### File Path Mapping Functions
@@ -683,18 +725,18 @@ get_interactive_dataset_name <- function(base_dataset, interaction_type) {
 
 ### Difference Plot Data Flow
 
-1. **Store Additive**: When interaction_type == "none", store scan data
-2. **Calculate Difference**: When interaction_type != "none", subtract stored additive from current interactive
-3. **Handle Missing Data**: Use `is.null()` and `nrow()` checks before calculations
-4. **Element-wise Operation**: Simple `interactive$LOD - additive$LOD` with NA handling
-5. **Create Plot**: Pass difference data to `ggplot_qtl_scan()` with `-Inf` threshold
+- **Store Additive**: When interaction_type == "none", store scan data.
+- **Calculate Difference**: When interaction_type != "none", subtract stored additive from current interactive.
+- **Handle Missing Data**: Use `is.null()` and `nrow()` checks before calculations.
+- **Element-wise Operation**: Simple `interactive$LOD - additive$LOD` with NA handling.
+- **Create Plot**: Pass difference data to `ggplot_qtl_scan()` with `-Inf` threshold.
 
 ### UI State Management
 
-- Use `show_stacked_plots()` reactive to determine single vs stacked layout
-- Implement proper height division for stacked plots
-- Add descriptive titles for each plot section
-- Use color-coded spinners to distinguish plot types
+- Use `show_stacked_plots()` reactive to determine single vs stacked layout.
+- Implement proper height division for stacked plots.
+- Add descriptive titles for each plot section.
+- Use color-coded spinners to distinguish plot types.
 
 This modular architecture enables:
 

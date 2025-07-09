@@ -244,21 +244,52 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         return(NULL)
       }
 
-      chrom_levels <- c(as.character(1:19), "X")
-      df_filtered$qtl_chr <- factor(chr_XYM(df_filtered$qtl_chr), levels = chrom_levels, ordered = TRUE)
-      df_filtered$gene_chr <- factor(chr_XYM(df_filtered$gene_chr), levels = chrom_levels, ordered = TRUE)
+      # Calculate cumulative positions
+      markers_data <- shiny::req(import_reactives()$markers)
+      if (is.null(markers_data) || !is.data.frame(markers_data) || nrow(markers_data) == 0) {
+        message("cisTransPlotServer: Markers data is missing. Cannot calculate cumulative positions.")
+        return(NULL)
+      }
+
+      chr_summary <- markers_data %>%
+        dplyr::mutate(chr = as.character(chr)) %>%
+        dplyr::group_by(chr) %>%
+        dplyr::summarise(chr_len = max(pos), .groups = "drop") %>%
+        dplyr::arrange(as.numeric(chr_to_numeric(chr))) %>%
+        dplyr::mutate(
+          tot = cumsum(as.numeric(chr_len)) - chr_len,
+          center = tot + (chr_len / 2)
+        )
+
+      df_filtered$qtl_chr_char <- chr_XYM(df_filtered$qtl_chr)
+      df_filtered$gene_chr_char <- chr_XYM(df_filtered$gene_chr)
+
+      # Join to get QTL cumulative positions
+      plot_df <- df_filtered %>%
+        dplyr::left_join(chr_summary %>% dplyr::select(chr, tot), by = c("qtl_chr_char" = "chr")) %>%
+        dplyr::mutate(qtl_BPcum = qtl_pos + tot) %>%
+        dplyr::select(-tot)
+
+      # Join to get Gene cumulative positions
+      plot_df <- plot_df %>%
+        dplyr::left_join(chr_summary %>% dplyr::select(chr, tot), by = c("gene_chr_char" = "chr")) %>%
+        dplyr::mutate(gene_BPcum = gene_start + tot) %>%
+        dplyr::select(-tot)
+
+
       # Ensure cis is logical or character
-      if (is.logical(df_filtered$cis)) {
-        df_filtered$cis <- as.character(df_filtered$cis)
-      } else if (!is.character(df_filtered$cis)) {
-        df_filtered$cis <- as.character(as.logical(df_filtered$cis))
+      if (is.logical(plot_df$cis)) {
+        plot_df$cis <- as.character(plot_df$cis)
+      } else if (!is.character(plot_df$cis)) {
+        plot_df$cis <- as.character(as.logical(plot_df$cis))
       }
 
       # Add metadata for plot rendering
-      attr(df_filtered, "is_qtlxcovar_data") <- is_qtlxcovar_data
-      attr(df_filtered, "interaction_type") <- interaction_type
+      attr(plot_df, "is_qtlxcovar_data") <- is_qtlxcovar_data
+      attr(plot_df, "interaction_type") <- interaction_type
+      attr(plot_df, "chr_summary") <- chr_summary
 
-      df_filtered
+      plot_df
     })
 
     output$cis_trans_plot_output <- plotly::renderPlotly({
@@ -269,90 +300,94 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         return(plotly::ggplotly(plot_null("No cis/trans data available for this dataset.")))
       }
 
-      current_selected_dataset_name <- selected_dataset()
+      chr_summary <- attr(plot_data_filtered, "chr_summary")
+      if (is.null(chr_summary)) {
+        return(plotly::ggplotly(plot_null("Chromosome summary data is missing.")))
+      }
 
       plot_data_filtered_dt <- data.table::as.data.table(plot_data_filtered)
 
       # Filter out rows with NA gene_symbol
       plot_data_filtered_dt <- plot_data_filtered_dt[!is.na(gene_symbol)]
 
-      # Ensure 'cis' column is character "TRUE" or "FALSE" for scale_color_manual
+      if (nrow(plot_data_filtered_dt) == 0) {
+        message("cisTransPlotServer: No data to plot after filtering for NA gene_symbol.")
+        return(plotly::ggplotly(plot_null("No data with valid gene symbols.")))
+      }
+
+      # Ensure 'cis' column is character "TRUE" or "FALSE"
       if (is.logical(plot_data_filtered_dt$cis)) {
         plot_data_filtered_dt[, cis_char := ifelse(cis, "TRUE", "FALSE")]
       } else {
-        plot_data_filtered_dt[, cis_char := as.character(cis)] # Assume it's already proper if not logical
+        plot_data_filtered_dt[, cis_char := as.character(cis)]
       }
 
-      # Get metadata from plot data
       is_qtlxcovar_data <- attr(plot_data_filtered, "is_qtlxcovar_data") %||% FALSE
       interaction_type <- attr(plot_data_filtered, "interaction_type") %||% "none"
 
-      # Create appropriate hover text based on data type
+      # Create hover text
       if (is_qtlxcovar_data && interaction_type != "none") {
-        # For difference data, show both original difference and absolute value
         plot_data_filtered_dt[, hover_text := paste0(
           gene_symbol, "<br>",
+          "QTL Chr: ", qtl_chr_char, ", Gene Chr: ", gene_chr_char, "<br>",
           "LOD Difference: ", round(lod_diff_original, 2), "<br>",
           "|LOD Difference|: ", round(qtl_lod, 2)
         )]
       } else {
-        # For regular data, show standard LOD
         plot_data_filtered_dt[, hover_text := paste0(
           gene_symbol, "<br>",
+          "QTL Chr: ", qtl_chr_char, ", Gene Chr: ", gene_chr_char, "<br>",
           "LOD: ", round(qtl_lod, 2)
         )]
       }
 
-      cis.colors <- c("FALSE" = "#E41A1C", "TRUE" = "blue")
-      names(cis.colors) <- c("FALSE", "TRUE")
-
-      # Reverse the order of gene_chr factor levels
-      plot_data_filtered_dt[, gene_chr := factor(gene_chr, levels = rev(levels(gene_chr)))]
-
-      # Try native plotly approach for better hover performance with dense data
-      # Create separate traces for cis and trans points
-      cis_points <- plot_data_filtered_dt[cis_char == "TRUE"]
-      trans_points <- plot_data_filtered_dt[cis_char == "FALSE"]
-
-      fig <- plotly::plot_ly(source = ns("cistrans_plotly")) %>%
-        # Add cis points (blue)
-        plotly::add_markers(
-          data = cis_points,
-          x = ~qtl_pos, y = ~gene_start,
-          color = I("#0066CC"),
-          size = I(8),
-          alpha = 0.7,
-          text = ~hover_text,
-          customdata = ~gene_symbol,
-          hovertemplate = "%{text}<extra></extra>",
-          name = "Cis",
-          showlegend = TRUE
-        ) %>%
-        # Add trans points (red)
-        plotly::add_markers(
-          data = trans_points,
-          x = ~qtl_pos, y = ~gene_start,
-          color = I("#E41A1C"),
-          size = I(8),
-          alpha = 0.7,
-          text = ~hover_text,
-          customdata = ~gene_symbol,
-          hovertemplate = "%{text}<extra></extra>",
-          name = "Trans",
-          showlegend = TRUE
-        ) %>%
-        plotly::layout(
+      g <- ggplot2::ggplot(plot_data_filtered_dt, ggplot2::aes(
+        x = qtl_BPcum,
+        y = gene_BPcum,
+        color = cis_char,
+        text = hover_text,
+        customdata = gene_symbol
+      )) +
+        ggplot2::geom_point(alpha = 0.7, size = 2) +
+        ggplot2::scale_color_manual(
+          name = "QTL Type",
+          values = c("TRUE" = "#0066CC", "FALSE" = "#E41A1C"),
+          labels = c("TRUE" = "Cis", "FALSE" = "Trans")
+        ) +
+        ggplot2::scale_x_continuous(
+          label = chr_summary$chr,
+          breaks = chr_summary$center,
+          expand = c(0.01, 0.01)
+        ) +
+        ggplot2::scale_y_continuous(
+          label = chr_summary$chr,
+          breaks = chr_summary$center,
+          expand = c(0.01, 0.01)
+        ) +
+        ggplot2::geom_vline(xintercept = chr_summary$tot[-1], color = "grey80", linetype = "dashed") +
+        ggplot2::geom_hline(yintercept = chr_summary$tot[-1], color = "grey80", linetype = "dashed") +
+        ggplot2::geom_abline(intercept = 0, slope = 1, color = "darkgrey") +
+        ggplot2::labs(
+          x = "QTL Position",
+          y = "Gene Position",
           title = if (is_qtlxcovar_data && interaction_type != "none") {
             paste("Cis/Trans QTL Plot -", stringr::str_to_title(interaction_type), "Interaction Differences")
           } else {
             "Cis/Trans QTL Plot"
-          },
-          xaxis = list(title = "QTL Position"),
-          yaxis = list(title = "Gene Position"),
+          }
+        ) +
+        ggplot2::theme_minimal(base_size = 12) +
+        ggplot2::theme(
+          legend.position = "top",
+          panel.grid.minor = ggplot2::element_blank(),
+          axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, size = 9),
+          axis.text.y = ggplot2::element_text(size = 9)
+        )
+
+      fig <- plotly::ggplotly(g, tooltip = "text", source = ns("cistrans_plotly")) %>%
+        plotly::layout(
           hovermode = "closest",
-          dragmode = "pan",
-          showlegend = TRUE,
-          margin = list(l = 50, r = 50, t = 50, b = 50)
+          dragmode = "pan"
         ) %>%
         plotly::config(
           displaylogo = FALSE,
