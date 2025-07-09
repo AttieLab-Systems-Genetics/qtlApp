@@ -206,10 +206,10 @@ scanApp <- function() {
       )
     ),
 
-    # Simplified main area - just the LOD scan plot
+    # Simplified main area - now with a dynamic header
     bslib::card(
       id = "lod_scan_card",
-      bslib::card_header("LOD Scan - Detailed View"),
+      bslib::card_header(shiny::uiOutput(shiny::NS("app_controller", "main_plot_title"))),
       bslib::card_body(
         shiny::uiOutput(shiny::NS("app_controller", "lod_scan_plot_ui_placeholder"))
       )
@@ -850,7 +850,7 @@ scanApp <- function() {
           h5("🧬 Interactive Analysis", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
           shiny::selectInput(
             ns_app_controller("interaction_type"),
-            label = "Select interaction analysis:",
+            label = "Interaction Analysis:",
             choices = available_interactions,
             selected = if (current_selection %in% available_interactions) current_selection else "none",
             width = "100%"
@@ -982,73 +982,123 @@ scanApp <- function() {
       ))
     })
 
-    # UI for LOD Scan plot - only appears when a trait is selected
+    # UI for LOD Scan plot - refactored for clarity and dynamic content
     output[[ns_app_controller("lod_scan_plot_ui_placeholder")]] <- shiny::renderUI({
       if (!is.null(trait_for_lod_scan_rv())) {
-        bslib::card(
-          id = "lod_scan_plot_card",
-          bslib::card_header(paste("LOD Scan for Trait:", trait_for_lod_scan_rv())),
-          bslib::card_body(
-            # Interactive Analysis section for HC_HF datasets - moved from sidebar
-            shiny::uiOutput(ns_app_controller("interactive_analysis_section")),
+        # Logic for interactive analysis dropdown (moved from its own renderUI)
+        dataset_group <- main_selected_dataset_group()
+        interaction_analysis_ui <- NULL
 
-            # Compact chromosome selector
+        if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
+          current_selection <- current_interaction_type_rv()
+          available_interactions <- c("None (Additive only)" = "none")
+
+          if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
+            available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
+          } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
+            available_interactions <- c(available_interactions, "Diet interaction" = "diet")
+          } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
+            available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
+          } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
+            available_interactions <- c(available_interactions, "Diet interaction" = "diet")
+          }
+
+          interaction_analysis_ui <- div(
+            style = "flex: 1 1 180px; min-width: 180px;",
+            shiny::selectInput(
+              ns_app_controller("interaction_type"),
+              label = "Interaction Analysis:",
+              choices = available_interactions,
+              selected = if (current_selection %in% available_interactions) current_selection else "none",
+              width = "100%"
+            )
+          )
+        }
+
+        tagList(
+          # Combined controls row
+          div(
+            style = "margin-bottom: 15px; background: #f8f9fa; padding: 10px 15px; border-radius: 4px; border: 1px solid #bdc3c7;",
             div(
-              style = "margin-bottom: 15px; background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #bdc3c7;",
+              style = "display: flex; align-items: flex-end; gap: 15px; flex-wrap: wrap;",
+
+              # Chromosome selector
               div(
-                style = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap;",
-                div(
-                  style = "flex: 0 0 auto;",
-                  h6("🔍 Chr:", style = "color: #2c3e50; margin: 0; font-weight: bold; font-size: 12px;")
-                ),
-                div(
-                  style = "flex: 0 0 120px;",
-                  shiny::selectInput(
-                    ns_app_controller("selected_chr"),
-                    label = NULL,
-                    choices = c(
-                      "All" = "All",
-                      setNames(as.character(1:19), paste("Chr", 1:19)),
-                      "X" = "X", "Y" = "Y", "M" = "M"
-                    ),
-                    selected = "All",
-                    width = "100%"
-                  )
-                ),
-                div(
-                  style = "flex: 0 0 auto; display: flex; gap: 5px;",
-                  shiny::actionButton(
-                    ns_app_controller("zoom_to_chr"),
-                    "🔍 Zoom",
-                    class = "btn btn-sm btn-primary",
-                    style = "background: #3498db; border: none; color: white; font-size: 11px; padding: 4px 8px;"
+                style = "flex: 1 1 120px; min-width: 120px;",
+                shiny::selectInput(
+                  ns_app_controller("selected_chr"),
+                  label = "Chromosome:",
+                  choices = c(
+                    "All" = "All",
+                    setNames(as.character(1:19), paste("Chr", 1:19)),
+                    "X" = "X", "Y" = "Y", "M" = "M"
                   ),
-                  shiny::actionButton(
-                    ns_app_controller("reset_chr_view"),
-                    "🌐 All",
-                    class = "btn btn-sm btn-secondary",
-                    style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
-                  )
+                  selected = "All",
+                  width = "100%"
+                )
+              ),
+
+              # Zoom/Reset buttons
+              div(
+                style = "flex: 0 0 auto; display: flex; gap: 5px;",
+                shiny::actionButton(
+                  ns_app_controller("reset_chr_view"),
+                  "🌐 Reset Zoom",
+                  class = "btn btn-sm btn-secondary",
+                  style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
+                )
+              ),
+
+              # Interaction analysis dropdown (now on the right)
+              interaction_analysis_ui
+            )
+          ),
+
+          # Conditional panel for interaction info
+          if (!is.null(interaction_analysis_ui)) {
+            shiny::conditionalPanel(
+              condition = paste0("input['", ns_app_controller("interaction_type"), "'] != 'none'"),
+              div(
+                style = "margin-bottom: 15px; padding: 10px; background-color: #e8f4fd; border-radius: 5px; border-left: 4px solid #3498db;",
+                p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
+                  style = "font-size: 12px; color: #2c3e50; margin: 0;"
                 )
               )
+            )
+          },
+
+          # LOD scan plot
+          scanOutput(ns_app_controller("scan_plot_module")),
+          # Clicked point details table
+          div(
+            style = "margin-top: 15px;",
+            h6("Click on plot to see point details:",
+              style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
             ),
-            # LOD scan plot
-            scanOutput(ns_app_controller("scan_plot_module")),
-            # Clicked point details table
-            div(
-              style = "margin-top: 15px;",
-              h6("Click on plot to see point details:",
-                style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
-              ),
-              DT::DTOutput(ns_app_controller("lod_scan_click_table"))
-            ),
-            # Conditional allele effects plot
-            shiny::uiOutput(ns_app_controller("allele_effects_section"))
-          )
+            DT::DTOutput(ns_app_controller("lod_scan_click_table"))
+          ),
+          # Conditional allele effects plot
+          shiny::uiOutput(ns_app_controller("allele_effects_section"))
         )
       } else {
-        NULL # Don't show the card if no trait is selected for scanning
+        # Show a placeholder message when no trait is selected
+        div(
+          style = "text-align: center; padding-top: 50px; color: #7f8c8d;",
+          h5("No trait selected for LOD scan"),
+          p("Select a trait from the 'Data Search' tab or click on a point in an overview plot to begin.")
+        )
       }
+    })
+
+    # Dynamic title for the main LOD scan card
+    output[[ns_app_controller("main_plot_title")]] <- shiny::renderUI({
+      trait <- trait_for_lod_scan_rv()
+      title_text <- if (!is.null(trait)) {
+        paste("LOD Scan for Trait:", trait)
+      } else {
+        "LOD Scan - Detailed View"
+      }
+      h4(title_text, style = "font-weight: bold; margin-bottom: 0;")
     })
 
     # Render allele effects section conditionally
@@ -1419,26 +1469,20 @@ scanApp <- function() {
     })
 
     # ====== CHROMOSOME ZOOM FUNCTIONALITY ======
-    # Observer for "Zoom to Chromosome" button
-    observeEvent(input[[ns_app_controller("zoom_to_chr")]], {
-      selected_chr <- input[[ns_app_controller("selected_chr")]]
-      if (!is.null(selected_chr) && selected_chr != "All") {
-        message(paste("scanApp: Zooming to chromosome:", selected_chr))
-        # The reactive selected_chromosome_rv will automatically pick up this change
-        # and the plot will update via scan_table_chr reactive
-        shiny::showNotification(
-          paste("Zoomed to chromosome", selected_chr),
-          type = "message",
-          duration = 2
-        )
-      } else {
-        shiny::showNotification(
-          "Please select a specific chromosome to zoom to",
-          type = "warning",
-          duration = 3
-        )
-      }
-    })
+    # Observer for chromosome selection dropdown
+    observeEvent(input[[ns_app_controller("selected_chr")]],
+      {
+        selected_chr <- input[[ns_app_controller("selected_chr")]]
+        if (!is.null(selected_chr) && selected_chr != "All") {
+          shiny::showNotification(
+            paste("Zoomed to chromosome", selected_chr),
+            type = "message",
+            duration = 2
+          )
+        }
+      },
+      ignoreInit = TRUE
+    )
 
     # Observer for "Show All Chromosomes" button
     observeEvent(input[[ns_app_controller("reset_chr_view")]], {
