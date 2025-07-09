@@ -92,16 +92,13 @@ scanApp <- function() {
               style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
             ),
             hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
-            h5(shiny::textOutput(shiny::NS("app_controller", "plot_title")),
-              style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
-            ),
             div(
               id = "overview-plot-container",
               class = "overview-plot-container",
               style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
               shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
             ),
-            p("Click on points to view detailed LOD scans",
+            p("Click on points to view detailed LOD scans. Plot titles show dataset and analysis type.",
               style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
             )
           )
@@ -682,21 +679,7 @@ scanApp <- function() {
 
 
 
-    output[[ns_app_controller("plot_title")]] <- shiny::renderText({
-      category <- selected_dataset_category_reactive()
-      group <- main_selected_dataset_group()
-      if (is.null(category) || is.null(group)) {
-        return("Select Dataset Category and Specific Dataset")
-      }
 
-      plot_type_text <- "Plot"
-      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
-        plot_type_text <- "Manhattan Plot"
-      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
-        plot_type_text <- "Cis/Trans Plot"
-      }
-      return(paste0(plot_type_text, " for: ", group, " (", category, ")"))
-    })
 
     output[[ns_app_controller("conditional_plot_ui")]] <- shiny::renderUI({
       category <- selected_dataset_category_reactive()
@@ -1188,16 +1171,40 @@ scanApp <- function() {
         }
       }
 
-      # Add founder allele effects summary
+      # Add founder allele effects with actual values
       allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+      strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
       available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
 
       if (length(available_alleles) > 0) {
-        non_na_alleles <- available_alleles[!is.na(peak_info[available_alleles])]
-        if (length(non_na_alleles) > 0) {
+        # Get non-NA allele effects with their values
+        allele_effects <- list()
+        for (i in seq_along(available_alleles)) {
+          col <- available_alleles[i]
+          value <- peak_info[[col]]
+          if (!is.na(value) && !is.null(value)) {
+            strain <- strain_names[i]
+            allele_effects[[length(allele_effects) + 1]] <- paste0(strain, ": ", round(value, 3))
+          }
+        }
+
+        if (length(allele_effects) > 0) {
+          # Create a more detailed display of founder effects
+          info_elements <- c(info_elements, list(
+            tags$strong("Founder Effects:"), tags$br(),
+            # Display effects in a more readable format
+            tags$div(
+              style = "margin-left: 10px; font-family: monospace; font-size: 11px;",
+              lapply(allele_effects, function(effect) {
+                tags$div(effect, style = "margin: 2px 0;")
+              })
+            )
+          ))
+        } else {
+          # Fallback to old display if no valid effects found
           info_elements <- c(info_elements, list(
             tags$strong("Founder Effects: "),
-            paste0(length(non_na_alleles), " available (", paste(non_na_alleles, collapse = ", "), ")"),
+            paste0(length(available_alleles), " available (", paste(available_alleles, collapse = ", "), ")"),
             tags$br()
           ))
         }

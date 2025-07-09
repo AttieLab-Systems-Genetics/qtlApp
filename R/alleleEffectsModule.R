@@ -216,16 +216,12 @@ alleleEffectsServer <- function(id, trait_for_lod_scan_reactive, selected_datase
                             selected = default_selection,
                             width = "100%"
                         ),
-                        # Add peak summary info
-                        if (!is.null(current_peak_info)) {
-                            div(
-                                id = ns("peak_summary_info"),
-                                style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db;",
-                                shiny::uiOutput(ns("peak_info_display"))
-                            )
-                        } else {
-                            NULL
-                        }
+                        # Add peak summary info - always render the uiOutput, let the reactive handle NULL cases
+                        div(
+                            id = ns("peak_summary_info"),
+                            style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db;",
+                            shiny::uiOutput(ns("peak_info_display"))
+                        )
                     ),
                     shiny::plotOutput(ns("allele_effects_plot_output"), height = "350px") %>%
                         shinycssloaders::withSpinner(type = 8, color = "#3498db")
@@ -289,16 +285,40 @@ alleleEffectsServer <- function(id, trait_for_lod_scan_reactive, selected_datase
                 }
             }
 
-            # Add founder allele effects summary
+            # Add founder allele effects with actual values
             allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+            strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
             available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
 
             if (length(available_alleles) > 0) {
-                non_na_alleles <- available_alleles[!is.na(peak_info[available_alleles])]
-                if (length(non_na_alleles) > 0) {
+                # Get non-NA allele effects with their values
+                allele_effects <- list()
+                for (i in seq_along(available_alleles)) {
+                    col <- available_alleles[i]
+                    value <- peak_info[[col]]
+                    if (!is.na(value) && !is.null(value)) {
+                        strain <- strain_names[i]
+                        allele_effects[[length(allele_effects) + 1]] <- paste0(strain, ": ", round(value, 3))
+                    }
+                }
+
+                if (length(allele_effects) > 0) {
+                    # Create a more detailed display of founder effects
+                    info_elements <- c(info_elements, list(
+                        tags$strong("Founder Effects:"), tags$br(),
+                        # Display effects in a more readable format
+                        tags$div(
+                            style = "margin-left: 10px; font-family: monospace; font-size: 11px;",
+                            lapply(allele_effects, function(effect) {
+                                tags$div(effect, style = "margin: 2px 0;")
+                            })
+                        )
+                    ))
+                } else {
+                    # Fallback to old display if no valid effects found
                     info_elements <- c(info_elements, list(
                         tags$strong("Founder Effects: "),
-                        paste0(length(non_na_alleles), " available (", paste(non_na_alleles, collapse = ", "), ")"),
+                        paste0(length(available_alleles), " available (", paste(available_alleles, collapse = ", "), ")"),
                         tags$br()
                     ))
                 }

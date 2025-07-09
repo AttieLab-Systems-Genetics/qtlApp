@@ -92,16 +92,13 @@ scanApp <- function() {
               style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"
             ),
             hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
-            h5(shiny::textOutput("plot_title"),
-              style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold; text-align: center;"
-            ),
             div(
               id = "overview-plot-container",
               class = "overview-plot-container",
               style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
               shiny::uiOutput("conditional_plot_ui")
             ),
-            p("Click on points to view detailed LOD scans",
+            p("Click on points to view detailed LOD scans. Plot titles show dataset and analysis type.",
               style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
             )
           )
@@ -253,21 +250,7 @@ scanApp <- function() {
       ignoreInit = TRUE
     )
 
-    output$plot_title <- shiny::renderText({
-      category <- dataset_selection$dataset_category()
-      group <- dataset_selection$selected_dataset()
-      if (is.null(category) || is.null(group)) {
-        return("Select Dataset Category and Specific Dataset")
-      }
 
-      plot_type_text <- "Plot"
-      if (category %in% c("Liver Lipids", "Clinical Traits", "Plasma Metabolites")) {
-        plot_type_text <- "Manhattan Plot"
-      } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
-        plot_type_text <- "Cis/Trans Plot"
-      }
-      return(paste0(plot_type_text, " for: ", group, " (", category, ")"))
-    })
 
     output$conditional_plot_ui <- shiny::renderUI({
       category <- dataset_selection$dataset_category()

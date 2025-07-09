@@ -200,15 +200,45 @@ process_data <- function() {
   - "sex" → "HC_HF Liver Genes, interactive (Sex)"
   - "diet" → "HC_HF Liver Genes, interactive (Diet)"
 
-### Difference Plot Implementation
+### Difference Plot Implementation Using qtlxcovar Files
 
-- **Simple Element-wise Subtraction**: `interactive_LOD[i] - additive_LOD[i]`
-- **Data Compatibility**: Ensure both datasets have same number of rows and markers
-- **NA Handling**: Replace NA values with 0 for visualization
-- **Stacked Layout**: Show interactive plot on top, difference plot on bottom
-- **Height Management**: Split total height between two plots (`height / 2`)
+#### Overview Plot Difference Analysis (Manhattan/Cis-Trans)
 
-### Difference Plot Architecture
+- **Data Source**: Use pre-computed qtlxcovar files in `/data/dev/miniViewer_3.0/` for interactive analysis
+- **Key Column**: `lod_diff` contains the actual difference values (interactive - additive)
+- **File Mapping**:
+  - Liver Genes: `DO1200_liver_genes_all_mice_qtlx[sex|diet]_peaks.csv`
+  - Clinical Traits: `DO1200_clinical_traits_all_mice_qtlx[sex|diet]_peaks.csv`
+  - Liver Lipids: `DO1200_liver_lipids_all_mice_qtlx[diet]_peaks.csv`
+  - Plasma Metabolites: `DO1200_plasma_metabolites_all_mice_qtlx[sex]_peaks.csv`
+
+#### LOD Column Selection Logic
+
+```r
+# Detect qtlxcovar data
+is_qtlxcovar_data <- "lod_diff" %in% colnames(df)
+use_lod_diff <- is_qtlxcovar_data && interaction_type != "none"
+
+# Use appropriate column for filtering and plotting
+lod_column <- if (use_lod_diff) "lod_diff" else "qtl_lod"
+
+# For difference data, use absolute value for threshold filtering
+if (use_lod_diff) {
+  df_filtered <- dplyr::filter(df, abs(lod_diff) >= lod_threshold)
+  # Store original signed values for hover text
+  df_filtered$lod_diff_original <- df_filtered$lod_diff
+  # Use absolute value for plotting
+  df_filtered$qtl_lod <- abs(df_filtered$lod_diff)
+}
+```
+
+#### Plot Title Logic
+
+- **Manhattan Plots**: Show "Manhattan Plot - [Sex/Diet] Interaction Difference" for qtlxcovar data
+- **Cis-Trans Plots**: Show "Cis/Trans QTL Plot - [Sex/Diet] Interaction Differences" for qtlxcovar data
+- **Hover Text**: For difference data, show both signed and absolute LOD difference values
+
+### Difference Plot Architecture for LOD Scans
 
 ```r
 # Store additive data when interaction type is "none"
@@ -237,6 +267,28 @@ difference_plot_gg <- shiny::reactive({
 - **Stacked Plots**: Interactive LOD (top) + Difference LOD (bottom) for interactive datasets
 - **Plot Titles**: "Interactive LOD Scan" and "LOD Difference (Interactive - Additive)"
 - **Color Coding**: Blue spinners for main plots, red spinners for difference plots
+
+### Header Management
+
+#### Avoid Duplicate Headers
+
+- **Rule**: Never create static headers in sidebar for plots that have dynamic titles
+- **Implementation**: Remove any `h5(textOutput("plot_title"))` or similar static headers
+- **Dynamic Only**: Use only plot-level titles that change based on:
+  - Dataset selection
+  - Interaction type (additive vs sex/diet interactive)
+  - Analysis mode (regular vs difference)
+
+#### Header Cleanup Pattern
+
+```r
+# WRONG: Static sidebar header + dynamic plot title
+h5(textOutput("plot_title")), # Remove this
+plot_output_with_dynamic_title()
+
+# CORRECT: Only dynamic plot titles
+plot_output_with_dynamic_title() # Keep only this
+```
 
 ## Package Structure
 
@@ -499,6 +551,67 @@ lod_threshold <- reactive({ ... }) %>% debounce(300)   # LOD threshold changes
 - **HC_HF Plasma Metabolites**: Supports Sex interaction only
   - Sex: `"HC_HF Plasma Metabolites, interactive (Sex)"`
 - **HC_HF Liver Isoforms**: No interactive analysis available
+
+### QTLxCovar File Handling
+
+#### File Path Mapping Functions
+
+```r
+# For Cis-Trans plots
+get_qtlxcovar_file_path <- function(base_dataset, interaction_type) {
+  qtlxcovar_dir <- "/data/dev/miniViewer_3.0"
+
+  # Map dataset categories to file prefixes
+  if (grepl("Liver.*Genes", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_liver_genes_all_mice"
+  } else if (grepl("Clinical", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_clinical_traits_all_mice"
+  } else {
+    return(NULL)
+  }
+
+  # Map interaction type to file suffix
+  file_suffix <- if (interaction_type == "sex") "qtlxsex_peaks.csv" else "qtlxdiet_peaks.csv"
+
+  return(file.path(qtlxcovar_dir, paste0(file_prefix, "_", file_suffix)))
+}
+
+# For Manhattan plots (similar but supports more dataset types)
+get_qtlxcovar_file_path_manhattan <- function(base_dataset, interaction_type) {
+  qtlxcovar_dir <- "/data/dev/miniViewer_3.0"
+
+  if (grepl("Clinical", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_clinical_traits_all_mice"
+  } else if (grepl("Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_liver_lipids_all_mice"
+  } else if (grepl("Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_plasma_metabolites_all_mice"
+  } else {
+    return(NULL)
+  }
+
+  file_suffix <- if (interaction_type == "sex") "qtlxsex_peaks.csv" else "qtlxdiet_peaks.csv"
+  return(file.path(qtlxcovar_dir, paste0(file_prefix, "_", file_suffix)))
+}
+```
+
+#### Data Loading Pattern
+
+```r
+# Check if we should use qtlxcovar data
+use_qtlxcovar <- !is.null(interaction_type) && interaction_type != "none" &&
+  !is.null(base_dataset) && grepl("^HC_HF", base_dataset, ignore.case = TRUE)
+
+if (use_qtlxcovar) {
+  qtlxcovar_file <- get_qtlxcovar_file_path(base_dataset, interaction_type)
+  if (!is.null(qtlxcovar_file) && file.exists(qtlxcovar_file)) {
+    found_peaks <- data.table::fread(qtlxcovar_file)
+  }
+} else {
+  # Use regular peak_finder for additive analysis
+  found_peaks <- peak_finder(...)
+}
+```
 
 ```r
 # Determine interactive dataset name

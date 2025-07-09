@@ -72,9 +72,6 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Define the %||% operator for null coalescing
-    `%||%` <- function(a, b) if (!is.null(a)) a else b
-
     # Removed internal dataset selection UI and logic
     # output$dataset_selector_ui <- renderUI({...})
     # cistrans_dataset_choices <- shiny::reactive({...})
