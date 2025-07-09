@@ -62,25 +62,19 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
         }
 
         # Reactive to store the selected interaction type
-        interaction_type_rv <- shiny::reactive({
-            interaction_value <- input$interaction_type %||% "none"
-            message(paste("interactiveAnalysisModule: interaction_type_rv: Current value is:", interaction_value))
-            return(interaction_value)
-        })
-
-        # Store the current interaction type to preserve across UI re-renders
-        current_interaction_type_rv <- shiny::reactiveVal("none")
+        interaction_type_rv <- shiny::reactiveVal("none")
 
         # Observer to update stored interaction type when input changes
         shiny::observeEvent(input$interaction_type,
             {
                 new_value <- input$interaction_type
                 if (!is.null(new_value)) {
-                    current_interaction_type_rv(new_value)
+                    interaction_type_rv(new_value)
                     message(paste("interactiveAnalysisModule: Updated interaction type to:", new_value))
                 }
             },
-            ignoreNULL = TRUE
+            ignoreNULL = TRUE,
+            ignoreInit = TRUE # Prevent firing on startup
         )
 
         # New reactive that handles the dataset name mapping for interactive analysis
@@ -135,7 +129,7 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
             # Show interactive analysis controls for all HC_HF datasets (Genes, Lipids, Clinical Traits, Metabolites)
             if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
                 # Preserve the current selection when re-rendering
-                current_selection <- current_interaction_type_rv()
+                current_selection <- interaction_type_rv()
 
                 # Determine what interaction types are available for this dataset
                 available_interactions <- c("None (Additive only)" = "none")

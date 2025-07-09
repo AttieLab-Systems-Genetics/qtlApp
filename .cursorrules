@@ -183,6 +183,44 @@ process_data <- function() {
 - UI renderUI functions should depend only on stable base reactives
 - Use mapped reactives for data processing that needs conditional values
 
+**Alternative Correct Pattern: `reactiveVal` with `observeEvent`**
+
+This pattern is especially useful when an input's value needs to be stored as a state that survives the re-rendering of the input control itself. It explicitly decouples state management from the UI.
+
+```r
+# 1. In the server, create a reactiveVal to hold the state.
+# This acts as a stable, manually controlled "source of truth".
+stored_interaction_type <- shiny::reactiveVal("none")
+
+# 2. Use observeEvent to update the reactiveVal only when the input changes.
+# ignoreNULL and ignoreInit prevent unwanted updates during startup or re-rendering.
+shiny::observeEvent(input$interaction_type_selector, {
+  stored_interaction_type(input$interaction_type_selector)
+}, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+# 3. Downstream reactives safely use the stored value.
+# This reactive does NOT depend on `input$interaction_type_selector` directly.
+# It only depends on the stable `stored_interaction_type` reactiveVal.
+mapped_dataset <- shiny::reactive({
+  base_dataset <- base_dataset_reactive()
+  interaction <- stored_interaction_type() # Uses the stable value
+  # ... logic to map dataset based on interaction ...
+})
+
+# The UI rendering can also safely use the reactiveVal to preserve state.
+output$interaction_ui <- shiny::renderUI({
+  # This UI creates `input$interaction_type_selector`.
+  # When it re-renders, the `selected` value is preserved via the reactiveVal,
+  # and the `observeEvent` ensures logic only runs on direct user changes.
+  shiny::selectInput(
+    "interaction_type_selector",
+    label = "Interaction",
+    choices = c("None" = "none", "Sex" = "sex"),
+    selected = stored_interaction_type() # Persist selection across re-renders
+  )
+})
+```
+
 #### Trait Preservation and Auto-Search
 
 - Preserve trait selection when switching between compatible datasets (e.g., additive ↔ interactive)
