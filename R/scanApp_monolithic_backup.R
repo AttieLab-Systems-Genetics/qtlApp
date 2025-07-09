@@ -1541,6 +1541,16 @@ scanApp <- function() {
     # Store the sidebar interaction type separately (for independent sidebar plot control)
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
+    # Observer to reset interaction types to default when dataset category changes
+    shiny::observeEvent(input[[ns_app_controller("dataset_category_selector")]],
+      {
+        message("scanApp: Dataset category changed. Resetting interaction analysis to default (additive).")
+        current_interaction_type_rv("none")
+        sidebar_interaction_type_rv("none")
+      },
+      ignoreInit = TRUE
+    )
+
     # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
     output[[ns_app_controller("peak_selection_sidebar")]] <- shiny::renderUI({
       dataset_group <- main_selected_dataset_group()
