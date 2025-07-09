@@ -72,6 +72,9 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # Define the %||% operator for null coalescing
+    `%||%` <- function(a, b) if (!is.null(a)) a else b
+
     # Removed internal dataset selection UI and logic
     # output$dataset_selector_ui <- renderUI({...})
     # cistrans_dataset_choices <- shiny::reactive({...})
@@ -171,6 +174,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       df <- peaks_data()
       shiny::req(main_par(), main_par()$LOD_thr) # Ensure LOD threshold is available
       lod_threshold <- main_par()$LOD_thr() # Get the LOD threshold from the slider
+      interaction_type <- interaction_type_debounced()
 
       message("cisTransPlotServer: Preparing plot_data. Initial df from peaks_data() has ", if (is.null(df)) "NULL" else nrow(df), " rows.") # DEBUG
       if (is.null(df) || nrow(df) == 0) {
@@ -178,9 +182,18 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         return(NULL)
       }
 
-      req_cols <- c("qtl_chr", "qtl_pos", "cis", "gene_chr", "gene_start", "qtl_lod")
+      # Check if this is qtlxcovar data (interactive analysis)
+      is_qtlxcovar_data <- "lod_diff" %in% colnames(df)
+      use_lod_diff <- is_qtlxcovar_data && !is.null(interaction_type) && interaction_type != "none"
+
+      # Determine which LOD column to use
+      lod_column <- if (use_lod_diff) "lod_diff" else "qtl_lod"
+
+      # Required columns depend on whether we're using qtlxcovar data
+      req_cols <- c("qtl_chr", "qtl_pos", "cis", "gene_chr", "gene_start", lod_column)
       message("cisTransPlotServer: Required columns for plot: ", paste(req_cols, collapse = ", ")) # DEBUG
       message("cisTransPlotServer: Columns in df from peaks_data(): ", paste(colnames(df), collapse = ", ")) # DEBUG
+      message("cisTransPlotServer: Using LOD column: ", lod_column, " (qtlxcovar: ", is_qtlxcovar_data, ")") # DEBUG
 
       # Check for gene_symbol column specifically
       if ("gene_symbol" %in% colnames(df)) {
@@ -199,7 +212,12 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         return(NULL)
       }
 
-      df_filtered <- dplyr::filter(df, !is.na(qtl_chr) & !is.na(qtl_pos) & !is.na(cis) & !is.na(gene_chr) & !is.na(gene_start) & !is.na(qtl_lod))
+      # Filter out NA values - use the appropriate LOD column
+      if (use_lod_diff) {
+        df_filtered <- dplyr::filter(df, !is.na(qtl_chr) & !is.na(qtl_pos) & !is.na(cis) & !is.na(gene_chr) & !is.na(gene_start) & !is.na(lod_diff))
+      } else {
+        df_filtered <- dplyr::filter(df, !is.na(qtl_chr) & !is.na(qtl_pos) & !is.na(cis) & !is.na(gene_chr) & !is.na(gene_start) & !is.na(qtl_lod))
+      }
       message("cisTransPlotServer: plot_data - After filtering NAs, df_filtered has ", nrow(df_filtered), " rows.") # DEBUG
 
       if (nrow(df_filtered) == 0) {
@@ -207,9 +225,21 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         return(NULL)
       }
 
-      # FILTER BY LOD THRESHOLD - Only show points at or above the threshold
-      message(paste0("cisTransPlotServer: Applying LOD threshold filter. Before: ", nrow(df_filtered), " rows, threshold: ", lod_threshold))
-      df_filtered <- dplyr::filter(df_filtered, qtl_lod >= lod_threshold)
+      # FILTER BY LOD THRESHOLD - Use appropriate column and handle absolute values for difference data
+      if (use_lod_diff) {
+        # For difference data, use absolute value for threshold filtering
+        message(paste0("cisTransPlotServer: Applying LOD difference threshold filter (abs value). Before: ", nrow(df_filtered), " rows, threshold: ", lod_threshold))
+        df_filtered <- dplyr::filter(df_filtered, abs(lod_diff) >= lod_threshold)
+
+        # Add a standardized qtl_lod column for plotting (use absolute value of lod_diff)
+        df_filtered$qtl_lod <- abs(df_filtered$lod_diff)
+
+        # Store original lod_diff for hover text
+        df_filtered$lod_diff_original <- df_filtered$lod_diff
+      } else {
+        message(paste0("cisTransPlotServer: Applying LOD threshold filter. Before: ", nrow(df_filtered), " rows, threshold: ", lod_threshold))
+        df_filtered <- dplyr::filter(df_filtered, qtl_lod >= lod_threshold)
+      }
       message(paste0("cisTransPlotServer: After LOD threshold filter: ", nrow(df_filtered), " rows"))
 
       if (nrow(df_filtered) == 0) {
@@ -226,6 +256,11 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       } else if (!is.character(df_filtered$cis)) {
         df_filtered$cis <- as.character(as.logical(df_filtered$cis))
       }
+
+      # Add metadata for plot rendering
+      attr(df_filtered, "is_qtlxcovar_data") <- is_qtlxcovar_data
+      attr(df_filtered, "interaction_type") <- interaction_type
+
       df_filtered
     })
 
@@ -251,11 +286,25 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         plot_data_filtered_dt[, cis_char := as.character(cis)] # Assume it's already proper if not logical
       }
 
-      # Simplified hover text for better performance
-      plot_data_filtered_dt[, hover_text := paste0(
-        gene_symbol, "<br>",
-        "LOD: ", round(qtl_lod, 2)
-      )]
+      # Get metadata from plot data
+      is_qtlxcovar_data <- attr(plot_data_filtered, "is_qtlxcovar_data") %||% FALSE
+      interaction_type <- attr(plot_data_filtered, "interaction_type") %||% "none"
+
+      # Create appropriate hover text based on data type
+      if (is_qtlxcovar_data && interaction_type != "none") {
+        # For difference data, show both original difference and absolute value
+        plot_data_filtered_dt[, hover_text := paste0(
+          gene_symbol, "<br>",
+          "LOD Difference: ", round(lod_diff_original, 2), "<br>",
+          "|LOD Difference|: ", round(qtl_lod, 2)
+        )]
+      } else {
+        # For regular data, show standard LOD
+        plot_data_filtered_dt[, hover_text := paste0(
+          gene_symbol, "<br>",
+          "LOD: ", round(qtl_lod, 2)
+        )]
+      }
 
       cis.colors <- c("FALSE" = "#E41A1C", "TRUE" = "blue")
       names(cis.colors) <- c("FALSE", "TRUE")
@@ -263,37 +312,55 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       # Reverse the order of gene_chr factor levels
       plot_data_filtered_dt[, gene_chr := factor(gene_chr, levels = rev(levels(gene_chr)))]
 
-      p <- ggplot(plot_data_filtered_dt, aes(x = qtl_pos, y = gene_start, text = hover_text, customdata = gene_symbol)) +
-        geom_point(aes(color = cis_char), alpha = 0.5, size = 0.8) +
-        scale_color_manual(values = cis.colors, labels = c("Trans", "Cis"), name = "QTL Type") +
-        facet_grid(gene_chr ~ qtl_chr, scales = "free", shrink = TRUE) +
-        theme(
-          panel.background = element_blank(),
-          panel.border = element_rect(fill = NA, color = "grey70"),
-          panel.grid.minor = element_blank(),
-          panel.spacing = unit(0.05, "lines"),
-          axis.text.x = element_blank(),
-          axis.text.y = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.ticks.y = element_blank()
-        ) +
-        labs(
-          x = "QTL Position",
-          y = "Gene Position"
-        )
+      # Try native plotly approach for better hover performance with dense data
+      # Create separate traces for cis and trans points
+      cis_points <- plot_data_filtered_dt[cis_char == "TRUE"]
+      trans_points <- plot_data_filtered_dt[cis_char == "FALSE"]
 
-      fig <- plotly::ggplotly(p, tooltip = "text", source = ns("cistrans_plotly")) %>%
+      fig <- plotly::plot_ly(source = ns("cistrans_plotly")) %>%
+        # Add cis points (blue)
+        plotly::add_markers(
+          data = cis_points,
+          x = ~qtl_pos, y = ~gene_start,
+          color = I("#0066CC"),
+          size = I(8),
+          alpha = 0.7,
+          text = ~hover_text,
+          customdata = ~gene_symbol,
+          hovertemplate = "%{text}<extra></extra>",
+          name = "Cis",
+          showlegend = TRUE
+        ) %>%
+        # Add trans points (red)
+        plotly::add_markers(
+          data = trans_points,
+          x = ~qtl_pos, y = ~gene_start,
+          color = I("#E41A1C"),
+          size = I(8),
+          alpha = 0.7,
+          text = ~hover_text,
+          customdata = ~gene_symbol,
+          hovertemplate = "%{text}<extra></extra>",
+          name = "Trans",
+          showlegend = TRUE
+        ) %>%
         plotly::layout(
-          dragmode = FALSE,
+          title = if (is_qtlxcovar_data && interaction_type != "none") {
+            paste("Cis/Trans QTL Plot -", stringr::str_to_title(interaction_type), "Interaction Differences")
+          } else {
+            "Cis/Trans QTL Plot"
+          },
+          xaxis = list(title = "QTL Position"),
+          yaxis = list(title = "Gene Position"),
           hovermode = "closest",
+          dragmode = "pan",
           showlegend = TRUE,
-          autosize = TRUE,
           margin = list(l = 50, r = 50, t = 50, b = 50)
         ) %>%
         plotly::config(
           displaylogo = FALSE,
-          modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud", "pan2d", "zoom2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"),
-          scrollZoom = FALSE,
+          modeBarButtonsToRemove = c("select2d", "lasso2d", "toggleSpikelines", "sendDataToCloud"),
+          scrollZoom = TRUE,
           doubleClick = "reset",
           responsive = TRUE
         )

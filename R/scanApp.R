@@ -216,13 +216,15 @@ scanApp <- function() {
     # Instantiate plot modules and capture their outputs
     manhattan_plot_outputs <- manhattanPlotServer("manhattan_plot_module",
       import_reactives = import_reactives,
-      main_par = active_main_par
+      main_par = active_main_par,
+      sidebar_interaction_type = interactive_analysis$interaction_type
     )
 
     cistrans_plot_outputs <- cisTransPlotServer("cistrans_plot_module",
       import_reactives = import_reactives,
       main_par = active_main_par,
-      peaks_cache = peaks_cache
+      peaks_cache = peaks_cache,
+      sidebar_interaction_type = interactive_analysis$interaction_type
     )
 
     # Observe clicks from Manhattan plot
