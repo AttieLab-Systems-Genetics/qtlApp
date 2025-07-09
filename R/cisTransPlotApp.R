@@ -328,16 +328,18 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       # Create hover text
       if (is_qtlxcovar_data && interaction_type != "none") {
         plot_data_filtered_dt[, hover_text := paste0(
-          gene_symbol, "<br>",
-          "QTL Chr: ", qtl_chr_char, ", Gene Chr: ", gene_chr_char, "<br>",
+          "Gene: ", gene_symbol, "<br>",
           "LOD Difference: ", round(lod_diff_original, 2), "<br>",
-          "|LOD Difference|: ", round(qtl_lod, 2)
+          "|LOD Difference|: ", round(qtl_lod, 2), "<br>",
+          "Gene Position: ", gene_chr_char, ":", round(gene_start, 2), " Mb<br>",
+          "Marker Position: ", qtl_chr_char, ":", round(qtl_pos, 2), " Mb"
         )]
       } else {
         plot_data_filtered_dt[, hover_text := paste0(
-          gene_symbol, "<br>",
-          "QTL Chr: ", qtl_chr_char, ", Gene Chr: ", gene_chr_char, "<br>",
-          "LOD: ", round(qtl_lod, 2)
+          "Gene: ", gene_symbol, "<br>",
+          "LOD: ", round(qtl_lod, 2), "<br>",
+          "Gene Position: ", gene_chr_char, ":", round(gene_start, 2), " Mb<br>",
+          "Marker Position: ", qtl_chr_char, ":", round(qtl_pos, 2), " Mb"
         )]
       }
 
