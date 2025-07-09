@@ -850,7 +850,7 @@ scanApp <- function() {
           h5("🧬 Interactive Analysis", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
           shiny::selectInput(
             ns_app_controller("interaction_type"),
-            label = "Interaction Analysis:",
+            label = "Select interaction analysis:",
             choices = available_interactions,
             selected = if (current_selection %in% available_interactions) current_selection else "none",
             width = "100%"
@@ -1767,12 +1767,12 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     # Reactive to automatically load additive data in background for any trait
     additive_scan_data_background <- shiny::reactive({
       trait_val <- current_trait_for_scan()
-      interactive_dataset_name <- selected_dataset_group()
+      dataset_group_val <- selected_dataset_group()
       interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
 
-      # Only load if we're in interactive mode
-      if (is.null(trait_val) || is.null(interactive_dataset_name) ||
-        !grepl("^HC_HF.*interactive", interactive_dataset_name, ignore.case = TRUE) ||
+      # Only load if we're in interactive mode and haven't already loaded
+      if (is.null(trait_val) || is.null(dataset_group_val) ||
+        !grepl("^HC_HF", dataset_group_val, ignore.case = TRUE) ||
         interaction_type == "none") {
         return(NULL)
       }
@@ -1784,9 +1784,15 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         return(current_additive)
       }
 
-      # Reconstruct the base additive dataset name from the interactive name
-      base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", interactive_dataset_name)
-      additive_dataset_name <- paste0(trimws(base_name), ", additive")
+      # Extract base dataset name for additive loading
+      base_dataset <- dataset_group_val
+      if (grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
+        base_dataset <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
+        base_dataset <- trimws(base_dataset)
+      }
+
+      # Correctly construct the additive dataset name
+      additive_dataset_name <- paste0(base_dataset, ", additive")
 
       message("scanServer: Loading additive data in background for trait:", trait_val, "base dataset:", additive_dataset_name)
 
