@@ -1022,6 +1022,9 @@ scanApp <- function() {
             div(
               style = "display: flex; align-items: flex-end; gap: 15px; flex-wrap: wrap;",
 
+              # Interaction analysis dropdown (now on the left)
+              interaction_analysis_ui,
+
               # Chromosome selector
               div(
                 style = "flex: 1 1 120px; min-width: 120px;",
@@ -1047,10 +1050,7 @@ scanApp <- function() {
                   class = "btn btn-sm btn-secondary",
                   style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
                 )
-              ),
-
-              # Interaction analysis dropdown (now on the right)
-              interaction_analysis_ui
+              )
             )
           ),
 
@@ -1072,9 +1072,6 @@ scanApp <- function() {
           # Clicked point details table
           div(
             style = "margin-top: 15px;",
-            h6("Click on plot to see point details:",
-              style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
-            ),
             DT::DTOutput(ns_app_controller("lod_scan_click_table"))
           ),
           # Conditional allele effects plot
@@ -1770,12 +1767,12 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     # Reactive to automatically load additive data in background for any trait
     additive_scan_data_background <- shiny::reactive({
       trait_val <- current_trait_for_scan()
-      dataset_group_val <- selected_dataset_group()
+      interactive_dataset_name <- selected_dataset_group()
       interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
 
-      # Only load if we're in interactive mode and haven't already loaded
-      if (is.null(trait_val) || is.null(dataset_group_val) ||
-        !grepl("^HC_HF", dataset_group_val, ignore.case = TRUE) ||
+      # Only load if we're in interactive mode
+      if (is.null(trait_val) || is.null(interactive_dataset_name) ||
+        !grepl("^HC_HF.*interactive", interactive_dataset_name, ignore.case = TRUE) ||
         interaction_type == "none") {
         return(NULL)
       }
@@ -1787,14 +1784,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         return(current_additive)
       }
 
-      # Extract base dataset name for additive loading
-      base_dataset <- dataset_group_val
-      if (grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
-        base_dataset <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
-        base_dataset <- trimws(base_dataset)
-      }
+      # Reconstruct the base additive dataset name from the interactive name
+      base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", interactive_dataset_name)
+      additive_dataset_name <- paste0(trimws(base_name), ", additive")
 
-      message("scanServer: Loading additive data in background for trait:", trait_val, "base dataset:", base_dataset)
+      message("scanServer: Loading additive data in background for trait:", trait_val, "base dataset:", additive_dataset_name)
 
       # Streamlined loading - minimal processing
       result <- tryCatch(
@@ -1804,7 +1798,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
           scan_data <- trait_scan(
             file_dir = file_dir_val,
-            selected_dataset = base_dataset,
+            selected_dataset = additive_dataset_name,
             selected_trait = trait_val,
             cache_env = NULL
           )

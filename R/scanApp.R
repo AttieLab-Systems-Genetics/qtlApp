@@ -310,6 +310,12 @@ scanApp <- function() {
             div(
               style = "display: flex; align-items: flex-end; gap: 15px; flex-wrap: wrap;",
 
+              # Interaction analysis dropdown (now on the left)
+              div(
+                style = "flex: 1 1 180px; min-width: 180px;",
+                interactiveAnalysisUI("interactive_analysis")
+              ),
+
               # Chromosome selector
               div(
                 style = "flex: 1 1 120px; min-width: 120px;",
@@ -334,12 +340,6 @@ scanApp <- function() {
                   class = "btn btn-sm btn-secondary",
                   style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
                 )
-              ),
-
-              # Interaction analysis dropdown (now on the right)
-              div(
-                style = "flex: 1 1 180px; min-width: 180px;",
-                interactiveAnalysisUI("interactive_analysis")
               )
             )
           ),
@@ -360,9 +360,6 @@ scanApp <- function() {
           # Clicked point details table
           div(
             style = "margin-top: 15px;",
-            h6("Click on plot to see point details:",
-              style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
-            ),
             DT::DTOutput("lod_scan_click_table")
           ),
           # Allele effects module
