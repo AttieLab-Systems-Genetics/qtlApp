@@ -113,6 +113,14 @@ moduleServer <- function(id, param1_reactive, param2_reactive, ...) {
 - Set appropriate file upload limits: `options(shiny.maxRequestSize = 20000*1024^2)`
 - Use reactive expressions efficiently to avoid unnecessary computations
 
+### Primary Development Target
+
+**WARNING**: Despite the presence of modular files, the application's core logic is contained within a single monolithic file: `R/scanApp_monolithic_backup.R`.
+
+- **Source of Truth**: The main `R/scanApp.R` file **sources the monolithic backup file**, making it the definitive source of the application's behavior. Edits to individual module files (e.g., `scanPlotModule.R`, `alleleEffectsModule.R`) will **have no effect**.
+- **Development Mandate**: All bug fixes, feature development, and refactoring related to the application's core functionality **must** be performed directly in `R/scanApp_monolithic_backup.R`.
+- **Example**: Key server logic, such as the `scanServer` function, is defined and executed from within the monolithic file, not its corresponding module file.
+
 ### Performance Optimization
 
 #### Reactive Debouncing

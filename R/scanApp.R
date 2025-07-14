@@ -20,7 +20,10 @@
 #'
 #' @export
 scanApp <- function() {
-  # Source required module files
+  # Source required module files and helpers first
+  source("R/helpers.R")
+  source("R/data_handling.R")
+  source("R/scanApp_monolithic_backup.R")
   source("R/importApp.R")
   source("R/datasetSelectionModule.R")
   source("R/traitSearchModule.R")
@@ -31,11 +34,6 @@ scanApp <- function() {
   source("R/cisTransPlotApp.R")
   source("R/profilePlotApp.R")
   source("R/correlationApp.R")
-
-  # Source helper functions
-  source("R/helpers.R")
-  source("R/data_handling.R")
-  source("R/scanApp_monolithic_backup.R")
 
   # Ensure ui_styles.R is sourced
   if (!exists("custom_css", mode = "character")) {
@@ -280,13 +278,10 @@ scanApp <- function() {
       interaction_type_reactive = interactive_analysis$interaction_type
     )
 
-    # Initialize allele effects module
+    # Initialize allele effects module, now driven by the scan plot's selected peak
     allele_effects_outputs <- alleleEffectsServer(
       id = "allele_effects",
-      trait_for_lod_scan_reactive = trait_search$trait_for_lod_scan,
-      selected_dataset_reactive = interactive_analysis$mapped_dataset,
-      import_reactives = import_reactives,
-      lod_threshold_reactive = lod_threshold_rv
+      selected_peak_reactive = scan_plot_outputs$selected_peak
     )
 
     # Dynamic title for the main LOD scan card
