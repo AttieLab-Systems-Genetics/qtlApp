@@ -242,6 +242,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
 
       plotly::ggplotly(g, tooltip = "text", source = ns("cistrans_plot")) %>%
         plotly::layout(dragmode = "pan") %>%
+        plotly::config(scrollZoom = TRUE, displaylogo = FALSE, modeBarButtonsToRemove = c("select2d", "lasso2d")) %>%
         plotly::event_register("plotly_click")
     })
 

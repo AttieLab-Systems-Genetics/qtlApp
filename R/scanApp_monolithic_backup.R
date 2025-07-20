@@ -95,7 +95,7 @@ scanApp <- function() {
             div(
               id = "overview-plot-container",
               class = "overview-plot-container",
-              style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
+              style = "height: 65vh; min-height: 400px; max-height: 800px; border: 1px solid #bdc3c7; border-radius: 5px;",
               shiny::uiOutput(shiny::NS("app_controller", "conditional_plot_ui"))
             ),
             p("Click on points to view detailed LOD scans. Plot titles show dataset and analysis type.",

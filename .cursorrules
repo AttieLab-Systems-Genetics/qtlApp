@@ -409,8 +409,7 @@ Source files in logical dependency order in `app.R`:
 
 - Configure plotly plots for specific interaction patterns:
   - LOD scan plots: horizontal-only zoom (`yaxis: fixedrange = TRUE`)
-  - Manhattan plots: pan-only interaction (`dragmode = "pan"`)
-  - Strain effects: no legend needed when strains are on axes (`guide = "none"`)
+  - Manhattan & Cis/Trans plots: Enable pinch-to-zoom and pan (`layout(dragmode = "pan") %>% config(scrollZoom = TRUE)`).
 - Use `fixedrange = TRUE/FALSE` in plotly layout for axis-specific zoom control
 
 ### Strain Effects Plots
@@ -425,6 +424,7 @@ Source files in logical dependency order in `app.R`:
 - **Objective**: Display all-vs-all chromosome interactions in a single plot while preserving rich hover text and click-to-scan functionality.
 - **Problem**: Using `ggplot2::facet_wrap()` by chromosome with `plotly::ggplotly()` can lead to inconsistent hover behavior and a cluttered appearance. `plotly::subplot()` can also be complex to manage for this type of plot.
 - **Solution**: Implement a single-panel plot using cumulative genomic coordinates.
+- **Colors**: For cis/trans distinction, use **blue for cis** and **red for trans**.
 
 #### Implementation Pattern
 
@@ -489,6 +489,7 @@ Source files in logical dependency order in `app.R`:
 ### Dataset Switching and State Management
 
 - **Preserve Trait Selection**: Preserve trait selection when switching between compatible datasets (e.g., additive ↔ interactive).
+- **Preserve Interaction State**: The selected interaction type (e.g., "sex", "diet") **must** be preserved when switching between dataset categories that support it. The view should only reset to "additive" if the new category does not support the active interaction type.
 - **Prevent Auto-Search**: Use `dataset_just_changed` flags to prevent automatic expensive computations during dataset transitions.
 - **Default to Additive**: When the main dataset category changes, both main and sidebar interaction analysis controls **must** be reset to "none" (additive) to ensure a clean state.
   ```r
@@ -541,6 +542,7 @@ lod_threshold <- reactive({ ... }) %>% debounce(300)   # LOD threshold changes
 - Provide meaningful error messages to users
 - Use `tryCatch()` for external data operations
 - Implement graceful fallbacks for missing data
+- **Avoid `overflow: hidden;` in CSS for containers with Plotly plots**, as it can interfere with zoom/pan event handling and cause mouseover lag.
 
 ### Memory Management
 
@@ -734,23 +736,25 @@ tags$div(
 
 ### On-the-Fly Difference Plot Data Flow (LOD Scan)
 
-1.  **Derive Additive Dataset Name**: When an interactive analysis is selected, the corresponding additive dataset name **must** be correctly derived. The standard logic is to remove the interactive part from the name and append ", additive".
+1.  **Automatic Additive Loading**: When an interactive analysis is selected (e.g., "sex" or "diet"), the corresponding additive dataset scan **must** be loaded automatically in the background. The user should not be required to manually select the additive ("none") version first.
+2.  **Robust Caching**: The loaded additive scan data for a given trait should be cached in a reactive value (`reactiveVal`). This cache must be cleared when the selected trait changes, but **not** when the interaction type changes (e.g., switching from "sex" to "diet"). This prevents slow, redundant data loading.
+3.  **Derive Additive Dataset Name**: The additive dataset name is derived by removing the interactive part from the name and appending ", additive".
     ```r
     # Correct logic for deriving additive dataset name
     base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", interactive_dataset_name)
     additive_dataset_name <- paste0(trimws(base_name), ", additive")
     ```
-2.  **Load Additive Data**: In the background, load the scan data for the derived additive dataset name (`additive_dataset_name`). This data should be stored in a reactive value (e.g., `additive_scan_data_rv`).
-3.  **Prevent Incorrect Caching**: When storing additive scan data from a "none" interaction type, ensure the source data is genuinely from an additive dataset, not an interactive one that happens to have its interaction type set to "none".
+4.  **Load Additive Data**: In the background, load the scan data for the derived additive dataset name (`additive_dataset_name`). This data should be stored in a reactive value (e.g., `additive_scan_data_rv`).
+5.  **Prevent Incorrect Caching**: When storing additive scan data from a "none" interaction type, ensure the source data is genuinely from an additive dataset, not an interactive one that happens to have its interaction type set to "none".
     ```r
     # GOOD: Guard against incorrect caching
     if (!grepl("interactive", current_dataset_name, ignore.case = TRUE)) {
       additive_scan_data_rv(plot_data)
     }
     ```
-4.  **Calculate Difference**: Subtract the stored additive LOD scores from the interactive LOD scores.
-5.  **Handle Missing Data**: Use `is.null()` and `nrow()` checks before calculations.
-6.  **Create Plot**: Pass the difference data to `ggplot_qtl_scan()` with `-Inf` threshold.
+6.  **Calculate Difference**: Subtract the stored additive LOD scores from the interactive LOD scores.
+7.  **Handle Missing Data**: Use `is.null()` and `nrow()` checks before calculations.
+8.  **Create Plot**: Pass the difference data to `ggplot_qtl_scan()` with `-Inf` threshold.
 
 ### QTLxCovar File Handling
 
