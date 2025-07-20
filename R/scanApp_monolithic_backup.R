@@ -1506,14 +1506,14 @@ scanApp <- function() {
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
     # Observer to reset interaction types to default when dataset category changes
-    shiny::observeEvent(input[[ns_app_controller("dataset_category_selector")]],
-      {
-        message("scanApp: Dataset category changed. Resetting interaction analysis to default (additive).")
-        current_interaction_type_rv("none")
-        sidebar_interaction_type_rv("none")
-      },
-      ignoreInit = TRUE
-    )
+    # shiny::observeEvent(input[[ns_app_controller("dataset_category_selector")]],
+    #   {
+    #     message("scanApp: Dataset category changed. Resetting interaction analysis to default (additive).")
+    #     current_interaction_type_rv("none")
+    #     sidebar_interaction_type_rv("none")
+    #   },
+    #   ignoreInit = TRUE
+    # )
 
     # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
     output[[ns_app_controller("peak_selection_sidebar")]] <- shiny::renderUI({
@@ -1786,40 +1786,39 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     # Reactive to store additive plot data for difference calculations
     additive_scan_data_rv <- shiny::reactiveVal(NULL)
 
+    # Observer to clear the additive data cache whenever the selected trait changes
+    shiny::observeEvent(current_trait_for_scan(),
+      {
+        # This ensures we don't use stale additive data from a previous trait
+        message("scanServer: New trait selected, clearing additive data cache.")
+        additive_scan_data_rv(NULL)
+      },
+      ignoreNULL = FALSE,
+      ignoreInit = TRUE
+    )
+
+
     # Reactive to automatically load additive data in background for any trait
-    additive_scan_data_background <- shiny::reactive({
+    # This replaces the old background loader and observer pattern
+    additive_scan_data_loader <- shiny::reactive({
       trait_val <- current_trait_for_scan()
       dataset_group_val <- selected_dataset_group()
       interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
 
-      # Only load if we're in interactive mode and haven't already loaded
+      # Only load if we're in interactive mode
       if (is.null(trait_val) || is.null(dataset_group_val) ||
-        !grepl("^HC_HF", dataset_group_val, ignore.case = TRUE) ||
+        !grepl("interactive", dataset_group_val, ignore.case = TRUE) ||
         interaction_type == "none") {
         return(NULL)
       }
 
-      # Check if we already have additive data cached
-      current_additive <- additive_scan_data_rv()
-      if (!is.null(current_additive) && nrow(current_additive) > 0) {
-        message("scanServer: Using cached additive data")
-        return(current_additive)
-      }
+      # Derive the corresponding additive dataset name from the interactive one
+      base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
+      additive_dataset_name <- paste0(trimws(base_name), ", additive")
 
-      # Extract base dataset name for additive loading
-      base_dataset <- dataset_group_val
-      if (grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
-        base_dataset <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
-        base_dataset <- trimws(base_dataset)
-      }
+      message("scanServer: Automatically loading additive data for '", trait_val, "' from dataset '", additive_dataset_name, "'")
 
-      # Correctly construct the additive dataset name
-      additive_dataset_name <- paste0(base_dataset, ", additive")
-
-      message("scanServer: Loading additive data in background for trait:", trait_val, "base dataset:", additive_dataset_name)
-
-      # Streamlined loading - minimal processing
-      result <- tryCatch(
+      tryCatch(
         {
           file_dir_val <- import_reactives()$file_directory
           req(file_dir_val)
@@ -1831,58 +1830,61 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             cache_env = NULL
           )
 
-          if (!is.null(scan_data) && nrow(scan_data) > 0) {
-            # Basic processing only - defer complex operations
-            main_par_list <- main_par_inputs()
-            req(main_par_list$LOD_thr, import_reactives()$markers)
+          if (is.null(scan_data) || nrow(scan_data) == 0) {
+            return(NULL)
+          }
 
-            processed_data <- QTL_plot_visualizer(scan_data, trait_val, main_par_list$LOD_thr(), import_reactives()$markers)
+          main_par_list <- main_par_inputs()
+          req(main_par_list$LOD_thr, import_reactives()$markers)
 
-            if (!is.null(processed_data) && nrow(processed_data) > 0) {
-              message("scanServer: Background loaded additive data with", nrow(processed_data), "rows")
-              return(processed_data)
-            }
+          processed_data <- QTL_plot_visualizer(scan_data, trait_val, main_par_list$LOD_thr(), import_reactives()$markers)
+
+          if (!is.null(processed_data) && nrow(processed_data) > 0) {
+            message("scanServer: Background loaded additive data with ", nrow(processed_data), " rows.")
+            return(processed_data)
           }
           return(NULL)
         },
         error = function(e) {
-          message("scanServer: Error loading additive data:", e$message)
+          message("scanServer: Error automatically loading additive data: ", e$message)
           return(NULL)
         }
       )
-    }) %>% shiny::debounce(500) # Increased debounce to reduce excessive loading
+    }) %>% shiny::debounce(250)
 
-    # Observer to store additive data automatically for any trait
-    shiny::observeEvent(additive_scan_data_background(),
-      {
-        background_data <- additive_scan_data_background()
-        if (!is.null(background_data) && nrow(background_data) > 0) {
-          additive_scan_data_rv(background_data)
-          message("scanServer: Stored background additive scan data with", nrow(background_data), "rows")
+    # New observer to trigger the automatic loader only when necessary
+    shiny::observe({
+      interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
+
+      # If we are in interactive mode AND the cache is empty, trigger the loader to run and populate the cache.
+      if (interaction_type != "none" && is.null(additive_scan_data_rv())) {
+        loaded_data <- additive_scan_data_loader()
+        if (!is.null(loaded_data)) {
+          additive_scan_data_rv(loaded_data)
+          message("scanServer: Additive data cache populated by automatic loader.")
         }
-      },
-      ignoreInit = TRUE,
-      ignoreNULL = TRUE
-    )
+      }
+    })
 
-    # Observer to store additive data when interaction type is "none" (keep existing behavior)
-    shiny::observeEvent(list(scan_table_chr(), interaction_type_reactive),
+    # Observer to store additive data when interaction type is "none" (for manual workflow)
+    shiny::observeEvent(scan_table_chr(),
       {
-        if (!is.null(interaction_type_reactive)) {
-          interaction_type <- interaction_type_reactive()
-          if (!is.null(interaction_type) && interaction_type == "none") {
-            # Store chr-filtered data to match what will be used for interactive comparison
-            plot_data <- scan_table_chr()
-            if (!is.null(plot_data) && nrow(plot_data) > 0) {
-              additive_scan_data_rv(plot_data)
-              message("scanServer: Stored additive scan data with", nrow(plot_data), "rows (from none mode)")
-            }
+        interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
+
+        # Only store if this is a genuine additive scan, not an interactive one
+        # This prevents overwriting the additive data when switching to an interactive view
+        if (interaction_type == "none" && !grepl("interactive", selected_dataset_group(), ignore.case = TRUE)) {
+          plot_data <- scan_table_chr()
+          if (!is.null(plot_data) && nrow(plot_data) > 0) {
+            additive_scan_data_rv(plot_data)
+            message("scanServer: Stored additive scan data with ", nrow(plot_data), " rows (from 'none' mode).")
           }
         }
       },
       ignoreInit = TRUE,
       ignoreNULL = TRUE
     )
+
 
     current_scan_plot_gg <- shiny::reactive({
       # Get inputs with early validation
@@ -1922,6 +1924,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       }
 
       interactive_data <- scan_table_chr()
+
+      # This now exclusively reads from the reactiveVal, which is populated by either the manual or automatic workflow.
+      # This decouples it from the interactive scan's reactive chain.
       additive_data <- additive_scan_data_rv()
 
       # Early exit if data is missing

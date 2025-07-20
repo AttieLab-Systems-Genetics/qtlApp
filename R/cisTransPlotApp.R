@@ -6,44 +6,18 @@
 #' @export
 library(ggplot2)
 library(dplyr)
+library(stringr)
 
-#' Helper function to map dataset and interaction type to qtlxcovar file path
-get_qtlxcovar_file_path <- function(base_dataset, interaction_type) {
-  qtlxcovar_dir <- "/data/dev/miniViewer_3.0"
-
-  # Map dataset categories to file prefixes
-  if (grepl("Liver.*Genes", base_dataset, ignore.case = TRUE)) {
-    file_prefix <- "DO1200_liver_genes_all_mice"
-  } else if (grepl("Clinical", base_dataset, ignore.case = TRUE)) {
-    file_prefix <- "DO1200_clinical_traits_all_mice"
-  } else {
-    message("get_qtlxcovar_file_path: Unknown dataset category for:", base_dataset)
-    return(NULL)
-  }
-
-  # Map interaction type to file suffix
-  if (interaction_type == "sex") {
-    file_suffix <- "qtlxsex_peaks.csv"
-  } else if (interaction_type == "diet") {
-    file_suffix <- "qtlxdiet_peaks.csv"
-  } else {
-    message("get_qtlxcovar_file_path: Unknown interaction type:", interaction_type)
-    return(NULL)
-  }
-
-  file_path <- file.path(qtlxcovar_dir, paste0(file_prefix, "_", file_suffix))
-  return(file_path)
+# Source the helpers file to make get_qtlxcovar_file_paths available
+if (file.exists("R/helpers.R")) {
+  source("R/helpers.R")
 }
 
 #' @param id Module ID
 #' @export
 cisTransPlotInput <- function(id) {
   ns <- shiny::NS(id)
-  shiny::tagList(
-    # The UI for selecting dataset within cisTransPlotApp is removed,
-    # as this will be driven by the main app's selection.
-    # uiOutput(ns("dataset_selector_ui"))
-  )
+  shiny::tagList()
 }
 
 #' Cis-Trans Plot Module Output UI
@@ -61,6 +35,37 @@ cisTransPlotUI <- function(id) {
   )
 }
 
+#' Helper function to get paths to qtlxcovar files for cis-trans plot
+#' @param base_dataset The base name of the dataset (e.g., "HC_HF Liver Genes, additive")
+#' @param interaction_type The type of interaction ("sex" or "diet")
+#' @return A character vector of file paths, or NULL if not applicable.
+get_qtlxcovar_file_paths <- function(base_dataset, interaction_type) {
+  qtlxcovar_dir <- "/data/dev/miniViewer_3.0"
+
+  file_prefix <- NULL
+  if (grepl("Liver.*Genes", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_liver_genes_all_mice"
+  } else if (grepl("Clinical", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_clinical_traits_all_mice"
+  } else {
+    return(NULL) # Not a dataset type supported by this plot's qtlxcovar files
+  }
+
+  file_suffix <- if (interaction_type == "sex") "qtlxsex_peaks.csv" else "qtlxdiet_peaks.csv"
+
+  # Construct the full file path
+  full_path <- file.path(qtlxcovar_dir, paste0(file_prefix, "_", file_suffix))
+
+  # Return the path only if the file exists, otherwise return NULL to prevent errors
+  if (file.exists(full_path)) {
+    return(full_path)
+  } else {
+    warning(paste("qtlxcovar file not found at path:", full_path))
+    return(NULL)
+  }
+}
+
+
 #' Cis-Trans Plot Module Server
 #'
 #' @param id Module ID
@@ -72,352 +77,185 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Removed internal dataset selection UI and logic
-    # output$dataset_selector_ui <- renderUI({...})
-    # cistrans_dataset_choices <- shiny::reactive({...})
-
     selected_dataset <- shiny::reactive({
-      shiny::req(main_par(), main_par()$selected_dataset, main_par()$selected_dataset())
-      dataset_group_name <- main_par()$selected_dataset()
-      message("cisTransPlotServer: Received selected_dataset from main_par: ", dataset_group_name)
-      return(dataset_group_name)
+      main_par_val <- main_par()
+      shiny::req(main_par_val, main_par_val$selected_dataset, main_par_val$selected_dataset())
+      main_par_val$selected_dataset()
     })
 
     trait_type <- shiny::reactive({
-      shiny::req(import_reactives(), selected_dataset())
-      # Ensure import_reactives() is called to get the list
-      current_trait_type <- get_trait_type(import_reactives(), selected_dataset())
-      message("cisTransPlotServer: Determined Trait Type: ", current_trait_type)
-      current_trait_type
+      get_trait_type(import_reactives(), selected_dataset())
     })
-
-
-    # Create a debounced reactive for interaction type to prevent excessive reloads
-    interaction_type_debounced <- shiny::reactive({
-      if (!is.null(sidebar_interaction_type)) sidebar_interaction_type() else "none"
-    }) %>% shiny::debounce(500) # Debounce to prevent rapid firing
 
     peaks_data <- shiny::reactive({
       shiny::req(import_reactives(), selected_dataset(), trait_type())
 
-      # Check if we should use qtlxcovar data
-      interaction_type <- interaction_type_debounced()
+      interaction_type <- if (is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
       base_dataset <- selected_dataset()
+      use_qtlxcovar <- !is.null(interaction_type) && interaction_type != "none" && grepl("^HC_HF", base_dataset, ignore.case = TRUE)
 
-      message("cisTransPlotServer: peaks_data reactive. Dataset:", base_dataset, "Interaction:", interaction_type)
-
-      # Use qtlxcovar data for HC_HF datasets with interaction types
-      use_qtlxcovar <- !is.null(interaction_type) && interaction_type != "none" &&
-        !is.null(base_dataset) && grepl("^HC_HF", base_dataset, ignore.case = TRUE)
-
+      found_peaks <- NULL
       if (use_qtlxcovar) {
-        message("cisTransPlotServer: Using qtlxcovar peaks for interaction:", interaction_type)
-
-        # Map dataset to qtlxcovar file
-        qtlxcovar_file <- get_qtlxcovar_file_path(base_dataset, interaction_type)
-
-        if (!is.null(qtlxcovar_file) && file.exists(qtlxcovar_file)) {
-          message("cisTransPlotServer: Loading qtlxcovar file:", qtlxcovar_file)
+        qtlxcovar_files <- get_qtlxcovar_file_paths(base_dataset, interaction_type)
+        if (!is.null(qtlxcovar_files) && length(qtlxcovar_files) > 0) {
           found_peaks <- tryCatch(
             {
-              data.table::fread(qtlxcovar_file)
+              peak_data_list <- lapply(qtlxcovar_files, data.table::fread, stringsAsFactors = FALSE)
+              data.table::rbindlist(peak_data_list, use.names = TRUE, fill = TRUE)
             },
             error = function(e) {
-              message("cisTransPlotServer: Error reading qtlxcovar file:", e$message)
-              return(NULL)
+              warning(paste("Error reading qtlxcovar files:", e$message))
+              NULL
             }
           )
-
-          if (!is.null(found_peaks) && nrow(found_peaks) > 0) {
-            message("cisTransPlotServer: Loaded", nrow(found_peaks), "qtlxcovar peaks")
-          } else {
-            message("cisTransPlotServer: No qtlxcovar peaks loaded")
-          }
-        } else {
-          message("cisTransPlotServer: QTLxcovar file not found or invalid path:", qtlxcovar_file)
-          found_peaks <- NULL
         }
       } else {
-        message("cisTransPlotServer: Using regular peaks via peak_finder")
-
-        current_peaks_cache <- if (is.environment(peaks_cache)) peaks_cache else NULL
-
-        # Ensure import_reactives() is called to get the list
-        found_peaks <- peak_finder(import_reactives()$file_directory,
-          selected_dataset(),
+        found_peaks <- peak_finder(
+          file_dir = import_reactives()$file_directory,
+          selected_dataset = selected_dataset(),
           trait_type = trait_type(),
-          cache_env = current_peaks_cache,
+          cache_env = peaks_cache,
           use_cache = TRUE
         )
       }
-      message("cisTransPlotServer: Data returned by peak_finder:")
-      if (is.data.frame(found_peaks)) {
-        message("peak_finder returned a data.frame with ", nrow(found_peaks), " rows and columns: ", paste(colnames(found_peaks), collapse = ", "))
-        if (nrow(found_peaks) > 0) {
-          message("Head of peak_finder output:")
-          print(utils::head(found_peaks))
-        } else {
-          message("peak_finder returned an empty data.frame.")
-        }
-      } else {
-        message("peak_finder did not return a data.frame. Object type: ", class(found_peaks))
-        print(found_peaks)
+
+      if (use_qtlxcovar && is.null(found_peaks)) {
+        return(NULL)
       }
       found_peaks
     })
 
-
     plot_data <- shiny::reactive({
       df <- peaks_data()
-      shiny::req(main_par(), main_par()$LOD_thr) # Ensure LOD threshold is available
-      lod_threshold <- main_par()$LOD_thr() # Get the LOD threshold from the slider
-      interaction_type <- interaction_type_debounced()
+      shiny::req(main_par(), main_par()$LOD_thr)
+      lod_threshold <- main_par()$LOD_thr()
+      interaction_type <- if (is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
 
-      message("cisTransPlotServer: Preparing plot_data. Initial df from peaks_data() has ", if (is.null(df)) "NULL" else nrow(df), " rows.") # DEBUG
       if (is.null(df) || nrow(df) == 0) {
-        message("cisTransPlotServer: plot_data - peaks_data() is NULL or empty, returning NULL.") # DEBUG
         return(NULL)
       }
 
-      # Check if this is qtlxcovar data (interactive analysis)
       is_qtlxcovar_data <- "lod_diff" %in% colnames(df)
       use_lod_diff <- is_qtlxcovar_data && !is.null(interaction_type) && interaction_type != "none"
-
-      # Determine which LOD column to use
       lod_column <- if (use_lod_diff) "lod_diff" else "qtl_lod"
 
-      # Required columns depend on whether we're using qtlxcovar data
       req_cols <- c("qtl_chr", "qtl_pos", "cis", "gene_chr", "gene_start", lod_column)
-      message("cisTransPlotServer: Required columns for plot: ", paste(req_cols, collapse = ", ")) # DEBUG
-      message("cisTransPlotServer: Columns in df from peaks_data(): ", paste(colnames(df), collapse = ", ")) # DEBUG
-      message("cisTransPlotServer: Using LOD column: ", lod_column, " (qtlxcovar: ", is_qtlxcovar_data, ")") # DEBUG
-
-      # Check for gene_symbol column specifically
-      if ("gene_symbol" %in% colnames(df)) {
-        message("cisTransPlotServer: gene_symbol column found with ", sum(!is.na(df$gene_symbol)), " non-NA values out of ", nrow(df), " rows")
-        # Show sample of gene symbols
-        sample_symbols <- head(unique(df$gene_symbol[!is.na(df$gene_symbol)]), 5)
-        message("cisTransPlotServer: Sample gene symbols: ", paste(sample_symbols, collapse = ", "))
-      } else {
-        message("cisTransPlotServer: WARNING - gene_symbol column NOT found in peaks data!")
-        message("cisTransPlotServer: Available columns: ", paste(colnames(df), collapse = ", "))
-      }
-
       if (!all(req_cols %in% colnames(df))) {
-        missing_cols <- req_cols[!req_cols %in% colnames(df)]
-        message("cisTransPlotServer: plot_data - Missing required columns: ", paste(missing_cols, collapse = ", "), ". Returning NULL.") # DEBUG
         return(NULL)
       }
 
-      # Filter out NA values - use the appropriate LOD column
+      # Using data.table for efficiency
+      plot_data_dt <- data.table::as.data.table(df)
+
+      # Filter NAs based on required columns
+      plot_data_dt <- na.omit(plot_data_dt, cols = req_cols)
+
       if (use_lod_diff) {
-        df_filtered <- dplyr::filter(df, !is.na(qtl_chr) & !is.na(qtl_pos) & !is.na(cis) & !is.na(gene_chr) & !is.na(gene_start) & !is.na(lod_diff))
+        plot_data_dt <- plot_data_dt[abs(get(lod_column)) >= lod_threshold]
+        plot_data_dt[, qtl_lod := abs(get(lod_column))]
       } else {
-        df_filtered <- dplyr::filter(df, !is.na(qtl_chr) & !is.na(qtl_pos) & !is.na(cis) & !is.na(gene_chr) & !is.na(gene_start) & !is.na(qtl_lod))
+        plot_data_dt <- plot_data_dt[get(lod_column) >= lod_threshold]
       }
-      message("cisTransPlotServer: plot_data - After filtering NAs, df_filtered has ", nrow(df_filtered), " rows.") # DEBUG
 
-      if (nrow(df_filtered) == 0) {
-        message("cisTransPlotServer: plot_data - After NA filtering, data frame is empty. Returning NULL.") # DEBUG
+      if (nrow(plot_data_dt) == 0) {
         return(NULL)
       }
 
-      # FILTER BY LOD THRESHOLD - Use appropriate column and handle absolute values for difference data
-      if (use_lod_diff) {
-        # For difference data, use absolute value for threshold filtering
-        message(paste0("cisTransPlotServer: Applying LOD difference threshold filter (abs value). Before: ", nrow(df_filtered), " rows, threshold: ", lod_threshold))
-        df_filtered <- dplyr::filter(df_filtered, abs(lod_diff) >= lod_threshold)
-
-        # Add a standardized qtl_lod column for plotting (use absolute value of lod_diff)
-        df_filtered$qtl_lod <- abs(df_filtered$lod_diff)
-
-        # Store original lod_diff for hover text
-        df_filtered$lod_diff_original <- df_filtered$lod_diff
-      } else {
-        message(paste0("cisTransPlotServer: Applying LOD threshold filter. Before: ", nrow(df_filtered), " rows, threshold: ", lod_threshold))
-        df_filtered <- dplyr::filter(df_filtered, qtl_lod >= lod_threshold)
-      }
-      message(paste0("cisTransPlotServer: After LOD threshold filter: ", nrow(df_filtered), " rows"))
-
-      if (nrow(df_filtered) == 0) {
-        message("cisTransPlotServer: plot_data - After LOD threshold filtering, data frame is empty. Returning NULL.") # DEBUG
-        return(NULL)
-      }
-
-      # Calculate cumulative positions
       markers_data <- shiny::req(import_reactives()$markers)
-      if (is.null(markers_data) || !is.data.frame(markers_data) || nrow(markers_data) == 0) {
-        message("cisTransPlotServer: Markers data is missing. Cannot calculate cumulative positions.")
-        return(NULL)
-      }
+      interaction_type <- if (is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
 
-      chr_summary <- markers_data %>%
-        dplyr::mutate(chr = as.character(chr)) %>%
-        dplyr::group_by(chr) %>%
-        dplyr::summarise(chr_len = max(pos), .groups = "drop") %>%
-        dplyr::arrange(as.numeric(chr_to_numeric(chr))) %>%
-        dplyr::mutate(
-          tot = cumsum(as.numeric(chr_len)) - chr_len,
-          center = tot + (chr_len / 2)
-        )
+      chr_summary <- as.data.table(markers_data)[, .(chr_len = max(pos)), by = chr][
+        , chr_num := chr_to_numeric(chr)
+      ][
+        order(chr_num)
+      ][
+        , tot := cumsum(as.numeric(chr_len)) - chr_len
+      ][
+        , center := tot + (chr_len / 2)
+      ]
 
-      df_filtered$qtl_chr_char <- chr_XYM(df_filtered$qtl_chr)
-      df_filtered$gene_chr_char <- chr_XYM(df_filtered$gene_chr)
+      plot_data_dt[, qtl_chr_char := chr_XYM(qtl_chr)]
+      plot_data_dt[, gene_chr_char := chr_XYM(gene_chr)]
 
-      # Join to get QTL cumulative positions
-      plot_df <- df_filtered %>%
-        dplyr::left_join(chr_summary %>% dplyr::select(chr, tot), by = c("qtl_chr_char" = "chr")) %>%
-        dplyr::mutate(qtl_BPcum = qtl_pos + tot) %>%
-        dplyr::select(-tot)
+      plot_data_dt[chr_summary, on = .(qtl_chr_char = chr), qtl_BPcum := qtl_pos + i.tot]
+      plot_data_dt[chr_summary, on = .(gene_chr_char = chr), gene_BPcum := gene_start + i.tot]
 
-      # Join to get Gene cumulative positions
-      plot_df <- plot_df %>%
-        dplyr::left_join(chr_summary %>% dplyr::select(chr, tot), by = c("gene_chr_char" = "chr")) %>%
-        dplyr::mutate(gene_BPcum = gene_start + tot) %>%
-        dplyr::select(-tot)
-
-
-      # Ensure cis is logical or character
-      if (is.logical(plot_df$cis)) {
-        plot_df$cis <- as.character(plot_df$cis)
-      } else if (!is.character(plot_df$cis)) {
-        plot_df$cis <- as.character(as.logical(plot_df$cis))
-      }
-
-      # Add metadata for plot rendering
-      attr(plot_df, "is_qtlxcovar_data") <- is_qtlxcovar_data
-      attr(plot_df, "interaction_type") <- interaction_type
-      attr(plot_df, "chr_summary") <- chr_summary
-
-      plot_df
+      list(plot_data = plot_data_dt, chr_summary = chr_summary, interaction_type = interaction_type)
     })
 
+    clicked_phenotype <- shiny::reactiveVal(NULL)
+
     output$cis_trans_plot_output <- plotly::renderPlotly({
-      plot_data_filtered <- plot_data()
-
-      if (is.null(plot_data_filtered) || nrow(plot_data_filtered) == 0) {
-        message("cisTransPlotServer: No data to plot, rendering null plot.")
-        return(plotly::ggplotly(plot_null("No cis/trans data available for this dataset.")))
+      plot_data_list <- plot_data()
+      if (is.null(plot_data_list) || nrow(plot_data_list$plot_data) == 0) {
+        return(plot_null("No significant peaks found above the LOD threshold."))
       }
 
-      chr_summary <- attr(plot_data_filtered, "chr_summary")
-      if (is.null(chr_summary)) {
-        return(plotly::ggplotly(plot_null("Chromosome summary data is missing.")))
-      }
+      plot_data_dt <- plot_data_list$plot_data
+      chr_summary <- plot_data_list$chr_summary
+      interaction_type <- plot_data_list$interaction_type
 
-      plot_data_filtered_dt <- data.table::as.data.table(plot_data_filtered)
-
-      # Filter out rows with NA gene_symbol
-      plot_data_filtered_dt <- plot_data_filtered_dt[!is.na(gene_symbol)]
-
-      if (nrow(plot_data_filtered_dt) == 0) {
-        message("cisTransPlotServer: No data to plot after filtering for NA gene_symbol.")
-        return(plotly::ggplotly(plot_null("No data with valid gene symbols.")))
-      }
-
-      # Ensure 'cis' column is character "TRUE" or "FALSE"
-      if (is.logical(plot_data_filtered_dt$cis)) {
-        plot_data_filtered_dt[, cis_char := ifelse(cis, "TRUE", "FALSE")]
+      # Vectorized conditional creation of the difference text part for the hover text
+      diff_text <- if ("lod_diff" %in% names(plot_data_dt)) {
+        ifelse(!is.na(plot_data_dt$lod_diff), paste0(" (Diff: ", round(plot_data_dt$lod_diff, 2), ")"), "")
       } else {
-        plot_data_filtered_dt[, cis_char := as.character(cis)]
+        ""
       }
 
-      is_qtlxcovar_data <- attr(plot_data_filtered, "is_qtlxcovar_data") %||% FALSE
-      interaction_type <- attr(plot_data_filtered, "interaction_type") %||% "none"
+      plot_data_dt[, hover_text := paste0(
+        "Gene: ", gene_symbol, "<br>",
+        "LOD: ", round(qtl_lod, 2),
+        diff_text,
+        "<br>Gene Pos: ", gene_chr_char, ":", round(gene_start, 2), " Mb",
+        "<br>Marker Pos: ", qtl_chr_char, ":", round(qtl_pos, 2), " Mb"
+      )]
 
-      # Create hover text
-      if (is_qtlxcovar_data && interaction_type != "none") {
-        plot_data_filtered_dt[, hover_text := paste0(
-          "Gene: ", gene_symbol, "<br>",
-          "LOD Difference: ", round(lod_diff_original, 2), "<br>",
-          "|LOD Difference|: ", round(qtl_lod, 2), "<br>",
-          "Gene Position: ", gene_chr_char, ":", round(gene_start, 2), " Mb<br>",
-          "Marker Position: ", qtl_chr_char, ":", round(qtl_pos, 2), " Mb"
-        )]
+      plot_title <- if (!is.null(interaction_type) && interaction_type != "none") {
+        paste("Cis-Trans QTL Plot -", stringr::str_to_title(interaction_type), "Interaction Differences")
       } else {
-        plot_data_filtered_dt[, hover_text := paste0(
-          "Gene: ", gene_symbol, "<br>",
-          "LOD: ", round(qtl_lod, 2), "<br>",
-          "Gene Position: ", gene_chr_char, ":", round(gene_start, 2), " Mb<br>",
-          "Marker Position: ", qtl_chr_char, ":", round(qtl_pos, 2), " Mb"
-        )]
+        "Cis-Trans QTL Plot"
       }
 
-      g <- ggplot2::ggplot(plot_data_filtered_dt, ggplot2::aes(
-        x = qtl_BPcum,
-        y = gene_BPcum,
-        color = cis_char,
+      g <- ggplot2::ggplot(plot_data_dt, ggplot2::aes(
+        x = qtl_BPcum, y = gene_BPcum,
+        color = as.character(cis),
         text = hover_text,
         customdata = gene_symbol
       )) +
-        ggplot2::geom_point(alpha = 0.7, size = 2) +
+        ggplot2::geom_point(alpha = 0.6) +
         ggplot2::scale_color_manual(
+          values = c("TRUE" = "blue", "FALSE" = "red"),
           name = "QTL Type",
-          values = c("TRUE" = "#0066CC", "FALSE" = "#E41A1C"),
           labels = c("TRUE" = "Cis", "FALSE" = "Trans")
         ) +
-        ggplot2::scale_x_continuous(
-          label = chr_summary$chr,
-          breaks = chr_summary$center,
-          expand = c(0.01, 0.01)
-        ) +
-        ggplot2::scale_y_continuous(
-          label = chr_summary$chr,
-          breaks = chr_summary$center,
-          expand = c(0.01, 0.01)
-        ) +
-        ggplot2::geom_vline(xintercept = chr_summary$tot[-1], color = "grey80", linetype = "dashed") +
-        ggplot2::geom_hline(yintercept = chr_summary$tot[-1], color = "grey80", linetype = "dashed") +
-        ggplot2::geom_abline(intercept = 0, slope = 1, color = "darkgrey") +
         ggplot2::labs(
-          x = "QTL Position",
-          y = "Gene Position",
-          title = if (is_qtlxcovar_data && interaction_type != "none") {
-            paste("Cis/Trans QTL Plot -", stringr::str_to_title(interaction_type), "Interaction Differences")
-          } else {
-            "Cis/Trans QTL Plot"
-          }
+          title = plot_title,
+          x = "QTL Chromosome",
+          y = "Gene Chromosome"
         ) +
-        ggplot2::theme_minimal(base_size = 12) +
-        ggplot2::theme(
-          legend.position = "top",
-          panel.grid.minor = ggplot2::element_blank(),
-          axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, size = 9),
-          axis.text.y = ggplot2::element_text(size = 9)
-        )
+        ggplot2::theme_minimal() +
+        ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey") +
+        ggplot2::geom_vline(xintercept = chr_summary$tot, linetype = "dotted", color = "grey") +
+        ggplot2::geom_hline(yintercept = chr_summary$tot, linetype = "dotted", color = "grey") +
+        ggplot2::scale_x_continuous(labels = chr_summary$chr, breaks = chr_summary$center) +
+        ggplot2::scale_y_continuous(labels = chr_summary$chr, breaks = chr_summary$center)
 
-      fig <- plotly::ggplotly(g, tooltip = "text", source = ns("cistrans_plotly")) %>%
-        plotly::layout(
-          hovermode = "closest"
-        ) %>%
-        plotly::config(
-          displaylogo = FALSE,
-          modeBarButtonsToRemove = c("select2d", "lasso2d", "toggleSpikelines", "sendDataToCloud"),
-          scrollZoom = TRUE,
-          doubleClick = "reset",
-          responsive = TRUE
-        )
-
-      fig <- plotly::event_register(fig, "plotly_click")
-
-      return(fig)
+      plotly::ggplotly(g, tooltip = "text", source = ns("cistrans_plot")) %>%
+        plotly::layout(dragmode = "pan") %>%
+        plotly::event_register("plotly_click")
     })
 
-    clicked_phenotype_for_lod_scan_rv <- shiny::reactiveVal(NULL)
-
-    shiny::observeEvent(plotly::event_data("plotly_click", source = ns("cistrans_plotly")), {
-      click_data <- plotly::event_data("plotly_click", source = ns("cistrans_plotly"))
-      if (!is.null(click_data) && !is.null(click_data$customdata) && length(click_data$customdata) > 0) {
-        clicked_identifier <- click_data$customdata[[1]]
-        clicked_phenotype_for_lod_scan_rv(clicked_identifier)
-        message(paste("CisTransPlot Clicked! Identifier for LOD scan (should be symbol):", clicked_identifier))
-      } else {
-        clicked_phenotype_for_lod_scan_rv(NULL)
+    shiny::observeEvent(plotly::event_data("plotly_click", source = ns("cistrans_plot")), {
+      event_data <- plotly::event_data("plotly_click", source = ns("cistrans_plot"))
+      if (!is.null(event_data$customdata)) {
+        clicked_phenotype(event_data$customdata)
       }
     })
 
-    return(list(
-      clicked_phenotype_for_lod_scan = clicked_phenotype_for_lod_scan_rv
-    ))
+    return(
+      list(
+        clicked_phenotype_for_lod_scan = clicked_phenotype
+      )
+    )
   })
 }
