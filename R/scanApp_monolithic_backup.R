@@ -937,7 +937,9 @@ scanApp <- function() {
       selected_dataset_group = mapped_dataset_for_interaction, # Use mapped dataset for interactive analysis
       import_reactives = import_reactives, # Pass the whole list of import reactives
       main_par_inputs = active_main_par, # Pass the combined main parameters (for LOD_thr, etc.)
-      interaction_type_reactive = interaction_type_rv # Pass the interaction type reactive
+      interaction_type_reactive = interaction_type_rv, # Pass the interaction type reactive
+      overlay_diet_toggle = reactive(input[[ns_app_controller("overlay_diet")]]),
+      overlay_sex_toggle = reactive(input[[ns_app_controller("overlay_sex")]])
     )
 
     # Render the LOD scan click details table
@@ -1040,6 +1042,12 @@ scanApp <- function() {
                 )
               ),
 
+              # NEW: Transposition toggles for additive scans
+              shiny::conditionalPanel(
+                condition = paste0("input['", ns_app_controller("interaction_type"), "'] == 'none'"),
+                shiny::uiOutput(ns_app_controller("overlay_toggles_ui"))
+              ),
+
               # Zoom/Reset buttons
               div(
                 style = "flex: 0 0 auto; display: flex; gap: 5px;",
@@ -1083,6 +1091,41 @@ scanApp <- function() {
           h5("No trait selected for LOD scan"),
           p("Select a trait from the 'Data Search' tab or click on a point in an overview plot to begin.")
         )
+      }
+    })
+
+    # NEW: UI for overlay toggles
+    output[[ns_app_controller("overlay_toggles_ui")]] <- shiny::renderUI({
+      dataset_group <- main_selected_dataset_group()
+      req(dataset_group)
+
+      # Only show for HC_HF datasets that have interactive options
+      if (!grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
+        return(NULL)
+      }
+
+      toggles <- list()
+      # Check for Diet interaction availability
+      if (any(grepl("Genes|Lipids|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
+        toggles <- c(toggles, list(
+          shiny::checkboxInput(ns_app_controller("overlay_diet"), "Overlay Diet Interactive", FALSE)
+        ))
+      }
+
+      # Check for Sex interaction availability
+      if (any(grepl("Genes|Clinical", dataset_group, ignore.case = TRUE))) {
+        toggles <- c(toggles, list(
+          shiny::checkboxInput(ns_app_controller("overlay_sex"), "Overlay Sex Interactive", FALSE)
+        ))
+      }
+
+      if (length(toggles) > 0) {
+        div(
+          style = "display: flex; gap: 10px; align-items: center; margin-left: 15px;",
+          toggles
+        )
+      } else {
+        NULL
       }
     })
 
@@ -1589,12 +1632,56 @@ scanApp <- function() {
 }
 
 # Server logic for scan related inputs and plot
-scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactives, main_par_inputs, interaction_type_reactive = NULL) {
+scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactives, main_par_inputs, interaction_type_reactive = NULL, overlay_diet_toggle = reactive({
+                         FALSE
+                       }), overlay_sex_toggle = reactive({
+                         FALSE
+                       })) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
     # Create local cache for peaks data
     local_peaks_cache <- new.env(parent = emptyenv())
+
+    # Helper function to map HC_HF dataset names to their interactive versions
+    # Only maps to datasets that actually exist in the file system
+    get_interactive_dataset_name <- function(base_dataset, interaction_type) {
+      if (is.null(interaction_type) || interaction_type == "none") {
+        return(base_dataset)
+      }
+
+      # HC_HF Liver Genes (supports both Sex and Diet interactions)
+      if (grepl("HC_HF Liver Genes", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "sex") {
+          return("HC_HF Liver Genes, interactive (Sex)")
+        } else if (interaction_type == "diet") {
+          return("HC_HF Liver Genes, interactive (Diet)")
+        }
+      }
+      # HC_HF Liver Lipids (only supports Diet interaction)
+      else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "diet") {
+          return("HC_HF Liver Lipids, interactive (Diet)")
+        }
+        # No Sex interaction available for Liver Lipids - return original
+      }
+      # HC_HF Clinical Traits (supports both Sex and Diet interactions)
+      else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "sex") {
+          return("HC_HF Systemic Clinical Traits, interactive (Sex)")
+        } else if (interaction_type == "diet") {
+          return("HC_HF Systemic Clinical Traits, interactive (Diet)")
+        }
+      } else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "diet") {
+          return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
+        }
+        # No Sex interaction available for Plasma Metabolites - return original
+      }
+
+      # Fallback to original dataset if no mapping found
+      return(base_dataset)
+    }
 
     plot_width_rv <- shiny::reactiveVal(1200)
     plot_height_rv <- shiny::reactiveVal(600)
@@ -1852,6 +1939,146 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       )
     }) %>% shiny::debounce(250)
 
+    # NEW: Reactive to load DIET interactive data for overlay
+    overlay_diet_scan_data <- shiny::reactive({
+      # Only run if the diet overlay toggle is on
+      if (!overlay_diet_toggle()) {
+        return(NULL)
+      }
+
+      trait_val <- current_trait_for_scan()
+      dataset_group_val <- selected_dataset_group()
+
+      # Ensure this is an additive scan context (toggles only show for additive scans)
+      if (is.null(trait_val) || is.null(dataset_group_val) ||
+        grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
+        return(NULL)
+      }
+
+      # Derive the corresponding interactive dataset name
+      interactive_dataset_name <- get_interactive_dataset_name(dataset_group_val, "diet")
+      if (interactive_dataset_name == dataset_group_val) {
+        return(NULL)
+      } # No mapping found
+
+      message("scanServer: Loading DIET overlay data for '", trait_val, "' from dataset '", interactive_dataset_name, "'")
+
+      tryCatch(
+        {
+          file_dir_val <- import_reactives()$file_directory
+          req(file_dir_val)
+
+          # Load the interactive scan data
+          scan_data <- trait_scan(
+            file_dir = file_dir_val,
+            selected_dataset = interactive_dataset_name,
+            selected_trait = trait_val,
+            cache_env = NULL
+          )
+
+          if (is.null(scan_data) || nrow(scan_data) == 0) {
+            return(NULL)
+          }
+
+          # Process it with interactive-specific LOD threshold (10.5 instead of 7.5)
+          main_par_list <- main_par_inputs()
+          req(main_par_list$LOD_thr, import_reactives()$markers)
+
+          # Use higher LOD threshold for interactive scans (mimicking interactive mode)
+          interactive_lod_threshold <- 10.5
+
+          processed_data <- QTL_plot_visualizer(scan_data, trait_val, interactive_lod_threshold, import_reactives()$markers)
+
+          # Apply chromosome filtering to match main plot
+          selected_chr <- main_par_list$selected_chr()
+          if (selected_chr != "All" && !is.null(processed_data) && nrow(processed_data) > 0) {
+            sel_chr_num <- selected_chr
+            if (selected_chr == "X") sel_chr_num <- 20
+            if (selected_chr == "Y") sel_chr_num <- 21
+            if (selected_chr == "M") sel_chr_num <- 22
+            sel_chr_num <- as.numeric(sel_chr_num)
+            processed_data <- dplyr::filter(processed_data, chr == sel_chr_num)
+          }
+
+          return(processed_data)
+        },
+        error = function(e) {
+          message("scanServer: Error loading DIET overlay data: ", e$message)
+          return(NULL)
+        }
+      )
+    }) %>% shiny::debounce(250)
+
+    # NEW: Reactive to load SEX interactive data for overlay
+    overlay_sex_scan_data <- shiny::reactive({
+      # Only run if the sex overlay toggle is on
+      if (!overlay_sex_toggle()) {
+        return(NULL)
+      }
+
+      trait_val <- current_trait_for_scan()
+      dataset_group_val <- selected_dataset_group()
+
+      # Ensure this is an additive scan context (toggles only show for additive scans)
+      if (is.null(trait_val) || is.null(dataset_group_val) ||
+        grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
+        return(NULL)
+      }
+
+      # Derive the corresponding interactive dataset name
+      interactive_dataset_name <- get_interactive_dataset_name(dataset_group_val, "sex")
+      if (interactive_dataset_name == dataset_group_val) {
+        return(NULL)
+      } # No mapping found
+
+      message("scanServer: Loading SEX overlay data for '", trait_val, "' from dataset '", interactive_dataset_name, "'")
+
+      tryCatch(
+        {
+          file_dir_val <- import_reactives()$file_directory
+          req(file_dir_val)
+
+          # Load the interactive scan data
+          scan_data <- trait_scan(
+            file_dir = file_dir_val,
+            selected_dataset = interactive_dataset_name,
+            selected_trait = trait_val,
+            cache_env = NULL
+          )
+
+          if (is.null(scan_data) || nrow(scan_data) == 0) {
+            return(NULL)
+          }
+
+          # Process it with interactive-specific LOD threshold (10.5 instead of 7.5)
+          main_par_list <- main_par_inputs()
+          req(main_par_list$LOD_thr, import_reactives()$markers)
+
+          # Use higher LOD threshold for interactive scans (mimicking interactive mode)
+          interactive_lod_threshold <- 10.5
+
+          processed_data <- QTL_plot_visualizer(scan_data, trait_val, interactive_lod_threshold, import_reactives()$markers)
+
+          # Apply chromosome filtering to match main plot
+          selected_chr <- main_par_list$selected_chr()
+          if (selected_chr != "All" && !is.null(processed_data) && nrow(processed_data) > 0) {
+            sel_chr_num <- selected_chr
+            if (selected_chr == "X") sel_chr_num <- 20
+            if (selected_chr == "Y") sel_chr_num <- 21
+            if (selected_chr == "M") sel_chr_num <- 22
+            sel_chr_num <- as.numeric(sel_chr_num)
+            processed_data <- dplyr::filter(processed_data, chr == sel_chr_num)
+          }
+
+          return(processed_data)
+        },
+        error = function(e) {
+          message("scanServer: Error loading SEX overlay data: ", e$message)
+          return(NULL)
+        }
+      )
+    }) %>% shiny::debounce(250)
+
     # New observer to trigger the automatic loader only when necessary
     shiny::observe({
       interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
@@ -1900,9 +2127,20 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       lod_threshold <- main_par_list$LOD_thr()
       selected_chr <- main_par_list$selected_chr()
 
+      # Get overlay data if toggles are active
+      diet_overlay <- if (overlay_diet_toggle()) overlay_diet_scan_data() else NULL
+      sex_overlay <- if (overlay_sex_toggle()) overlay_sex_scan_data() else NULL
+
+
       # Streamlined plot creation
       tryCatch(
-        ggplot_qtl_scan(scan_data, lod_threshold, selected_chr),
+        ggplot_qtl_scan(
+          scan_data,
+          lod_threshold,
+          selected_chr,
+          overlay_diet_data = diet_overlay,
+          overlay_sex_data = sex_overlay
+        ),
         error = function(e) {
           message("scanServer: Error creating plot: ", e$message)
           return(NULL)
