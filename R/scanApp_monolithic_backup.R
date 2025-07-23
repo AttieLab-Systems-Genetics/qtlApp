@@ -272,17 +272,37 @@ scanApp <- function() {
 
     import_reactives <- importServer("import")
 
+    # Store the current interaction type to preserve across UI re-renders
+    current_interaction_type_rv <- shiny::reactiveVal("none")
+
+    # NEW: Reactive to determine if stacked plots should be shown
+    show_stacked_plots <- shiny::reactive({
+      interaction_type <- current_interaction_type_rv()
+      !is.null(interaction_type) && interaction_type != "none"
+    })
+
     # Dynamic LOD threshold slider based on scan type
     output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
-      current_scan_type <- scan_type()
+      interaction_type <- sidebar_interaction_type_rv()
+      # For overview plots, "sex" and "diet" imply difference plots using qtlxcovar files.
+      scan_info <- switch(interaction_type,
+        "sex" = list(type = "Sex Difference", min = 4.1),
+        "diet" = list(type = "Diet Difference", min = 4.1),
+        "none" = list(type = "Additive", min = 7.5),
+        list(type = "Additive", min = 7.5) # Default
+      )
 
-      # Set different minimums based on scan type
-      min_val <- if (current_scan_type == "interactive") 10.5 else 7.5
-      default_val <- min_val # Start at minimum value
+      # Use the input value if it exists and is valid, otherwise default to the new min
+      current_val <- input[[ns_app_controller("LOD_thr")]]
+      default_val <- if (!is.null(current_val) && current_val >= scan_info$min) {
+        current_val
+      } else {
+        scan_info$min
+      }
 
       sliderInput(shiny::NS("app_controller", "LOD_thr"),
-        label = paste("LOD Threshold (", current_scan_type, "scan):"),
-        min = min_val, max = 20, value = default_val, step = 0.5,
+        label = paste("LOD Threshold (", scan_info$type, "scan):"),
+        min = scan_info$min, max = 20, value = default_val, step = 0.5,
         width = "100%"
       )
     })
@@ -868,9 +888,6 @@ scanApp <- function() {
         NULL # Don't show for other datasets
       }
     })
-
-    # Store the current interaction type to preserve across UI re-renders
-    current_interaction_type_rv <- shiny::reactiveVal("none")
 
     # Store the sidebar interaction type separately (for independent sidebar plot control)
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
@@ -1767,15 +1784,13 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         scans(),
         current_trait_for_scan(),
         main_par_list,
-        main_par_list$LOD_thr,
-        main_par_list$LOD_thr(),
         import_reactives()$markers
       )
 
       # Streamlined processing - reduce debug messages
       scan_data <- scans()
       trait_val <- current_trait_for_scan()
-      lod_val <- main_par_list$LOD_thr()
+      lod_val <- static_lod_threshold_line() # Use static threshold for data processing
       markers_data <- import_reactives()$markers
 
       result <- QTL_plot_visualizer(scan_data, trait_val, lod_val, markers_data)
@@ -2102,12 +2117,12 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
       # Early returns for missing data
       if (is.null(scan_data) || nrow(scan_data) == 0 ||
-        is.null(main_par_list) || is.null(main_par_list$LOD_thr) || is.null(main_par_list$selected_chr)) {
+        is.null(main_par_list) || is.null(main_par_list$selected_chr)) {
         return(NULL)
       }
 
-      lod_threshold <- main_par_list$LOD_thr()
       selected_chr <- main_par_list$selected_chr()
+      static_threshold <- static_lod_threshold_line() # Get the static threshold
 
       # Get overlay data if toggles are active
       diet_overlay <- if (overlay_diet_toggle()) overlay_diet_scan_data() else NULL
@@ -2116,13 +2131,19 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
       # Streamlined plot creation
       tryCatch(
-        ggplot_qtl_scan(
-          scan_data,
-          lod_threshold,
-          selected_chr,
-          overlay_diet_data = diet_overlay,
-          overlay_sex_data = sex_overlay
-        ),
+        {
+          p <- ggplot_qtl_scan(
+            scan_data,
+            -Inf, # Pass -Inf to remove the interactive threshold bar
+            selected_chr,
+            overlay_diet_data = diet_overlay,
+            overlay_sex_data = sex_overlay
+          )
+          if (!is.null(p) && !is.null(static_threshold)) {
+            p <- p + ggplot2::geom_hline(yintercept = static_threshold, linetype = "dashed", color = "grey20")
+          }
+          p
+        },
         error = function(e) {
           message("scanServer: Error creating plot: ", e$message)
           return(NULL)
@@ -2154,6 +2175,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         nrow(interactive_data) == 0 || nrow(additive_data) == 0) {
         return(NULL)
       }
+
+      # Determine the static threshold for the difference plot
+      static_diff_threshold <- if (interaction_type == "sex") 4.1 else if (interaction_type == "diet") 4.1 else NULL
 
       # Optimized difference calculation
       tryCatch(
@@ -2202,6 +2226,12 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
           if (!is.null(diff_plot)) {
             diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", stringr::str_to_title(interaction_type), "- Additive"))
+            if (!is.null(static_diff_threshold)) {
+              # Add horizontal lines for positive and negative thresholds
+              diff_plot <- diff_plot +
+                ggplot2::geom_hline(yintercept = static_diff_threshold, linetype = "dashed", color = "grey20") +
+                ggplot2::geom_hline(yintercept = -static_diff_threshold, linetype = "dashed", color = "grey20")
+            }
           }
 
           return(diff_plot)
@@ -2220,6 +2250,27 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       }
       interaction_type <- interaction_type_reactive()
       !is.null(interaction_type) && interaction_type != "none"
+    })
+
+    # NEW: Reactive to determine the static line threshold based on context
+    static_lod_threshold_line <- reactive({
+      is_lod_scan_view <- !is.null(trait_to_scan())
+      interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
+
+      if (is_lod_scan_view) {
+        # For the main LOD scan plot
+        if (interaction_type == "sex") {
+          return(10.5)
+        }
+        if (interaction_type == "diet") {
+          return(10.5)
+        }
+        return(7.5) # Additive
+      } else {
+        # This part is for any other context, but this reactive is inside scanServer,
+        # which is only active for LOD scans. So this is fallback.
+        return(7.5)
+      }
     })
 
     output$scan_plot_ui_render <- shiny::renderUI({
