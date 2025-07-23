@@ -89,5 +89,10 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
     p <- p + ggplot2::geom_hline(yintercept = LOD_thr, color = "#e74c3c", linetype = "dashed", linewidth = 0.8)
   }
 
+  # Conditionally hide legend if only one scan type is present (no overlays)
+  if (length(unique(plot_data$type)) <= 1) {
+    p <- p + ggplot2::theme(legend.position = "none")
+  }
+
   return(p)
 }

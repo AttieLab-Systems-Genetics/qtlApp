@@ -314,6 +314,27 @@ difference_plot_gg <- shiny::reactive({
 - **Plot Titles**: "Interactive LOD Scan" and "LOD Difference (Interactive - Additive)"
 - **Color Coding**: Blue spinners for main plots, red spinners for difference plots
 
+### LOD Scan Overlays (Transposition Toggles)
+
+- **Objective**: Allow direct comparison of additive and interactive LOD scans on a single plot for compatible datasets.
+- **UI**: When viewing an additive scan for an `HC_HF` dataset that has interactive counterparts, "Overlay Diet Interactive" and "Overlay Sex Interactive" toggles will appear next to the chromosome selector.
+- **Functionality**:
+  - Activating a toggle fetches the corresponding interactive scan data for the current trait.
+  - The interactive scan is plotted as a new series on top of the additive scan.
+  - Both toggles can be active simultaneously, allowing for a three-way comparison (Additive, Diet Interactive, Sex Interactive).
+- **Visualization**:
+  - A legend is automatically displayed at the bottom of the plot to distinguish the scan types.
+  - **Color Scheme**:
+    - **Additive**: Blue (`#3498db`)
+    - **Diet Interactive**: Dark Blue (`#2c3e50`)
+    - **Sex Interactive**: Light Red (`#e74c3c`)
+  - **Linewidths**: Interactive overlays are rendered with a slightly thicker line (`1.2`) than the base additive scan (`0.7`) to ensure they are clearly visible.
+- **Implementation Pattern (`ggplot_qtl_scan`)**:
+  - To handle multiple series reliably, the function combines the base `scan_table` and any active `overlay_data` into a single data frame.
+  - A `type` column is added to this merged data frame to identify each series ("Additive", "Diet Interactive", "Sex Interactive").
+  - `ggplot2` aesthetics (`color`, `linewidth`, `alpha`) are mapped to this `type` column.
+  - `scale_*_manual` functions are used to assign specific visual properties to each scan type, ensuring a consistent and clear plot.
+
 ### Header Management
 
 #### Avoid Duplicate Headers

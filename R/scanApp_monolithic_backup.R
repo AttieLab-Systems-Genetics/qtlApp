@@ -505,7 +505,7 @@ scanApp <- function() {
     # New reactive that handles the dataset name mapping for interactive analysis
     mapped_dataset_for_interaction <- shiny::reactive({
       base_dataset <- main_selected_dataset_group()
-      interaction_type <- interaction_type_rv()
+      interaction_type <- current_interaction_type_rv()
 
       if (is.null(base_dataset)) {
         return(NULL)
@@ -848,14 +848,14 @@ scanApp <- function() {
           hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
           h5("🧬 Interactive Analysis", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
           shiny::selectInput(
-            ns_app_controller("interaction_type"),
+            ns_app_controller("interaction_type_selector"),
             label = "Select interaction analysis:",
             choices = available_interactions,
             selected = if (current_selection %in% available_interactions) current_selection else "none",
             width = "100%"
           ),
           shiny::conditionalPanel(
-            condition = paste0("input['", ns_app_controller("interaction_type"), "'] != 'none'"),
+            condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] != 'none'"),
             div(
               style = "margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #e74c3c;",
               p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
@@ -869,23 +869,26 @@ scanApp <- function() {
       }
     })
 
-    # Reactive to store the selected interaction type
-    interaction_type_rv <- shiny::reactive({
-      interaction_value <- input[[ns_app_controller("interaction_type")]] %||% "none"
-      message(paste("interaction_type_rv: Current value is:", interaction_value))
-      return(interaction_value)
-    })
+    # Store the current interaction type to preserve across UI re-renders
+    current_interaction_type_rv <- shiny::reactiveVal("none")
 
-    # Observer to update stored interaction type when input changes
-    shiny::observeEvent(input[[ns_app_controller("interaction_type")]],
+    # Store the sidebar interaction type separately (for independent sidebar plot control)
+    sidebar_interaction_type_rv <- shiny::reactiveVal("none")
+
+    # NEW: Observer to decouple interaction type selection from downstream reactivity
+    shiny::observeEvent(input[[ns_app_controller("interaction_type_selector")]],
       {
-        new_value <- input[[ns_app_controller("interaction_type")]]
-        if (!is.null(new_value)) {
-          current_interaction_type_rv(new_value)
-          message(paste("Updated main UI interaction type to:", new_value))
-        }
+        req(input[[ns_app_controller("interaction_type_selector")]])
+        current_interaction_type_rv(input[[ns_app_controller("interaction_type_selector")]])
+        message(paste("Interaction type updated to:", input[[ns_app_controller("interaction_type_selector")]]))
+
+        # Reset chromosome view to "All" when interaction type changes
+        # This prevents being stuck on a chromosome view from a previous scan type
+        shiny::updateSelectInput(session, ns_app_controller("selected_chr"), selected = "All")
+        message("Reset chromosome view to 'All' due to interaction type change.")
       },
-      ignoreNULL = TRUE
+      ignoreNULL = TRUE,
+      ignoreInit = TRUE
     )
 
     # Observer to update sidebar interaction type when input changes (independent of main UI)
@@ -916,9 +919,6 @@ scanApp <- function() {
       ignoreInit = TRUE
     )
 
-    # NOTE: Removed the observer that re-triggered LOD scan when interaction type changes
-    # The mapped_dataset_for_interaction reactive now handles dataset switching automatically
-
     # Observer for the clear LOD scan button
     shiny::observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
       message("scanApp: Clear LOD scan button clicked.")
@@ -937,7 +937,7 @@ scanApp <- function() {
       selected_dataset_group = mapped_dataset_for_interaction, # Use mapped dataset for interactive analysis
       import_reactives = import_reactives, # Pass the whole list of import reactives
       main_par_inputs = active_main_par, # Pass the combined main parameters (for LOD_thr, etc.)
-      interaction_type_reactive = interaction_type_rv, # Pass the interaction type reactive
+      interaction_type_reactive = current_interaction_type_rv, # Pass the interaction type reactive
       overlay_diet_toggle = reactive(input[[ns_app_controller("overlay_diet")]]),
       overlay_sex_toggle = reactive(input[[ns_app_controller("overlay_sex")]])
     )
@@ -1007,7 +1007,7 @@ scanApp <- function() {
           interaction_analysis_ui <- div(
             style = "flex: 1 1 180px; min-width: 180px;",
             shiny::selectInput(
-              ns_app_controller("interaction_type"),
+              ns_app_controller("interaction_type_selector"),
               label = "Interaction Analysis:",
               choices = available_interactions,
               selected = if (current_selection %in% available_interactions) current_selection else "none",
@@ -1044,7 +1044,7 @@ scanApp <- function() {
 
               # NEW: Transposition toggles for additive scans
               shiny::conditionalPanel(
-                condition = paste0("input['", ns_app_controller("interaction_type"), "'] == 'none'"),
+                condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] == 'none'"),
                 shiny::uiOutput(ns_app_controller("overlay_toggles_ui"))
               ),
 
@@ -1064,7 +1064,7 @@ scanApp <- function() {
           # Conditional panel for interaction info
           if (!is.null(interaction_analysis_ui)) {
             shiny::conditionalPanel(
-              condition = paste0("input['", ns_app_controller("interaction_type"), "'] != 'none'"),
+              condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] != 'none'"),
               div(
                 style = "margin-bottom: 15px; padding: 10px; background-color: #e8f4fd; border-radius: 5px; border-left: 4px solid #3498db;",
                 p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
@@ -1273,18 +1273,6 @@ scanApp <- function() {
 
       do.call(tagList, info_elements)
     })
-
-    # Observer to update selected peak when dropdown changes
-    # shiny::observeEvent(input[[ns_app_controller("peak_selection_dropdown")]],
-    #   {
-    #     new_selection <- input[[ns_app_controller("peak_selection_dropdown")]]
-    #     if (!is.null(new_selection)) {
-    #       selected_peak_from_dropdown(new_selection)
-    #       message(paste("scanApp: Peak dropdown selection changed to:", new_selection))
-    #     }
-    #   },
-    #   ignoreNULL = FALSE
-    # )
 
     # Observer to reset peak selection when trait changes
     # shiny::observeEvent(trait_for_lod_scan_rv(),
@@ -1541,12 +1529,6 @@ scanApp <- function() {
           yaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
         )
     })
-
-    # Store the current interaction type to preserve across UI re-renders
-    current_interaction_type_rv <- shiny::reactiveVal("none")
-
-    # Store the sidebar interaction type separately (for independent sidebar plot control)
-    sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
     # Observer to reset interaction types to default when dataset category changes
     # shiny::observeEvent(input[[ns_app_controller("dataset_category_selector")]],
@@ -2094,17 +2076,17 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     })
 
     # Observer to store additive data when interaction type is "none" (for manual workflow)
-    shiny::observeEvent(scan_table_chr(),
+    shiny::observeEvent(scan_table(),
       {
         interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
 
         # Only store if this is a genuine additive scan, not an interactive one
         # This prevents overwriting the additive data when switching to an interactive view
         if (interaction_type == "none" && !grepl("interactive", selected_dataset_group(), ignore.case = TRUE)) {
-          plot_data <- scan_table_chr()
+          plot_data <- scan_table()
           if (!is.null(plot_data) && nrow(plot_data) > 0) {
             additive_scan_data_rv(plot_data)
-            message("scanServer: Stored additive scan data with ", nrow(plot_data), " rows (from 'none' mode).")
+            message("scanServer: Stored FULL additive scan data with ", nrow(plot_data), " rows (from 'none' mode).")
           }
         }
       },
@@ -2176,63 +2158,47 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
       # Optimized difference calculation
       tryCatch(
         {
-          # Handle datasets with different numbers of rows by joining on markers
-          if (nrow(interactive_data) != nrow(additive_data)) {
-            # Check if both datasets have markers column
-            if (!("markers" %in% colnames(interactive_data)) || !("markers" %in% colnames(additive_data))) {
+          main_par_list <- main_par_inputs()
+          selected_chromosome <- main_par_list$selected_chr()
+
+          # Filter full additive data to match the current chromosome view
+          additive_data_chr <- if (selected_chromosome == "All") {
+            additive_data
+          } else {
+            sel_chr_num <- selected_chromosome
+            if (selected_chromosome == "X") sel_chr_num <- 20
+            if (selected_chromosome == "Y") sel_chr_num <- 21
+            if (selected_chromosome == "M") sel_chr_num <- 22
+            sel_chr_num <- as.numeric(sel_chr_num)
+            dplyr::filter(additive_data, chr == sel_chr_num)
+          }
+
+          # Ensure data is aligned before subtraction
+          if (nrow(interactive_data) != nrow(additive_data_chr)) {
+            # Fallback to join if rows don't match (e.g., different markers)
+            aligned_data <- dplyr::inner_join(
+              interactive_data,
+              additive_data_chr,
+              by = "markers",
+              suffix = c("_int", "_add")
+            )
+            if (nrow(aligned_data) == 0) {
               return(NULL)
             }
-
-            # Efficient join using data.table if available
-            if (requireNamespace("data.table", quietly = TRUE)) {
-              # Use data.table for faster joins
-              interactive_dt <- data.table::as.data.table(interactive_data)
-              additive_dt <- data.table::as.data.table(additive_data)
-
-              aligned_data <- merge(interactive_dt, additive_dt, by = "markers", suffixes = c("_int", "_add"))
-
-              if (nrow(aligned_data) == 0) {
-                return(NULL)
-              }
-
-              # Create difference efficiently
-              diff_plot_data <- aligned_data[, .(
-                markers = markers,
-                chr = chr_int,
-                position = position_int,
-                BPcum = BPcum_int,
-                LOD = LOD_int - LOD_add
-              )]
-            } else {
-              # Fallback to dplyr
-              aligned_data <- interactive_data %>%
-                dplyr::inner_join(additive_data, by = "markers", suffix = c("_int", "_add"))
-
-              if (nrow(aligned_data) == 0) {
-                return(NULL)
-              }
-
-              diff_plot_data <- aligned_data %>%
-                dplyr::mutate(LOD = LOD_int - LOD_add) %>%
-                dplyr::select(markers,
-                  chr = chr_int, position = position_int,
-                  BPcum = BPcum_int, LOD
-                )
-            }
+            diff_plot_data <- aligned_data %>%
+              dplyr::mutate(LOD = LOD_int - LOD_add) %>%
+              dplyr::select(markers, chr = chr_int, position = position_int, BPcum = BPcum_int, LOD)
           } else {
-            # Simple case - same number of rows
+            # Simple subtraction if markers align
             diff_plot_data <- interactive_data
-            diff_plot_data$LOD <- interactive_data$LOD - additive_data$LOD
+            diff_plot_data$LOD <- interactive_data$LOD - additive_data_chr$LOD
           }
 
           # Handle NA values efficiently
           diff_plot_data$LOD[is.na(diff_plot_data$LOD)] <- 0
 
           # Create plot
-          main_par_list <- main_par_inputs()
-          selected_chr <- main_par_list$selected_chr()
-
-          diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chr)
+          diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chromosome)
 
           if (!is.null(diff_plot)) {
             diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", stringr::str_to_title(interaction_type), "- Additive"))
