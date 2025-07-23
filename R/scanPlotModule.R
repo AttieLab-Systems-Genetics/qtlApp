@@ -277,9 +277,20 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     highest_peak <- all_peaks[which.max(all_peaks$qtl_lod), ]
                     selected_peak_rv(highest_peak)
                     message(paste("scanServer: Default peak set to highest LOD peak:", highest_peak$marker))
+
+                    # Also set the click details to show the highest peak info by default
+                    default_click_details <- data.frame(
+                        markers = highest_peak$marker,
+                        chr = highest_peak$qtl_chr,
+                        position = round(highest_peak$qtl_pos, 3),
+                        LOD = round(highest_peak$qtl_lod, 3)
+                    )
+                    clicked_plotly_point_details_lod_scan_rv(default_click_details)
+                    message(paste("scanServer: Default click details set for highest peak:", highest_peak$marker))
                 } else {
                     selected_peak_rv(NULL) # Clear selection if no peaks are found
-                    message("scanServer: No peaks found for this trait, clearing selected peak.")
+                    clicked_plotly_point_details_lod_scan_rv(NULL) # Clear click details too
+                    message("scanServer: No peaks found for this trait, clearing selected peak and click details.")
                 }
             },
             ignoreNULL = TRUE,
@@ -721,7 +732,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             # Streamlined plotly creation
             plt <- plotly::ggplotly(plot_gg,
                 source = ns("qtl_scan_plotly"),
-                tooltip = c("x", "y", "chr")
+                tooltip = c("x", "y")
             ) %>%
                 plotly::layout(
                     dragmode = "zoom",
@@ -792,30 +803,45 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 )
         })
 
+        # Simple click handler using distance-based approach (like the old app)
         shiny::observeEvent(plotly::event_data("plotly_click", source = ns("qtl_scan_plotly")), {
             ev_data <- plotly::event_data("plotly_click", source = ns("qtl_scan_plotly"))
 
-            if (!is.null(ev_data) && !is.null(ev_data$customdata) && length(ev_data$customdata) > 0) {
-                clicked_marker_id <- ev_data$customdata[1]
+            if (!is.null(ev_data)) {
                 current_scan_data <- scan_table_chr()
 
-                if (!"markers" %in% colnames(current_scan_data)) {
-                    warning("scanServer plotly_click: 'markers' column not found in scan_table_chr(). Cannot lookup clicked marker.")
-                    clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Marker column missing in scan data."))
+                if (is.null(current_scan_data) || nrow(current_scan_data) == 0) {
+                    message("scanServer: No scan data available for click detection")
                     return()
                 }
 
-                # Get basic scan data
-                selected_point_df_raw <- dplyr::filter(current_scan_data, markers == clicked_marker_id)
+                # Get click coordinates
+                x_clicked <- ev_data$x
+                y_clicked <- ev_data$y
 
-                if (nrow(selected_point_df_raw) > 0) {
-                    selected_point_df_raw <- selected_point_df_raw[1, , drop = FALSE]
+                message(paste("scanServer: Click detected at coordinates x:", x_clicked, "y:", y_clicked))
 
-                    # --- Start of new logic: Find closest peak ---
-                    # Get all peaks for this trait
+                # Determine which x variable to use based on chromosome selection
+                main_par_list <- main_par_inputs()
+                selected_chr <- main_par_list$selected_chr()
+                xvar <- if (selected_chr == "All") "BPcum" else "position"
+
+                # Calculate distances to find nearest point (like the old app)
+                if (xvar %in% colnames(current_scan_data) && "LOD" %in% colnames(current_scan_data)) {
+                    distances <- sqrt((current_scan_data[[xvar]] - x_clicked)^2 + (current_scan_data$LOD - y_clicked)^2)
+                    nearest_idx <- which.min(distances)
+                    nearest_point <- current_scan_data[nearest_idx, ]
+
+                    message(paste("scanServer: *** CLICK SUCCESS *** Nearest point marker:", nearest_point$markers, "LOD:", nearest_point$LOD))
+
+                    # Debug: Print available columns and values
+                    message("scanServer: Available columns in nearest_point: ", paste(colnames(nearest_point), collapse = ", "))
+                    message("scanServer: nearest_point chr value:", nearest_point$chr, "position value:", nearest_point$position)
+
+                    # Find corresponding peak and update selected_peak_rv
                     current_trait <- current_trait_for_scan()
                     current_dataset <- selected_dataset_group()
-                    all_peaks <- NULL
+
                     if (!is.null(current_trait) && !is.null(current_dataset)) {
                         trait_type_val <- get_trait_type(import_reactives(), current_dataset)
                         all_peaks <- peak_finder(
@@ -826,109 +852,43 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                             cache_env = local_peaks_cache,
                             use_cache = TRUE
                         )
-                    }
 
-                    if (!is.null(all_peaks) && nrow(all_peaks) > 0) {
-                        # Find the peak on the same chromosome that is closest in position
-                        clicked_chr <- selected_point_df_raw$chr
-                        clicked_pos <- selected_point_df_raw$position
+                        if (!is.null(all_peaks) && nrow(all_peaks) > 0) {
+                            # Find closest peak to clicked location
+                            clicked_chr <- nearest_point$chr
+                            clicked_pos <- nearest_point$position
 
-                        closest_peak <- all_peaks %>%
-                            dplyr::filter(qtl_chr == chr_XYM(clicked_chr)) %>%
-                            dplyr::mutate(pos_diff = abs(qtl_pos - clicked_pos)) %>%
-                            dplyr::filter(pos_diff == min(pos_diff))
+                            closest_peak <- all_peaks %>%
+                                dplyr::filter(qtl_chr == chr_XYM(clicked_chr)) %>%
+                                dplyr::mutate(pos_diff = abs(qtl_pos - clicked_pos)) %>%
+                                dplyr::filter(pos_diff == min(pos_diff))
 
-                        if (nrow(closest_peak) > 0) {
-                            selected_peak_rv(closest_peak[1, ])
-                            message(paste("scanServer: Click detected. Closest peak is:", closest_peak[1, ]$marker))
-                            # Use this closest peak for enhancing the details table
-                            marker_peak <- closest_peak[1, , drop = FALSE]
-                        } else {
-                            # Fallback if no peak is found on the same chromosome
-                            marker_peak <- NULL
-                        }
-                    } else {
-                        marker_peak <- NULL
-                    }
-                    # --- End of new logic ---
-
-                    # Start with basic scan information
-                    basic_cols <- c("markers", "chr", "position", "LOD")
-                    basic_cols_present <- basic_cols[basic_cols %in% names(selected_point_df_raw)]
-
-                    if (length(basic_cols_present) > 0) {
-                        selected_point_df_processed <- dplyr::select(selected_point_df_raw, dplyr::all_of(basic_cols_present))
-                        if ("chr" %in% names(selected_point_df_processed)) {
-                            selected_point_df_processed$chr <- chr_XYM(selected_point_df_processed$chr)
-                        }
-                        selected_point_df_processed <- dplyr::mutate(selected_point_df_processed, dplyr::across(dplyr::where(is.numeric), \(x) signif(x, 4)))
-
-                        # Try to get additional peak information from peaks file
-                        tryCatch(
-                            {
-                                # The logic to find the peak is now handled above,
-                                # we just need to use the 'marker_peak' data frame if it exists.
-                                if (!is.null(marker_peak) && nrow(marker_peak) > 0) {
-                                    # Add cis/trans information if available
-                                    if ("cis" %in% colnames(marker_peak)) {
-                                        cis_status <- if (is.logical(marker_peak$cis)) {
-                                            ifelse(marker_peak$cis, "Cis", "Trans")
-                                        } else if (is.character(marker_peak$cis)) {
-                                            ifelse(toupper(marker_peak$cis) %in% c("TRUE", "1", "YES"), "Cis", "Trans")
-                                        } else {
-                                            "Unknown"
-                                        }
-                                        selected_point_df_processed$CisOrTrans <- cis_status
-                                    }
-
-                                    # Add confidence interval if available
-                                    if ("qtl_ci_lo" %in% colnames(marker_peak) && "qtl_ci_hi" %in% colnames(marker_peak)) {
-                                        ci_lo <- signif(marker_peak$qtl_ci_lo, 4)
-                                        ci_hi <- signif(marker_peak$qtl_ci_hi, 4)
-                                        selected_point_df_processed$CI_Range <- paste0("[", ci_lo, " - ", ci_hi, "]")
-                                    }
-
-                                    # Add founder allele effects A-H if available
-                                    allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-                                    available_alleles <- allele_cols[allele_cols %in% colnames(marker_peak)]
-
-                                    # Debug: print all column names and A-H values
-                                    message("scanServer: Peak data columns: ", paste(colnames(marker_peak), collapse = ", "))
-                                    message("scanServer: Available A-H columns: ", paste(available_alleles, collapse = ", "))
-
-                                    if (length(available_alleles) > 0) {
-                                        for (allele in available_alleles) {
-                                            allele_value <- marker_peak[[allele]]
-                                            message(paste("scanServer: Column", allele, "value:", allele_value, "is.na:", is.na(allele_value)))
-                                            if (!is.na(allele_value)) {
-                                                selected_point_df_processed[[paste0("Founder_", allele)]] <- signif(allele_value, 4)
-                                            }
-                                        }
-                                    } else {
-                                        # Check if allele columns might have different names
-                                        potential_allele_cols <- grep("^[A-H]$|founder.*[A-H]|allele.*[A-H]", colnames(marker_peak), ignore.case = TRUE, value = TRUE)
-                                        message("scanServer: No standard A-H columns found. Potential allele columns: ", paste(potential_allele_cols, collapse = ", "))
-                                    }
-
-                                    message(paste("scanServer: Enhanced click details with peak info for marker:", marker_peak$marker))
-                                } else {
-                                    message("scanServer: No peak found for this click location.")
-                                }
-                            },
-                            error = function(e) {
-                                message(paste("scanServer: Error getting peak info for clicked marker:", e$message))
+                            if (nrow(closest_peak) > 0) {
+                                # Update the selected peak reactive
+                                selected_peak_rv(closest_peak[1, ])
+                                message(paste(
+                                    "scanServer: *** PEAK UPDATED *** Selected peak:", closest_peak[1, ]$marker,
+                                    "LOD:", closest_peak[1, ]$qtl_lod
+                                ))
                             }
-                        )
-
-                        clicked_plotly_point_details_lod_scan_rv(selected_point_df_processed)
-                    } else {
-                        clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Selected point data columns not found."))
+                        }
                     }
+
+                    # Create click details for display with raw column names (as expected by app.R)
+                    click_details <- data.frame(
+                        markers = if ("markers" %in% colnames(nearest_point)) nearest_point$markers else "Unknown",
+                        chr = if ("chr" %in% colnames(nearest_point)) chr_XYM(nearest_point$chr) else "Unknown",
+                        position = if ("position" %in% colnames(nearest_point)) round(nearest_point$position, 3) else "Unknown",
+                        LOD = if ("LOD" %in% colnames(nearest_point)) round(nearest_point$LOD, 3) else "Unknown"
+                    )
+
+                    clicked_plotly_point_details_lod_scan_rv(click_details)
                 } else {
-                    clicked_plotly_point_details_lod_scan_rv(data.frame(Info = paste("Details for marker", clicked_marker_id, "not found.")))
+                    message("scanServer: Required columns not found in scan data for click detection")
+                    clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Click data not available"))
                 }
             } else {
-                clicked_plotly_point_details_lod_scan_rv(NULL)
+                message("scanServer: No click event data received")
             }
         })
 
