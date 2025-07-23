@@ -503,8 +503,11 @@ server <- function(input, output, session) {
         # This now correctly uses the output from the scanServer module
         peak_info <- scan_module_outputs$selected_peak()
         if (is.null(peak_info)) {
+            message("scanApp: allele_effects_data reactive - no peak selected")
             return(NULL)
         }
+
+        message(paste("scanApp: *** ALLELE EFFECTS DATA REACTIVE *** Processing peak:", peak_info$marker, "LOD:", peak_info$qtl_lod))
 
         # Use pivot_peaks helper function to reshape data for plotting
         reshaped_data <- pivot_peaks(peak_info, peak_info$marker)
@@ -516,8 +519,32 @@ server <- function(input, output, session) {
 
         # Add trait name to the data for plot labeling
         reshaped_data$trait <- peak_info$trait
-        message(paste("scanApp: Prepared allele effects data for marker:", peak_info$marker))
+        message(paste("scanApp: Successfully prepared allele effects data for marker:", peak_info$marker, "with", nrow(reshaped_data), "data points"))
         reshaped_data
+    })
+
+    # NEW: Reactive for the first difference allele plot
+    diff_allele_data_1 <- shiny::reactive({
+        peak_info <- scan_module_outputs$diff_peak_1()
+        req(peak_info)
+        message("scanApp: Preparing data for difference allele plot 1.")
+
+        reshaped <- pivot_peaks(peak_info, peak_info$marker)
+        reshaped$trait <- peak_info$trait
+        reshaped$plot_label <- peak_info$plot_label # Keep the label
+        return(reshaped)
+    })
+
+    # NEW: Reactive for the second difference allele plot
+    diff_allele_data_2 <- shiny::reactive({
+        peak_info <- scan_module_outputs$diff_peak_2()
+        req(peak_info)
+        message("scanApp: Preparing data for difference allele plot 2.")
+
+        reshaped <- pivot_peaks(peak_info, peak_info$marker)
+        reshaped$trait <- peak_info$trait
+        reshaped$plot_label <- peak_info$plot_label # Keep the label
+        return(reshaped)
     })
 
     selected_dataset_category_reactive <- shiny::reactive({
@@ -992,46 +1019,82 @@ server <- function(input, output, session) {
 
     # Render allele effects section conditionally
     output[[ns_app_controller("allele_effects_section")]] <- shiny::renderUI({
-        # Check if we have allele effects data
-        # Use the selected_peak from the module output as the source of truth
-        current_peak_info <- scan_module_outputs$selected_peak()
+        additive_peak <- scan_module_outputs$selected_peak()
+        diff_peak_1 <- scan_module_outputs$diff_peak_1()
+        diff_peak_2 <- scan_module_outputs$diff_peak_2()
 
-        message(paste("scanApp: Checking allele effects section. Selected peak available:", !is.null(current_peak_info)))
-
-        if (!is.null(current_peak_info)) {
-            message(paste("scanApp: Rendering allele effects section for peak:", current_peak_info$marker))
-
-            tagList(
+        # View 1: Additive Peak Details
+        if (!is.null(additive_peak)) {
+            message(paste("scanApp: Rendering SINGLE allele effects for peak:", additive_peak$marker))
+            return(tagList(
                 hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
                 div(
                     style = "margin-bottom: 15px;",
-                    h5("Strain Effects",
-                        style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
-                    ),
-                    p("Showing strain effects for the selected peak. Click another peak on the LOD plot to update.",
-                        style = "color: #7f8c8d; margin-bottom: 10px; font-size: 12px;"
-                    )
+                    h5("Strain Effects", style = "color: #2c3e50; font-weight: bold;"),
+                    p("Showing strain effects for the selected peak.", style = "font-size: 12px;")
                 ),
-                # Use layout_columns to place peak info and plot side-by-side
                 bslib::layout_columns(
-                    col_widths = c(5, 7), # Allocate space for info and plot
-
-                    # Peak summary info
+                    col_widths = c(5, 7),
                     div(
-                        id = ns_app_controller("peak_summary_info"),
-                        style = "background: #f8f9fa; padding: 10px; border-radius: 5px; border-left: 4px solid #3498db; height: 450px; overflow-y: auto;",
+                        style = "background: #f8f9fa; padding: 10px; border-radius: 5px; height: 450px; overflow-y: auto;",
                         shiny::uiOutput(ns_app_controller("peak_info_display"))
                     ),
-
-                    # Allele effects plot (now square)
                     shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "450px", width = "450px") %>%
                         shinycssloaders::withSpinner(type = 8, color = "#3498db")
                 )
-            )
-        } else {
-            message("scanApp: No allele effects section - no peak selected or available")
-            NULL
+            ))
         }
+
+        # View 2: Comparative Difference Peak Details
+        if (!is.null(diff_peak_1) || !is.null(diff_peak_2)) {
+            message("scanApp: Rendering SIDE-BY-SIDE allele effects for difference plot click.")
+
+            ui_elements <- list()
+
+            # Card for the first peak, if it exists
+            if (!is.null(diff_peak_1)) {
+                ui_elements <- c(ui_elements, list(
+                    bslib::card(
+                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_1"))),
+                        bslib::card_body(
+                            shiny::plotOutput(ns_app_controller("diff_allele_plot_1"), height = "400px") %>%
+                                shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
+                        )
+                    )
+                ))
+            }
+
+            # Card for the second peak, if it exists
+            if (!is.null(diff_peak_2)) {
+                ui_elements <- c(ui_elements, list(
+                    bslib::card(
+                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_2"))),
+                        bslib::card_body(
+                            shiny::plotOutput(ns_app_controller("diff_allele_plot_2"), height = "400px") %>%
+                                shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
+                        )
+                    )
+                ))
+            }
+
+            # Message if one of the peaks was not found
+            info_message <- NULL
+            if (is.null(diff_peak_1) || is.null(diff_peak_2)) {
+                info_message <- p("Note: A corresponding peak was found in only one of the comparison datasets within the search window.", style = "font-style: italic; font-size: 12px; color: #7f8c8d;")
+            }
+
+            return(tagList(
+                hr(style = "margin: 20px 0; border-top: 2px solid #e74c3c;"),
+                h5("Comparative Strain Effects", style = "color: #2c3e50; font-weight: bold; margin-bottom: 15px;"),
+                p("Showing strain effects for the peak found in each respective dataset based on your click on the difference plot.", style = "font-size: 12px;"),
+                info_message,
+                do.call(bslib::layout_columns, c(list(col_widths = 6), ui_elements))
+            ))
+        }
+
+        # Default: Nothing to show
+        message("scanApp: No allele effects to display.")
+        return(NULL)
     })
 
     # Dynamic peak info display
@@ -1151,6 +1214,31 @@ server <- function(input, output, session) {
             # Use the ggplot_alleles function to create the plot
             ggplot_alleles(effects_data)
         }
+    })
+
+    # NEW: Render logic for side-by-side plots
+    output[[ns_app_controller("diff_plot_title_1")]] <- renderText({
+        data <- diff_allele_data_1()
+        req(data)
+        unique(data$plot_label)
+    })
+
+    output[[ns_app_controller("diff_allele_plot_1")]] <- shiny::renderPlot({
+        data <- diff_allele_data_1()
+        req(data)
+        ggplot_alleles(data)
+    })
+
+    output[[ns_app_controller("diff_plot_title_2")]] <- renderText({
+        data <- diff_allele_data_2()
+        req(data)
+        unique(data$plot_label)
+    })
+
+    output[[ns_app_controller("diff_allele_plot_2")]] <- shiny::renderPlot({
+        data <- diff_allele_data_2()
+        req(data)
+        ggplot_alleles(data)
     })
 
     # --- FIXED Trait Search Logic ---

@@ -85,7 +85,56 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         plot_height_rv <- shiny::reactiveVal(600)
         use_alternating_colors_rv <- shiny::reactiveVal(TRUE)
         clicked_plotly_point_details_lod_scan_rv <- shiny::reactiveVal(NULL)
-        selected_peak_rv <- shiny::reactiveVal(NULL) # NEW: To store the full selected peak data
+        selected_peak_rv <- shiny::reactiveVal(NULL) # For single additive plot
+        diff_peak_1_rv <- shiny::reactiveVal(NULL) # For side-by-side allele plot 1
+        diff_peak_2_rv <- shiny::reactiveVal(NULL) # For side-by-side allele plot 2
+
+        # Helper function to get paths for interactive peak files
+        get_interactive_peak_filepaths <- function(dataset_group, interaction_type) {
+            base_path <- "/data/dev/miniViewer_3.0/" # Assuming path from repository rules
+
+            # Derive base name (e.g., "HC_HF Liver Genes") from full dataset name
+            base_name <- gsub(",\\s*(interactive|additive).*", "", dataset_group, ignore.case = TRUE)
+            base_name <- trimws(base_name)
+
+            dataset_component <- NULL
+            if (grepl("Liver Genes", base_name, ignore.case = TRUE)) {
+                dataset_component <- "liver_genes"
+            } else if (grepl("Liver Lipids", base_name, ignore.case = TRUE)) {
+                dataset_component <- "liver_lipids"
+            } else if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
+                dataset_component <- "clinical_traits"
+            } else if (grepl("Plasma Metabolites", base_name, ignore.case = TRUE)) {
+                dataset_component <- "plasma_metabolites"
+            } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
+                dataset_component <- "liver_isoforms"
+            } else {
+                warning(paste("Unsupported dataset group for interactive peak file lookup:", dataset_group))
+                return(NULL)
+            }
+
+            file1 <- NULL
+            file2 <- NULL
+            labels <- NULL
+
+            if (interaction_type == "sex") {
+                file1 <- paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_female_mice_additive.csv")
+                file2 <- paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_male_mice_additive.csv")
+                labels <- c("Female", "Male")
+            } else if (interaction_type == "diet") {
+                file1 <- paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HC_mice_additive.csv")
+                file2 <- paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HF_mice_additive.csv")
+                labels <- c("HC Diet", "HF Diet")
+            } else {
+                return(NULL)
+            }
+
+            return(list(
+                file1 = file.path(base_path, file1),
+                file2 = file.path(base_path, file2),
+                labels = labels
+            ))
+        }
 
         shiny::observeEvent(input$plot_width,
             {
@@ -305,67 +354,71 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         shiny::observeEvent(current_trait_for_scan(),
             {
                 # This ensures we don't use stale additive data from a previous trait
-                message("scanServer: New trait selected, clearing additive data cache.")
+                message("scanServer: New trait selected, clearing additive data cache and diff peaks.")
                 additive_scan_data_rv(NULL)
+                diff_peak_1_rv(NULL)
+                diff_peak_2_rv(NULL)
             },
             ignoreNULL = FALSE,
             ignoreInit = TRUE
         )
 
 
-        # Reactive to automatically load additive data in background for any trait
-        # This replaces the old background loader and observer pattern
-        additive_scan_data_loader <- shiny::reactive({
+        # REVISED ADDITIVE DATA HANDLING:
+        # This observer handles both manual and automatic caching of additive data.
+        observe({
             trait_val <- current_trait_for_scan()
             dataset_group_val <- selected_dataset_group()
             interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
 
-            # Only load if we're in interactive mode
-            if (is.null(trait_val) || is.null(dataset_group_val) ||
-                !grepl("interactive", dataset_group_val, ignore.case = TRUE) ||
-                interaction_type == "none") {
-                return(NULL)
-            }
-
-            # Derive the corresponding additive dataset name from the interactive one
-            base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
-            additive_dataset_name <- paste0(trimws(base_name), ", additive")
-
-            message("scanServer: Automatically loading additive data for '", trait_val, "' from dataset '", additive_dataset_name, "'")
-
-            tryCatch(
-                {
-                    file_dir_val <- import_reactives()$file_directory
-                    req(file_dir_val)
-
-                    scan_data <- trait_scan(
-                        file_dir = file_dir_val,
-                        selected_dataset = additive_dataset_name,
-                        selected_trait = trait_val,
-                        cache_env = NULL
-                    )
-
-                    if (is.null(scan_data) || nrow(scan_data) == 0) {
-                        return(NULL)
-                    }
-
-                    main_par_list <- main_par_inputs()
-                    req(main_par_list$LOD_thr, import_reactives()$markers)
-
-                    processed_data <- QTL_plot_visualizer(scan_data, trait_val, main_par_list$LOD_thr(), import_reactives()$markers)
-
-                    if (!is.null(processed_data) && nrow(processed_data) > 0) {
-                        message("scanServer: Background loaded additive data with ", nrow(processed_data), " rows.")
-                        return(processed_data)
-                    }
-                    return(NULL)
-                },
-                error = function(e) {
-                    message("scanServer: Error automatically loading additive data: ", e$message)
-                    return(NULL)
+            # Scenario 1: User is viewing an additive scan. Cache it.
+            if (interaction_type == "none" && !grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
+                current_scan <- scan_table()
+                if (!is.null(current_scan) && nrow(current_scan) > 0) {
+                    additive_scan_data_rv(current_scan)
+                    message("scanServer: Additive data cached from direct view.")
                 }
-            )
-        }) %>% shiny::debounce(250)
+
+                # Scenario 2: User switches to an interactive scan. Load additive data in the background.
+            } else if (interaction_type != "none" && grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
+                # Only run loader if cache is empty for the current trait
+                if (is.null(additive_scan_data_rv())) {
+                    message("scanServer: In interactive mode with empty cache, triggering background additive load.")
+
+                    # Derive the corresponding additive dataset name
+                    base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
+                    additive_dataset_name <- paste0(trimws(base_name), ", additive")
+
+                    # Load and process the additive data
+                    tryCatch(
+                        {
+                            file_dir_val <- import_reactives()$file_directory
+                            req(file_dir_val)
+
+                            scan_data <- trait_scan(
+                                file_dir = file_dir_val,
+                                selected_dataset = additive_dataset_name,
+                                selected_trait = trait_val,
+                                cache_env = NULL
+                            )
+
+                            if (!is.null(scan_data) && nrow(scan_data) > 0) {
+                                processed_data <- QTL_plot_visualizer(scan_data, trait_val, 7.5, import_reactives()$markers)
+                                additive_scan_data_rv(processed_data)
+                                message("scanServer: Additive data cache populated by background loader.")
+                            } else {
+                                message("scanServer: Background loader found no additive data.")
+                            }
+                        },
+                        error = function(e) {
+                            message("scanServer: Error during background additive load: ", e$message)
+                            additive_scan_data_rv(NULL) # Ensure cache is cleared on error
+                        }
+                    )
+                }
+            }
+        })
+
 
         # NEW: Reactive to load DIET interactive data for overlay
         overlay_diet_scan_data <- shiny::reactive({
@@ -507,39 +560,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             )
         }) %>% shiny::debounce(250)
 
-        # New observer to trigger the automatic loader only when necessary
-        shiny::observe({
-            interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
-
-            # If we are in interactive mode AND the cache is empty, trigger the loader to run and populate the cache.
-            if (interaction_type != "none" && is.null(additive_scan_data_rv())) {
-                loaded_data <- additive_scan_data_loader()
-                if (!is.null(loaded_data)) {
-                    additive_scan_data_rv(loaded_data)
-                    message("scanServer: Additive data cache populated by automatic loader.")
-                }
-            }
-        })
-
-        # Observer to store additive data when interaction type is "none" (for manual workflow)
-        shiny::observeEvent(scan_table(),
-            {
-                interaction_type <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
-
-                # Only store if this is a genuine additive scan, not an interactive one
-                # This prevents overwriting the additive data when switching to an interactive view
-                if (interaction_type == "none" && !grepl("interactive", selected_dataset_group(), ignore.case = TRUE)) {
-                    plot_data <- scan_table()
-                    if (!is.null(plot_data) && nrow(plot_data) > 0) {
-                        additive_scan_data_rv(plot_data)
-                        message("scanServer: Stored FULL additive scan data with ", nrow(plot_data), " rows (from 'none' mode).")
-                    }
-                }
-            },
-            ignoreInit = TRUE,
-            ignoreNULL = TRUE
-        )
-
+        # Old observers for additive data are now replaced by the single observer above
 
         current_scan_plot_gg <- shiny::reactive({
             # Get inputs with early validation
@@ -582,75 +603,75 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             )
         }) %>% shiny::debounce(150) # Optimized debounce timing
 
-        # Reactive to create difference plot (interactive - additive)
-        difference_plot_gg <- shiny::reactive({
+        # NEW: Reactive for difference plot data to be used by plot and click handler
+        diff_plot_data_reactive <- shiny::reactive({
             if (is.null(interaction_type_reactive)) {
                 return(NULL)
             }
-
             interaction_type <- interaction_type_reactive()
-
-            # Only create difference plot for interactive datasets
             if (is.null(interaction_type) || interaction_type == "none") {
                 return(NULL)
             }
 
             interactive_data <- scan_table_chr()
-
-            # This now exclusively reads from the reactiveVal, which is populated by either the manual or automatic workflow.
-            # This decouples it from the interactive scan's reactive chain.
             additive_data <- additive_scan_data_rv()
 
-            # Early exit if data is missing
             if (is.null(interactive_data) || is.null(additive_data) ||
                 nrow(interactive_data) == 0 || nrow(additive_data) == 0) {
                 return(NULL)
             }
 
-            # Determine the static threshold for the difference plot
+            main_par_list <- main_par_inputs()
+            selected_chromosome <- main_par_list$selected_chr()
+
+            additive_data_chr <- if (selected_chromosome == "All") {
+                additive_data
+            } else {
+                sel_chr_num <- selected_chromosome
+                if (selected_chromosome == "X") sel_chr_num <- 20
+                if (selected_chromosome == "Y") sel_chr_num <- 21
+                if (selected_chromosome == "M") sel_chr_num <- 22
+                sel_chr_num <- as.numeric(sel_chr_num)
+                dplyr::filter(additive_data, chr == sel_chr_num)
+            }
+
+            if (nrow(interactive_data) != nrow(additive_data_chr)) {
+                aligned_data <- dplyr::inner_join(
+                    interactive_data,
+                    additive_data_chr,
+                    by = "markers",
+                    suffix = c("_int", "_add")
+                )
+                if (nrow(aligned_data) == 0) {
+                    return(NULL)
+                }
+
+                diff_plot_data <- aligned_data %>%
+                    dplyr::mutate(LOD = LOD_int - LOD_add) %>%
+                    dplyr::select(markers, chr = chr_int, position = position_int, BPcum = BPcum_int, LOD)
+            } else {
+                diff_plot_data <- interactive_data
+                diff_plot_data$LOD <- interactive_data$LOD - additive_data_chr$LOD
+            }
+
+            diff_plot_data$LOD[is.na(diff_plot_data$LOD)] <- 0
+            return(diff_plot_data)
+        })
+
+        # Reactive to create difference plot (interactive - additive)
+        difference_plot_gg <- shiny::reactive({
+            diff_plot_data <- diff_plot_data_reactive()
+            if (is.null(diff_plot_data) || nrow(diff_plot_data) == 0) {
+                return(NULL)
+            }
+
+            interaction_type <- interaction_type_reactive()
             static_diff_threshold <- if (interaction_type == "sex") 4.1 else if (interaction_type == "diet") 4.1 else NULL
 
-            # Optimized difference calculation
             tryCatch(
                 {
                     main_par_list <- main_par_inputs()
                     selected_chromosome <- main_par_list$selected_chr()
-
-                    # Filter full additive data to match the current chromosome view
-                    additive_data_chr <- if (selected_chromosome == "All") {
-                        additive_data
-                    } else {
-                        sel_chr_num <- selected_chromosome
-                        if (selected_chromosome == "X") sel_chr_num <- 20
-                        if (selected_chromosome == "Y") sel_chr_num <- 21
-                        if (selected_chromosome == "M") sel_chr_num <- 22
-                        sel_chr_num <- as.numeric(sel_chr_num)
-                        dplyr::filter(additive_data, chr == sel_chr_num)
-                    }
-
-                    # Ensure data is aligned before subtraction
-                    if (nrow(interactive_data) != nrow(additive_data_chr)) {
-                        # Fallback to join if rows don't match (e.g., different markers)
-                        aligned_data <- dplyr::inner_join(
-                            interactive_data,
-                            additive_data_chr,
-                            by = "markers",
-                            suffix = c("_int", "_add")
-                        )
-                        if (nrow(aligned_data) == 0) {
-                            return(NULL)
-                        }
-                        diff_plot_data <- aligned_data %>%
-                            dplyr::mutate(LOD = LOD_int - LOD_add) %>%
-                            dplyr::select(markers, chr = chr_int, position = position_int, BPcum = BPcum_int, LOD)
-                    } else {
-                        # Simple subtraction if markers align
-                        diff_plot_data <- interactive_data
-                        diff_plot_data$LOD <- interactive_data$LOD - additive_data_chr$LOD
-                    }
-
-                    # Handle NA values efficiently
-                    diff_plot_data$LOD[is.na(diff_plot_data$LOD)] <- 0
 
                     # Create plot
                     diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chromosome)
@@ -672,7 +693,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     return(NULL)
                 }
             )
-        }) %>% shiny::debounce(300) # Optimized debounce timing
+        }) %>% shiny::debounce(300)
 
         # Simple UI state check
         show_stacked_plots <- shiny::reactive({
@@ -759,6 +780,99 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             plt
         })
 
+        # NEW: Click handler for the difference plot
+        shiny::observeEvent(plotly::event_data("plotly_click", source = ns("difference_plotly")), {
+            ev_data <- plotly::event_data("plotly_click", source = ns("difference_plotly"))
+
+            req(ev_data)
+
+            message("scanServer: Click detected on difference plot.")
+
+            # Get data from the difference plot
+            diff_data <- diff_plot_data_reactive()
+            req(diff_data, nrow(diff_data) > 0)
+
+            # Find nearest point
+            main_par_list <- main_par_inputs()
+            selected_chr <- main_par_list$selected_chr()
+            xvar <- if (selected_chr == "All") "BPcum" else "position"
+
+            distances <- sqrt((diff_data[[xvar]] - ev_data$x)^2 + (diff_data$LOD - ev_data$y)^2)
+            nearest_point <- diff_data[which.min(distances), ]
+
+            message(paste("scanServer (Diff Click): Nearest point is marker", nearest_point$markers, "on chr", nearest_point$chr, "at pos", nearest_point$position))
+
+            # Get file paths for interactive peaks
+            interaction_type <- interaction_type_reactive()
+            dataset_group <- selected_dataset_group()
+
+            paths <- get_interactive_peak_filepaths(dataset_group, interaction_type)
+            req(paths)
+
+            if (!file.exists(paths$file1) || !file.exists(paths$file2)) {
+                shiny::showNotification(paste("Peak files not found for this interaction type."), type = "error")
+                warning(paste("Missing interactive peak files:", paths$file1, "or", paths$file2))
+                return()
+            }
+
+            # Load peak data
+            peak_data_1 <- data.table::fread(paths$file1)
+            peak_data_2 <- data.table::fread(paths$file2)
+
+            # Find the corresponding peak within a 4Mb window
+            trait <- current_trait_for_scan()
+
+            find_peak_in_window <- function(peak_df, target_trait, target_chr, target_pos) {
+                message("--- find_peak_in_window ---")
+                message(paste("Searching for trait:", target_trait, "on chr:", target_chr, "near pos:", target_pos))
+
+                trait_col <- if ("gene_symbol" %in% colnames(peak_df)) "gene_symbol" else "phenotype"
+                message(paste("Using trait column:", trait_col))
+
+                peak_dt <- data.table::as.data.table(peak_df)
+
+                # Print head of the data being searched for debugging
+                if (nrow(peak_dt) > 0) {
+                    message("Head of peak data being searched:")
+                    print(head(peak_dt[, .SD, .SDcols = c(trait_col, "qtl_chr", "qtl_pos", "qtl_lod")]))
+                }
+
+                # Find peaks within the window
+                peak_subset <- peak_dt[get(trait_col) == target_trait &
+                    qtl_chr == target_chr &
+                    abs(qtl_pos - target_pos) <= 4, ]
+
+                message(paste("Found", nrow(peak_subset), "peaks in window."))
+
+                if (nrow(peak_subset) > 0) {
+                    # Final, most robust fix: find the index and return that row as a data.frame
+                    max_lod_index <- which.max(peak_subset$qtl_lod)
+                    message(paste("Highest LOD peak in window has LOD:", peak_subset$qtl_lod[max_lod_index]))
+                    return(as.data.frame(peak_subset[max_lod_index, ]))
+                }
+                return(NULL)
+            }
+
+            # Search for peaks in both files
+            found_peak_1 <- find_peak_in_window(peak_data_1, trait, chr_XYM(nearest_point$chr), nearest_point$position)
+            found_peak_2 <- find_peak_in_window(peak_data_2, trait, chr_XYM(nearest_point$chr), nearest_point$position)
+
+            if (!is.null(found_peak_1)) message("Found peak in file 1: ", found_peak_1$marker)
+            if (!is.null(found_peak_2)) message("Found peak in file 2: ", found_peak_2$marker)
+
+            # Add labels for plotting
+            if (!is.null(found_peak_1)) found_peak_1$plot_label <- paths$labels[1]
+            if (!is.null(found_peak_2)) found_peak_2$plot_label <- paths$labels[2]
+
+            # Update reactive values
+            diff_peak_1_rv(found_peak_1)
+            diff_peak_2_rv(found_peak_2)
+
+            # Clear the single peak selection to avoid confusion
+            selected_peak_rv(NULL)
+            clicked_plotly_point_details_lod_scan_rv(NULL)
+        })
+
         # Render function for the difference plot
         output$render_difference_plot <- plotly::renderPlotly({
             # Only render for interactive datasets
@@ -800,7 +914,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         "select2d", "lasso2d", "hoverClosestCartesian",
                         "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud"
                     )
-                )
+                ) %>%
+                plotly::event_register("plotly_click")
         })
 
         # Simple click handler using distance-based approach (like the old app)
@@ -1004,7 +1119,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             tables = shiny::reactiveValues(scan = scan_table_chr),
             plots = shiny::reactiveValues(scan = current_scan_plot_gg),
             clicked_point_details = clicked_plotly_point_details_lod_scan_rv,
-            selected_peak = selected_peak_rv # NEW: Pass selected peak out
+            selected_peak = selected_peak_rv,
+            diff_peak_1 = diff_peak_1_rv,
+            diff_peak_2 = diff_peak_2_rv
         ))
     })
 }
