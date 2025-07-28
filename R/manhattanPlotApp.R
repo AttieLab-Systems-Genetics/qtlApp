@@ -378,8 +378,8 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
 
       # Optimized plotly conversion
       plotly::ggplotly(p, tooltip = "text", source = ns("manhattan_plotly")) %>%
-        plotly::layout(dragmode = "pan") %>%
-        plotly::config(scrollZoom = TRUE, displaylogo = FALSE, modeBarButtonsToRemove = c("select2d", "lasso2d")) %>%
+        plotly::layout(dragmode = "zoom") %>%
+        plotly::config(scrollZoom = TRUE, displaylogo = FALSE, modeBarButtonsToRemove = c("select2d", "lasso2d", "pan2d")) %>%
         plotly::event_register("plotly_click")
     }) %>% shiny::debounce(200)
 
