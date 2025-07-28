@@ -104,7 +104,7 @@ mainUI <- function() {
                         hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
                         h5("🔍 Trait Search", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
                         selectizeInput(shiny::NS("app_controller", "trait_search_input"),
-                            "Search for traits/genes:",
+                            "Search for traits:",
                             choices = NULL,
                             selected = NULL,
                             multiple = FALSE,
@@ -124,15 +124,6 @@ mainUI <- function() {
                                 class = "btn-primary",
                                 style = "background: #3498db; border: none; font-weight: bold; width: 100%;"
                             )
-                        ),
-
-                        # Back button
-                        hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
-                        shiny::actionButton(shiny::NS("app_controller", "clear_lod_scan_btn"),
-                            "← Back to Overview Plot",
-                            icon = shiny::icon("arrow-left"),
-                            class = "btn-secondary",
-                            style = "width: 100%;"
                         )
                     )
                 ),

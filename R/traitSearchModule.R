@@ -10,43 +10,43 @@
 #' @export
 traitSearchUI <- function(id) {
     ns <- shiny::NS(id)
+    shiny::tagList(
+        shiny::fluidPage(
+            # fluidRow to encapsulate all content
+            shiny::fluidRow(
+                # Top row with back button and search input/button
+                shiny::fluidRow(
+                    # Main content column
+                    shiny::column(
+                        12,
+                        shiny::fluidRow(
+                            shiny::column(3, style = "padding-right: 5px;"),
+                            shiny::column(
+                                6,
+                                # Conditional Search Input: shown only when a trait is selected
+                                shiny::uiOutput(ns("trait_search_input_ui"))
+                            ),
+                            shiny::column(3,
+                                style = "padding-left: 5px;",
+                                # Search button
+                                shiny::actionButton(ns("search_trait"), "Search",
+                                    icon = shiny::icon("search"),
+                                    class = "btn-primary", style = "width: 100%;"
+                                )
+                            )
+                        )
+                    )
+                ),
 
-    div(
-        style = "padding: 10px;",
-
-        # Trait search section
-        hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
-        h5("🔍 Trait Search", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
-        selectizeInput(ns("trait_search_input"),
-            "Search for traits/genes:",
-            choices = NULL,
-            selected = NULL,
-            multiple = FALSE,
-            options = list(
-                placeholder = "Type to search (e.g., Gapdh, Insulin, PI_38_3)",
-                maxItems = 1,
-                maxOptions = 10,
-                create = FALSE
-            ),
-            width = "100%"
-        ),
-        div(
-            style = "text-align: center; margin-top: 10px;",
-            actionButton(ns("trait_search_button"),
-                "🚀 Search & Plot LOD Scan",
-                icon = icon("search"),
-                class = "btn-primary",
-                style = "background: #3498db; border: none; font-weight: bold; width: 100%;"
+                # Second row for the results table
+                shiny::fluidRow(
+                    shiny::column(
+                        12,
+                        # Table to display search results
+                        DT::DTOutput(ns("trait_search_results_dt"))
+                    )
+                )
             )
-        ),
-
-        # Back button
-        hr(style = "border-top: 1px solid #bdc3c7; margin: 20px 0;"),
-        shiny::actionButton(ns("clear_lod_scan_btn"),
-            "← Back to Overview Plot",
-            icon = shiny::icon("arrow-left"),
-            class = "btn-secondary",
-            style = "width: 100%;"
         )
     )
 }
@@ -205,16 +205,6 @@ traitSearchServer <- function(id, import_reactives, selected_dataset_reactive) {
                     options = list(placeholder = "No traits available for this dataset")
                 )
             }
-        })
-
-        # Observer for the "Back to Overview Plot" button
-        observeEvent(input$clear_lod_scan_btn, {
-            message("traitSearchModule: clear_lod_scan_btn clicked. Clearing trait_for_lod_scan_rv.")
-            trait_for_lod_scan_rv(NULL)
-            # Also clear the search input field
-            updateSelectizeInput(session, "trait_search_input",
-                selected = character(0)
-            )
         })
 
         # When the main selected dataset changes, clear the trait_for_lod_scan_rv

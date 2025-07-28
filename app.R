@@ -134,7 +134,7 @@ server <- function(input, output, session) {
         }
 
         sliderInput(shiny::NS("app_controller", "LOD_thr"),
-            label = paste("LOD Threshold (", scan_info$type, "scan):"),
+            label = paste0("LOD Threshold (", scan_info$type, " scan):"),
             min = scan_info$min, max = 20, value = default_val, step = 0.5,
             width = "100%"
         )
@@ -1386,16 +1386,6 @@ server <- function(input, output, session) {
                 options = list(placeholder = "No traits available for this dataset")
             )
         }
-    })
-
-    # Observer for the "Back to Overview Plot" button
-    observeEvent(input[[ns_app_controller("clear_lod_scan_btn")]], {
-        message("scanApp: clear_lod_scan_btn clicked. Clearing trait_for_lod_scan_rv.")
-        trait_for_lod_scan_rv(NULL)
-        # Also clear the search input field
-        updateSelectizeInput(session, ns_app_controller("trait_search_input"),
-            selected = character(0)
-        )
     })
 
     # ====== CHROMOSOME ZOOM FUNCTIONALITY ======

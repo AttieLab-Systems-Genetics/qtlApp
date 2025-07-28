@@ -716,7 +716,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
         output$scan_plot_subheader <- renderText({
             req(numb_mice_rv())
-            paste("Number of mice scanned:", numb_mice_rv())
+            paste("Number of mice scanned:", numb_mice_rv(), "/ 1157")
         })
 
         output$scan_plot_ui_render <- shiny::renderUI({
@@ -734,7 +734,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     # Interactive LOD plot (top)
                     shiny::div(
                         style = "margin-bottom: 10px;",
-                        shiny::h5("Interactive LOD Scan", style = "text-align: center; margin-bottom: 5px;"),
+                        shiny::div("Interactive LOD Scan", style = "text-align: center; font-weight: bold; margin-bottom: 5px;"),
                         shiny::div(textOutput(ns("scan_plot_subheader")), style = "text-align: center; font-style: italic; margin-bottom: 5px;"),
                         plotly::plotlyOutput(ns("render_plotly_plot"),
                             width = paste0(plot_width_rv(), "px"),
@@ -744,7 +744,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     ),
                     # Difference plot (bottom)
                     shiny::div(
-                        shiny::h5("LOD Difference (Interactive - Additive)", style = "text-align: center; margin-bottom: 5px;"),
+                        shiny::div("LOD Difference (Interactive - Additive)", style = "text-align: center; font-weight: bold; margin-bottom: 5px;"),
                         plotly::plotlyOutput(ns("render_difference_plot"),
                             width = paste0(plot_width_rv(), "px"),
                             height = paste0(individual_plot_height, "px")
@@ -755,6 +755,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             } else {
                 # Show only the main plot (additive or regular datasets)
                 shiny::tagList(
+                    shiny::div("Additive LOD Scan", style = "text-align: center; font-weight: bold; margin-bottom: 5px;"),
                     shiny::div(textOutput(ns("scan_plot_subheader")), style = "text-align: center; font-style: italic; margin-bottom: 5px;"),
                     plotly::plotlyOutput(ns("render_plotly_plot"),
                         width = paste0(plot_width_rv(), "px"),
