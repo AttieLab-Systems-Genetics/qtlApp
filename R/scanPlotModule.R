@@ -7,7 +7,7 @@
 #' @param trait_to_scan reactive containing the trait to be scanned
 #' @param selected_dataset_group reactive with the name of the selected dataset group
 #' @param import_reactives reactive list with imported data (file_directory, markers)
-#' @param main_par_inputs reactive list with main parameters (LOD_thr, selected_chr)
+#' @param main_par_input-s reactive list with main parameters (LOD_thr, selected_chr)
 #' @param interaction_type_reactive reactive specifying the interaction type ('none', 'sex', 'diet')
 #' @param overlay_diet_toggle reactive boolean for diet overlay
 #' @param overlay_sex_toggle reactive boolean for sex overlay
@@ -88,6 +88,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         selected_peak_rv <- shiny::reactiveVal(NULL) # For single additive plot
         diff_peak_1_rv <- shiny::reactiveVal(NULL) # For side-by-side allele plot 1
         diff_peak_2_rv <- shiny::reactiveVal(NULL) # For side-by-side allele plot 2
+        numb_mice_rv <- shiny::reactiveVal(NULL) # To store the number of mice
 
         # Helper function to get paths for interactive peak files
         get_interactive_peak_filepaths <- function(dataset_group, interaction_type) {
@@ -197,7 +198,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 message(paste0("  - Chr ", debug_files$ID_code[i], ": ", basename(debug_files$File_path[i])))
             }
 
-            result <- tryCatch(
+            result_list <- tryCatch(
                 {
                     trait_scan(
                         file_dir = file_dir_val,
@@ -212,17 +213,25 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 }
             )
 
-            message(paste0("scanServer (within scans reactive): RETURNED FROM trait_scan. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Result class: ", class(result), ", Result nrows: ", if (!is.null(result) && (is.data.frame(result) || is.data.table(result))) nrow(result) else "N/A"))
+            if (is.null(result_list) || is.null(result_list$scan_data)) {
+                numb_mice_rv(NULL)
+                return(data.table::data.table())
+            }
+
+            numb_mice_rv(result_list$numb_mice)
+
+            scan_data <- result_list$scan_data
+            message(paste0("scanServer (within scans reactive): RETURNED FROM trait_scan. Trait: '", trait_val, "', Dataset Group: '", dataset_group_val, "'. Result class: ", class(scan_data), ", Result nrows: ", if (!is.null(scan_data) && (is.data.frame(scan_data) || is.data.table(scan_data))) nrow(scan_data) else "N/A"))
 
             # Additional check: if result is NULL due to error, or if it's an empty data frame, handle appropriately.
-            if (is.null(result) || ((is.data.frame(result) || is.data.table(result)) && nrow(result) == 0)) {
+            if (is.null(scan_data) || ((is.data.frame(scan_data) || is.data.table(scan_data)) && nrow(scan_data) == 0)) {
                 message(paste0("scanServer: trait_scan returned NULL or empty for Trait: '", trait_val, "', Dataset: '", dataset_group_val, "'. Propagating as empty result."))
                 # Return an empty data.table or data.frame as expected by downstream reactives to prevent crashes
                 # Make sure it has the columns expected by QTL_plot_visualizer if possible, or handle this there.
                 return(data.table::data.table())
             }
 
-            result
+            scan_data
         }) %>% shiny::debounce(150) # Add debouncing to prevent rapid re-computation
 
         # NEW: Reactive to determine the static line threshold based on context
@@ -704,6 +713,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             !is.null(interaction_type) && interaction_type != "none"
         })
 
+        output$scan_plot_subheader <- renderText({
+            req(numb_mice_rv())
+            paste("Number of mice scanned:", numb_mice_rv())
+        })
+
         output$scan_plot_ui_render <- shiny::renderUI({
             # Minimal dependencies for faster rendering
             plot_gg <- current_scan_plot_gg()
@@ -720,6 +734,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     shiny::div(
                         style = "margin-bottom: 10px;",
                         shiny::h5("Interactive LOD Scan", style = "text-align: center; margin-bottom: 5px;"),
+                        shiny::div(textOutput(ns("scan_plot_subheader")), style = "text-align: center; font-style: italic; margin-bottom: 5px;"),
                         plotly::plotlyOutput(ns("render_plotly_plot"),
                             width = paste0(plot_width_rv(), "px"),
                             height = paste0(individual_plot_height, "px")
@@ -738,11 +753,14 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 )
             } else {
                 # Show only the main plot (additive or regular datasets)
-                plotly::plotlyOutput(ns("render_plotly_plot"),
-                    width = paste0(plot_width_rv(), "px"),
-                    height = paste0(plot_height_rv(), "px")
-                ) |>
-                    shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                shiny::tagList(
+                    shiny::div(textOutput(ns("scan_plot_subheader")), style = "text-align: center; font-style: italic; margin-bottom: 5px;"),
+                    plotly::plotlyOutput(ns("render_plotly_plot"),
+                        width = paste0(plot_width_rv(), "px"),
+                        height = paste0(plot_height_rv(), "px")
+                    ) |>
+                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                )
             }
         })
 
