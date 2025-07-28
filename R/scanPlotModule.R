@@ -404,14 +404,15 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                             file_dir_val <- import_reactives()$file_directory
                             req(file_dir_val)
 
-                            scan_data <- trait_scan(
+                            result_list <- trait_scan(
                                 file_dir = file_dir_val,
                                 selected_dataset = additive_dataset_name,
                                 selected_trait = trait_val,
                                 cache_env = NULL
                             )
 
-                            if (!is.null(scan_data) && nrow(scan_data) > 0) {
+                            if (!is.null(result_list) && !is.null(result_list$scan_data) && nrow(result_list$scan_data) > 0) {
+                                scan_data <- result_list$scan_data
                                 processed_data <- QTL_plot_visualizer(scan_data, trait_val, 7.5, import_reactives()$markers)
                                 additive_scan_data_rv(processed_data)
                                 message("scanServer: Additive data cache populated by background loader.")
