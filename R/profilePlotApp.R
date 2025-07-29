@@ -1,33 +1,173 @@
-#' Profile Plot Module UI
+#' Profile Plot Module
 #'
-#' @param id Module ID.
-#' @export
-profilePlotInput <- function(id) {
-    # No input needed for placeholder
-    return(NULL)
-}
-
-#' Profile Plot Module UI Output
+#' This module displays boxplots of phenotype values, grouped by selected
+#' covariates. It dynamically loads data for a specific dataset category
+#' for high performance and low memory usage.
 #'
-#' @param id Module ID.
+#' @param id shiny identifier
+#' @param selected_dataset_category A reactive string representing the currently
+#'   selected dataset category (e.g., "Liver Genes").
+#' @param trait_to_profile A reactive string with the name of the trait to display.
+#' @importFrom plotly plotlyOutput renderPlotly ggplotly
+#' @importFrom ggplot2 ggplot aes_string geom_boxplot geom_jitter labs theme_minimal theme
+#' @importFrom shinycssloaders withSpinner
+#' @importFrom stringr str_replace_all
+#' @importFrom data.table .
 #' @export
 profilePlotUI <- function(id) {
     ns <- shiny::NS(id)
-    shiny::div(
-        style = "padding: 20px; text-align: center; color: #7f8c8d;",
-        shiny::p("Profile Plot functionality coming soon.")
+    tagList(
+        bslib::layout_sidebar(
+            sidebar = bslib::sidebar(
+                width = "250px",
+                shiny::selectInput(
+                    ns("grouping_selector"),
+                    "Group By:",
+                    choices = c(
+                        "Sex" = "Sex",
+                        "Diet" = "Diet",
+                        "Genetic Litter" = "GenLit"
+                    ),
+                    selected = "Sex"
+                ),
+                # The trait selector is removed from here
+                shiny::div(
+                    class = "alert alert-info",
+                    "This plot displays the phenotype distribution for the main trait selected in the 'Trait Search & LOD Scan' tab."
+                )
+            ),
+            uiOutput(ns("plot_ui_wrapper"))
+        )
     )
 }
 
-#' Profile Plot Module Server
-#'
-#' @param id Module ID.
-#' @param import_reactives Reactive that returns a list containing file_directory.
-#' @param main_par Reactive that returns a list containing selected_dataset.
+#' @rdname profilePlotUI
 #' @export
-profilePlotServer <- function(id, import_reactives, main_par) {
+profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
     shiny::moduleServer(id, function(input, output, session) {
-        # Placeholder - no functionality yet
-        return(NULL)
+        ns <- session$ns
+
+        # Reactive to store the path to the current category's data files
+        current_data_paths <- reactive({
+            req(selected_dataset_category())
+            category <- selected_dataset_category()
+
+            sanitized_category <- tolower(category)
+            sanitized_category <- str_replace_all(sanitized_category, "[^a-z0-9]+", "_")
+
+            list(
+                fst = file.path("/data/dev/miniViewer_3.0", paste0("pheno_data_long_", sanitized_category, ".fst")),
+                rds = file.path("/data/dev/miniViewer_3.0", paste0("trait_names_", sanitized_category, ".rds"))
+            )
+        })
+
+        # This reactive now directly uses the trait passed from the main app
+        selected_trait_data <- reactive({
+            req(trait_to_profile(), nzchar(trait_to_profile()))
+            paths <- current_data_paths()
+
+            req(file.exists(paths$fst))
+
+            # Read the FST file and filter for the specific trait
+            # Note: fst::fst() doesn't preserve data.table keys, so we need to read and filter manually
+
+            tryCatch(
+                {
+                    # Read the full FST file (this might be memory intensive for large files)
+                    full_data <- fst::read_fst(paths$fst, as.data.table = TRUE)
+
+                    # Filter for the specific trait
+                    trait_data <- full_data[Trait_Name == trait_to_profile()]
+
+                    req(trait_data, nrow(trait_data) > 0)
+
+                    return(as.data.table(trait_data)) # Ensure it's a mutable data.table
+                },
+                error = function(e) {
+                    warning("Profile Plot Data ERROR: ", e$message)
+                    return(NULL)
+                }
+            )
+        })
+
+        # Dynamic UI for the plot area
+        output$plot_ui_wrapper <- renderUI({
+            # Show a message if no trait is selected yet
+            if (is.null(trait_to_profile()) || !nzchar(trait_to_profile())) {
+                return(div(
+                    style = "display: flex; justify-content: center; align-items: center; height: 400px; color: #7f8c8d; font-size: 1.2em;",
+                    "Please select a trait in the 'Trait Search & LOD Scan' tab to see its profile plot."
+                ))
+            }
+
+            # Show a different message if the data file for this category doesn't exist
+            if (!file.exists(current_data_paths()$fst)) {
+                return(div(
+                    style = "display: flex; justify-content: center; align-items: center; height: 400px; color: #7f8c8d; font-size: 1.2em;",
+                    paste("No phenotype data available for the '", selected_dataset_category(), "' category.")
+                ))
+            }
+
+            # If everything is okay, show the plot output
+            plotly::plotlyOutput(ns("profile_boxplot")) |>
+                shinycssloaders::withSpinner(type = 8, color = "#3498db")
+        })
+
+        output$profile_boxplot <- plotly::renderPlotly({
+            plot_data <- selected_trait_data()
+            grouping_var <- input$grouping_selector
+
+            req(plot_data, nrow(plot_data) > 0, grouping_var)
+
+            # --- ROBUSTNESS FIX: Clean and validate grouping variable ---
+            plot_data_clean <- data.table::copy(plot_data)
+
+            # 1. Sanitize all character columns to prevent encoding issues
+            char_cols <- names(which(sapply(plot_data_clean, is.character)))
+            if (length(char_cols) > 0) {
+                plot_data_clean[, (char_cols) := lapply(.SD, function(x) {
+                    iconv(x, to = "ASCII//TRANSLIT", sub = "")
+                }), .SDcols = char_cols]
+            }
+
+            # 2. Filter data based on expected groups for the selected variable
+            if (grouping_var == "Sex") {
+                plot_data_clean <- plot_data_clean[Sex %in% c("F", "M")]
+            } else if (grouping_var == "Diet") {
+                plot_data_clean <- plot_data_clean[Diet %in% c("HC", "HF")]
+            }
+            # For all cases, remove rows where the grouping variable is NA or empty
+            plot_data_clean <- plot_data_clean[!is.na(get(grouping_var)) & get(grouping_var) != ""]
+
+            # Create safe trait name for title
+            safe_trait_name <- iconv(trait_to_profile(), to = "ASCII//TRANSLIT", sub = "")
+
+            # --- Direct Plotly Implementation for Boxplots ---
+            p <- plotly::plot_ly(
+                data = plot_data_clean,
+                x = ~ get(grouping_var),
+                y = ~Value,
+                color = ~ get(grouping_var),
+                colors = "Set2",
+                type = "box",
+                # Add jittered points directly, this is a robust method
+                boxpoints = "all",
+                jitter = 0.4,
+                pointpos = -1.8, # Position points to the left of boxes
+                marker = list(size = 5, opacity = 0.5),
+                line = list(width = 1.5)
+            ) %>%
+                plotly::layout(
+                    title = list(
+                        text = paste("<b>Phenotype Distribution:", safe_trait_name, "</b>"),
+                        x = 0.5
+                    ),
+                    xaxis = list(title = paste("<b>", grouping_var, "</b>")),
+                    yaxis = list(title = "<b>Phenotype Value</b>"),
+                    showlegend = FALSE
+                )
+
+            return(p)
+        })
     })
 }

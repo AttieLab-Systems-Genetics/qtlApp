@@ -140,22 +140,7 @@ mainUI <- function() {
                 # Profile Plot tab
                 bslib::nav_panel(
                     "Profile Plot",
-                    div(
-                        style = "padding: 10px;",
-                        div(
-                            id = "profile-plot-container",
-                            class = "sidebar-plot-container",
-                            style = "height: 50vh; min-height: 300px; max-height: 500px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
-                            shinycssloaders::withSpinner(
-                                plotly::plotlyOutput(shiny::NS("app_controller", "profile_plot_output"),
-                                    height = "100%", width = "100%"
-                                )
-                            )
-                        ),
-                        p("Profile plot visualization coming soon",
-                            style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
-                        )
-                    )
+                    profilePlotUI(shiny::NS("app_controller", "profile_plot_module"))
                 ),
 
                 # Correlation tab

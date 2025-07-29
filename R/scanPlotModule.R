@@ -327,7 +327,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     selected_dataset = dataset_group_val,
                     selected_trait = trait_val,
                     trait_type = trait_type_val,
-                    cache_env = local_peaks_cache
+                    cache_env = local_peaks_cache,
+                    use_cache = TRUE
                 )
 
                 if (!is.null(all_peaks) && nrow(all_peaks) > 0) {
@@ -460,16 +461,17 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     req(file_dir_val)
 
                     # Load the interactive scan data
-                    scan_data <- trait_scan(
+                    result_list <- trait_scan(
                         file_dir = file_dir_val,
                         selected_dataset = interactive_dataset_name,
                         selected_trait = trait_val,
                         cache_env = NULL
                     )
 
-                    if (is.null(scan_data) || nrow(scan_data) == 0) {
+                    if (is.null(result_list) || is.null(result_list$scan_data) || nrow(result_list$scan_data) == 0) {
                         return(NULL)
                     }
+                    scan_data <- result_list$scan_data
 
                     # Process it with interactive-specific LOD threshold (10.5 instead of 7.5)
                     main_par_list <- main_par_inputs()
@@ -530,16 +532,17 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     req(file_dir_val)
 
                     # Load the interactive scan data
-                    scan_data <- trait_scan(
+                    result_list <- trait_scan(
                         file_dir = file_dir_val,
                         selected_dataset = interactive_dataset_name,
                         selected_trait = trait_val,
                         cache_env = NULL
                     )
 
-                    if (is.null(scan_data) || nrow(scan_data) == 0) {
+                    if (is.null(result_list) || is.null(result_list$scan_data) || nrow(result_list$scan_data) == 0) {
                         return(NULL)
                     }
+                    scan_data <- result_list$scan_data
 
                     # Process it with interactive-specific LOD threshold (10.5 instead of 7.5)
                     main_par_list <- main_par_inputs()
@@ -577,7 +580,19 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             scan_data <- scan_table_chr()
             main_par_list <- main_par_inputs()
 
-            # Early returns for missing data
+            # --- ROBUSTNESS FIX ---
+            # Add a strong validation check to ensure all required inputs are present
+            # before attempting to render the plot. This prevents the "length zero" error.
+            shiny::req(
+                scan_data,
+                is.data.frame(scan_data),
+                nrow(scan_data) > 0,
+                main_par_list,
+                !is.null(main_par_list$selected_chr),
+                !is.null(main_par_list$selected_chr())
+            )
+
+            # Early returns for missing data (retained as a safeguard)
             if (is.null(scan_data) || nrow(scan_data) == 0 ||
                 is.null(main_par_list) || is.null(main_par_list$selected_chr)) {
                 return(NULL)
@@ -803,7 +818,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         # NEW: Click handler for the difference plot
         shiny::observeEvent(plotly::event_data("plotly_click", source = ns("difference_plotly")), {
             ev_data <- plotly::event_data("plotly_click", source = ns("difference_plotly"))
-
             req(ev_data)
 
             message("scanServer: Click detected on difference plot.")
@@ -817,6 +831,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             selected_chr <- main_par_list$selected_chr()
             xvar <- if (selected_chr == "All") "BPcum" else "position"
 
+            # Find the nearest point in the data to the click event
             distances <- sqrt((diff_data[[xvar]] - ev_data$x)^2 + (diff_data$LOD - ev_data$y)^2)
             nearest_point <- diff_data[which.min(distances), ]
 
@@ -843,32 +858,17 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             trait <- current_trait_for_scan()
 
             find_peak_in_window <- function(peak_df, target_trait, target_chr, target_pos) {
-                message("--- find_peak_in_window ---")
-                message(paste("Searching for trait:", target_trait, "on chr:", target_chr, "near pos:", target_pos))
-
                 trait_col <- if ("gene_symbol" %in% colnames(peak_df)) "gene_symbol" else "phenotype"
-                message(paste("Using trait column:", trait_col))
-
                 peak_dt <- data.table::as.data.table(peak_df)
-
-                # Print head of the data being searched for debugging
-                if (nrow(peak_dt) > 0) {
-                    message("Head of peak data being searched:")
-                    print(head(peak_dt[, .SD, .SDcols = c(trait_col, "qtl_chr", "qtl_pos", "qtl_lod")]))
-                }
 
                 # Find peaks within the window
                 peak_subset <- peak_dt[get(trait_col) == target_trait &
                     qtl_chr == target_chr &
                     abs(qtl_pos - target_pos) <= 4, ]
 
-                message(paste("Found", nrow(peak_subset), "peaks in window."))
-
                 if (nrow(peak_subset) > 0) {
-                    # Final, most robust fix: find the index and return that row as a data.frame
-                    max_lod_index <- which.max(peak_subset$qtl_lod)
-                    message(paste("Highest LOD peak in window has LOD:", peak_subset$qtl_lod[max_lod_index]))
-                    return(as.data.frame(peak_subset[max_lod_index, ]))
+                    # Return the one with the highest LOD score in the window
+                    return(as.data.frame(peak_subset[which.max(peak_subset$qtl_lod), ]))
                 }
                 return(NULL)
             }
@@ -876,9 +876,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             # Search for peaks in both files
             found_peak_1 <- find_peak_in_window(peak_data_1, trait, chr_XYM(nearest_point$chr), nearest_point$position)
             found_peak_2 <- find_peak_in_window(peak_data_2, trait, chr_XYM(nearest_point$chr), nearest_point$position)
-
-            if (!is.null(found_peak_1)) message("Found peak in file 1: ", found_peak_1$marker)
-            if (!is.null(found_peak_2)) message("Found peak in file 2: ", found_peak_2$marker)
 
             # Add labels for plotting
             if (!is.null(found_peak_1)) found_peak_1$plot_label <- paths$labels[1]

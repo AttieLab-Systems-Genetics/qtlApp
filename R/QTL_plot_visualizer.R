@@ -99,7 +99,24 @@ QTL_plot_visualizer <- function(scan_data, phenotype_name, lod_threshold, marker
 
   # Perform the join only if both tables have rows and the join column
   if (nrow(plot_dt) > 0 && nrow(markers_dt) > 0 && "markers" %in% colnames(plot_dt) && "markers" %in% colnames(markers_dt)) {
-    plot_dt <- dplyr::inner_join(plot_dt, markers_dt, by = "markers") # Simplified by = "markers" if both are named "markers"
+    # Ensure markers column exists and is named correctly for the join
+    if ("marker" %in% colnames(markers_dt)) {
+      data.table::setnames(markers_dt, "marker", "markers")
+    }
+    if ("markers" %in% colnames(plot_dt) && "markers" %in% colnames(markers_dt)) {
+      plot_dt <- dplyr::left_join(plot_dt, markers_dt, by = "markers")
+    } else {
+      warning("QTL_plot_visualizer: Could not perform join due to missing 'markers' column in one of the tables.")
+      return(NULL)
+    }
+
+    # --- ROBUSTNESS FIX ---
+    # After the join, some rows might not have chromosome info.
+    # We must validate that we still have usable data before proceeding.
+    if (nrow(plot_dt) == 0 || !"chr_orig" %in% colnames(plot_dt)) {
+      warning("QTL_plot_visualizer: After joining scan data with markers, no valid rows with chromosome information remained. Check marker consistency.")
+      return(NULL) # Return NULL to prevent downstream errors
+    }
   } else {
     warning("QTL_plot_visualizer: Skipping join because one or both tables are empty or missing 'markers' column.")
     plot_dt <- data.frame() # Ensure plot_dt is an empty data.frame to prevent downstream errors

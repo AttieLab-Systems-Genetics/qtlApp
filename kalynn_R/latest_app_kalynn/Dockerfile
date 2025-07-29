@@ -28,14 +28,14 @@ ENV SHINY_LOG_STDERR=1
 RUN mkdir -p /data
 RUN chmod -R 777 /data
 
-# Copy Brian's app.R and R directory from the root of the repository
+# Copy the application files
 COPY app.R /srv/shiny-server/
 COPY R /srv/shiny-server/R/
 
-# Set proper permissions
+# Set ownership of the app directory
 RUN chown -R shiny:shiny /srv/shiny-server
 
-# Expose the port
+# Expose the port Shiny Server runs on
 EXPOSE 3838
 
 USER shiny

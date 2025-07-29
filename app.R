@@ -40,6 +40,7 @@ source("R/fst_rows.R")
 source("R/traitApp.R")
 source("R/traitProcessingModule.R")
 source("R/scanPlotModule.R") # Source our new module
+source("R/profilePlotApp.R") # Source the new profile plot module
 source("R/mainUI.R") # Source our new UI module
 
 # Set maximum file upload size
@@ -1419,24 +1420,11 @@ server <- function(input, output, session) {
 
     # ====== ADDITIONAL ANALYSES PLOT OUTPUTS ======
     # Profile Plot output
-    output[[ns_app_controller("profile_plot_output")]] <- plotly::renderPlotly({
-        plotly::plot_ly() %>%
-            plotly::add_annotations(
-                text = "Profile Plot Coming Soon",
-                x = 0.5,
-                y = 0.5,
-                xref = "paper",
-                yref = "paper",
-                showarrow = FALSE,
-                font = list(size = 20, color = "#2c3e50")
-            ) %>%
-            plotly::layout(
-                title = "Profile Plot",
-                showlegend = FALSE,
-                xaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE),
-                yaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
-            )
-    })
+    profilePlotServer(
+        ns_app_controller("profile_plot_module"),
+        selected_dataset_category = selected_dataset_category_reactive,
+        trait_to_profile = trait_for_lod_scan_rv # Pass the selected trait
+    )
 
     # Correlation Plot output
     output[[ns_app_controller("correlation_plot_output")]] <- plotly::renderPlotly({

@@ -58,25 +58,37 @@ import_data <- function() {
     )
   )
 
+  # --------------------------------------------------------------------------
+  # ADD file_type COLUMN (Required by trait_scan function)
+  # --------------------------------------------------------------------------
+  # Add file_type column to distinguish scan files from other file types
+  if (!"file_type" %in% names(file_directory)) {
+    file_directory$file_type <- "scans" # Default to scans for backward compatibility
+    message("Added file_type column (defaulting to 'scans').")
+  }
 
   # --------------------------------------------------------------------------
   # 2. LOAD GENE SYMBOLS (For gene search/lookup functionality)
   # --------------------------------------------------------------------------
   # Used to populate gene search dropdowns and validate gene names
   gene_symbols_path <- file.path(base_path, "gene_symbols.csv")
+  gene_symbols <- c() # Initialize as empty vector
   if (file.exists(gene_symbols_path)) {
     tryCatch(
       {
         # fread() is faster than read.csv() for large files
         gene_symbols <- as.character(data.table::fread(gene_symbols_path)$gene_symbol)
+        message("Loaded ", length(gene_symbols), " gene symbols.")
       },
       error = function(e) {
         # Graceful degradation - app continues but with limited gene search
         warning("Error reading gene symbols file: ", e$message, ". Using default symbols.")
+        gene_symbols <- c("Actb", "Gapdh", "Tbp") # Fallback symbols
       }
     )
   } else {
     warning("Gene symbols file not found at: ", gene_symbols_path, ". Using default symbols.")
+    gene_symbols <- c("Actb", "Gapdh", "Tbp") # Fallback symbols
   }
   gene_symbols <- sort(gene_symbols) # Alphabetical order for UI dropdowns
 
@@ -111,8 +123,11 @@ import_data <- function() {
   # Contains SNP positions, genetic map information
   # Essential for QTL peak calling and significance thresholds
   markers_path <- file.path(base_path, "CHTC_dietDO_markers_RDSgrcm39.rds")
+  if (!file.exists(markers_path)) {
+    stop("Required file not found: ", markers_path) # Hard stop - needed for QTL plots
+  }
   markers <- readRDS(markers_path)
-  message("Loaded markers.")
+  message("Loaded markers: ", nrow(markers), " markers.")
 
   # --------------------------------------------------------------------------
   # RETURN: Package everything into a named list
