@@ -153,7 +153,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 # Add jittered points directly, this is a robust method
                 boxpoints = "all",
                 jitter = 0.4,
-                pointpos = -1.8, # Position points to the left of boxes
+                pointpos = 0, # Position points to the left of boxes
                 marker = list(size = 5, opacity = 0.5),
                 line = list(width = 1.5)
             ) %>%

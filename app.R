@@ -1081,13 +1081,13 @@ server <- function(input, output, session) {
             # Message if one of the peaks was not found
             info_message <- NULL
             if (is.null(diff_peak_1) || is.null(diff_peak_2)) {
-                info_message <- p("Note: A corresponding peak was found in only one of the comparison datasets within the search window.", style = "font-style: italic; font-size: 12px; color: #7f8c8d;")
+                info_message <- p("Note: A corresponding peak was found in only one of the comparison datasets within the search window.", style = "font-style: italic; font-size: 12px; color: #7f8c8d; margin-top: 0;")
             }
 
             return(tagList(
                 hr(style = "margin: 20px 0; border-top: 2px solid #e74c3c;"),
                 h5("Comparative Strain Effects", style = "color: #2c3e50; font-weight: bold; margin-bottom: 15px;"),
-                p("Showing strain effects for the peak found in each respective dataset based on your click on the difference plot.", style = "font-size: 12px;"),
+                p("Showing strain effects for the peak found in each respective dataset based on your click on the difference plot.", style = "font-size: 12px; margin-bottom: 2px;"),
                 info_message,
                 do.call(bslib::layout_columns, c(list(col_widths = 6), ui_elements))
             ))
