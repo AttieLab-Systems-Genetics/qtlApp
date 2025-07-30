@@ -20,9 +20,9 @@ profilePlotUI <- function(id) {
         bslib::layout_sidebar(
             sidebar = bslib::sidebar(
                 width = "250px",
-                shiny::selectInput(
+                shiny::checkboxGroupInput(
                     ns("grouping_selector"),
-                    "Group By:",
+                    "Group By (select one or more):",
                     choices = c(
                         "Sex" = "Sex",
                         "Diet" = "Diet",
@@ -115,9 +115,9 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
 
         output$profile_boxplot <- plotly::renderPlotly({
             plot_data <- selected_trait_data()
-            grouping_var <- input$grouping_selector
+            grouping_vars <- input$grouping_selector
 
-            req(plot_data, nrow(plot_data) > 0, grouping_var)
+            req(plot_data, nrow(plot_data) > 0, !is.null(grouping_vars), length(grouping_vars) > 0)
 
             # --- ROBUSTNESS FIX: Clean and validate grouping variable ---
             plot_data_clean <- data.table::copy(plot_data)
@@ -130,14 +130,33 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 }), .SDcols = char_cols]
             }
 
-            # 2. Filter data based on expected groups for the selected variable
-            if (grouping_var == "Sex") {
+            # 2. Filter data based on expected groups for each selected variable
+            if ("Sex" %in% grouping_vars) {
                 plot_data_clean <- plot_data_clean[Sex %in% c("F", "M")]
-            } else if (grouping_var == "Diet") {
+            }
+            if ("Diet" %in% grouping_vars) {
                 plot_data_clean <- plot_data_clean[Diet %in% c("HC", "HF")]
             }
-            # For all cases, remove rows where the grouping variable is NA or empty
-            plot_data_clean <- plot_data_clean[!is.na(get(grouping_var)) & get(grouping_var) != ""]
+
+            # For all cases, remove rows where any of the grouping variables are NA or empty
+            for (var in grouping_vars) {
+                if (var %in% names(plot_data_clean)) {
+                    plot_data_clean <- plot_data_clean[!is.na(get(var)) & get(var) != ""]
+                }
+            }
+
+            req(nrow(plot_data_clean) > 0)
+
+            # Create a combined grouping variable if more than one is selected
+            if (length(grouping_vars) > 1) {
+                plot_data_clean[, Combined_Group := do.call(paste, c(.SD, sep = " x ")), .SDcols = grouping_vars]
+                grouping_col_name <- "Combined_Group"
+                xaxis_title <- paste(grouping_vars, collapse = " x ")
+            } else {
+                grouping_col_name <- grouping_vars
+                xaxis_title <- grouping_vars
+            }
+
 
             # Create safe trait name for title
             safe_trait_name <- iconv(trait_to_profile(), to = "ASCII//TRANSLIT", sub = "")
@@ -145,9 +164,9 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             # --- Direct Plotly Implementation for Boxplots ---
             p <- plotly::plot_ly(
                 data = plot_data_clean,
-                x = ~ get(grouping_var),
+                x = ~ get(grouping_col_name),
                 y = ~Value,
-                color = ~ get(grouping_var),
+                color = ~ get(grouping_col_name),
                 colors = "Set2",
                 type = "box",
                 # Add jittered points directly, this is a robust method
@@ -162,7 +181,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         text = paste("<b>Phenotype Distribution:", safe_trait_name, "</b>"),
                         x = 0.5
                     ),
-                    xaxis = list(title = paste("<b>", grouping_var, "</b>")),
+                    xaxis = list(title = paste("<b>", xaxis_title, "</b>")),
                     yaxis = list(title = "<b>Phenotype Value</b>"),
                     showlegend = FALSE
                 )
