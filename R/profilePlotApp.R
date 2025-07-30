@@ -16,29 +16,8 @@
 #' @export
 profilePlotUI <- function(id) {
     ns <- shiny::NS(id)
-    tagList(
-        bslib::layout_sidebar(
-            sidebar = bslib::sidebar(
-                width = "250px",
-                shiny::checkboxGroupInput(
-                    ns("grouping_selector"),
-                    "Group By (select one or more):",
-                    choices = c(
-                        "Sex" = "Sex",
-                        "Diet" = "Diet",
-                        "Genetic Litter" = "GenLit"
-                    ),
-                    selected = "Sex"
-                ),
-                # The trait selector is removed from here
-                shiny::div(
-                    class = "alert alert-info",
-                    "This plot displays the phenotype distribution for the main trait selected in the 'Trait Search & LOD Scan' tab."
-                )
-            ),
-            uiOutput(ns("plot_ui_wrapper"))
-        )
-    )
+    # The UI is now fully rendered in the server to allow controls to be placed above the plot
+    uiOutput(ns("plot_ui_wrapper"))
 }
 
 #' @rdname profilePlotUI
@@ -108,9 +87,25 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 ))
             }
 
-            # If everything is okay, show the plot output
-            plotly::plotlyOutput(ns("profile_boxplot")) |>
-                shinycssloaders::withSpinner(type = 8, color = "#3498db")
+            # If everything is okay, show the plot output with controls above it
+            tagList(
+                div(
+                    style = "margin-bottom: 15px; max-width: 500px;",
+                    shiny::selectInput(
+                        ns("grouping_selector"),
+                        "Group By:",
+                        choices = c(
+                            "Sex" = "Sex",
+                            "Diet" = "Diet",
+                            "Genetic Litter" = "GenLit"
+                        ),
+                        selected = "Sex",
+                        multiple = TRUE
+                    )
+                ),
+                plotly::plotlyOutput(ns("profile_boxplot")) |>
+                    shinycssloaders::withSpinner(type = 8, color = "#3498db")
+            )
         })
 
         output$profile_boxplot <- plotly::renderPlotly({

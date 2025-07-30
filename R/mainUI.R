@@ -94,14 +94,7 @@ mainUI <- function() {
                     div(
                         style = "padding: 10px;",
 
-                        # Dataset selection
-                        h5("Dataset Selection", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
-
-                        # Conditional dataset selector - hidden for Genes category, shown for others
-                        shiny::uiOutput(shiny::NS("app_controller", "dataset_selection_ui")),
-
                         # Trait search section
-                        hr(style = "border-top: 2px solid #3498db; margin: 20px 0;"),
                         h5("🔍 Trait Search", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
                         selectizeInput(shiny::NS("app_controller", "trait_search_input"),
                             "Search for traits:",
@@ -118,12 +111,6 @@ mainUI <- function() {
                         ),
                         div(
                             style = "text-align: center; margin-top: 10px;",
-                            actionButton(shiny::NS("app_controller", "trait_search_button"),
-                                "🚀 Search & Plot LOD Scan",
-                                icon = icon("search"),
-                                class = "btn-primary",
-                                style = "background: #3498db; border: none; font-weight: bold; width: 100%;"
-                            )
                         )
                     )
                 ),

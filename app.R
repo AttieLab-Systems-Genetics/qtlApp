@@ -180,180 +180,42 @@ server <- function(input, output, session) {
         }
     })
 
-    # Conditional dataset selection UI - show info for HC_HF categories, selector for others
-    output[[ns_app_controller("dataset_selection_ui")]] <- shiny::renderUI({
-        selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
-
-        if (is.null(selected_cat) || !nzchar(selected_cat)) {
-            return(div(
-                style = "padding: 15px; text-align: center; color: #7f8c8d; background: #f8f9fa; border-radius: 5px; border: 1px solid #e9ecef;",
-                p("Select a dataset category above", style = "margin: 0; font-style: italic;")
-            ))
-        }
-
-        # Show information panel for categories that have HC_HF auto-selection
-        if (selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
-            # Determine the dataset name and interaction info based on category
-            dataset_info <- switch(selected_cat,
-                "Liver Genes" = list(
-                    name = "HC_HF Liver Genes (Additive)",
-                    interaction_note = "Use interaction controls for Sex/Diet effects."
-                ),
-                "Liver Lipids" = list(
-                    name = "HC_HF Liver Lipids (Additive)",
-                    interaction_note = "Use interaction controls for Diet effects."
-                ),
-                "Clinical Traits" = list(
-                    name = "HC_HF Clinical Traits (Additive)",
-                    interaction_note = "Use interaction controls for Sex/Diet effects."
-                ),
-                "Plasma Metabolites" = list(
-                    name = "HC_HF Plasma Metabolites (Additive)",
-                    interaction_note = "Use interaction controls for Diet effects."
-                ),
-                "Liver Isoforms" = list(
-                    name = "HC_HF Liver Isoforms",
-                    interaction_note = "No interactive analysis available for this dataset."
-                )
-            )
-
-            return(div(
-                style = "padding: 15px; background: #e8f5e8; border-radius: 5px; border-left: 4px solid #28a745;",
-                div(
-                    style = "display: flex; align-items: center; gap: 10px;",
-                    span("✓", style = "color: #28a745; font-weight: bold; font-size: 16px;"),
-                    div(
-                        h6(dataset_info$name, style = "color: #155724; margin: 0; font-weight: bold;"),
-                        p(paste("Auto-selected for streamlined analysis.", dataset_info$interaction_note),
-                            style = "color: #155724; margin: 5px 0 0 0; font-size: 12px;"
-                        )
-                    )
-                )
-            ))
-        } else {
-            # For other categories, show normal selector
-            return(shiny::selectInput(
-                ns_app_controller("specific_dataset_selector"),
-                "Select Specific Dataset:",
-                choices = c("Loading..." = ""),
-                width = "100%"
-            ))
-        }
-    })
-
-    shiny::observe({
-        shiny::req(file_index_dt(), input[[ns_app_controller("dataset_category_selector")]])
-        selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
-
-        if (!is.null(selected_cat) && nzchar(selected_cat) && selected_cat != "No categories found") {
-            datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
-            specific_datasets_choices <- unique(datasets_in_category$group)
-
-            # Auto-select HC_HF datasets for all categories that have them
-            hc_hf_dataset <- NULL
-
-            if (selected_cat == "Liver Genes") {
-                # Look for HC_HF Liver Genes dataset (additive version)
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Genes", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Liver Lipids") {
-                # Look for HC_HF Liver Lipids dataset (additive version)
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Lipid", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Clinical Traits") {
-                # Look for HC_HF Clinical Traits dataset (additive version)
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Clinical", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Plasma Metabolites") {
-                # Look for HC_HF Plasma Metabolites dataset
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Liver Isoforms") {
-                # Look for HC_HF Liver Isoforms dataset
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            }
-
-            if (!is.null(hc_hf_dataset) && length(hc_hf_dataset) > 0) {
-                message(paste("Auto-selecting HC_HF dataset for", selected_cat, ":", hc_hf_dataset[1]))
-                # Set choices to just the HC_HF dataset (hide the dropdown essentially)
-                shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
-                    choices = stats::setNames(hc_hf_dataset[1], hc_hf_dataset[1]),
-                    selected = hc_hf_dataset[1]
-                )
-            } else {
-                # Fallback to normal behavior if HC_HF dataset not found
-                message(paste("Warning: No HC_HF dataset found for", selected_cat, ", showing all options"))
-                if (length(specific_datasets_choices) > 0) {
-                    shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
-                        choices = stats::setNames(specific_datasets_choices, specific_datasets_choices),
-                        selected = specific_datasets_choices[1]
-                    )
-                } else {
-                    shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
-                        choices = c("No datasets in category" = ""), selected = ""
-                    )
-                }
-            }
-        } else {
-            shiny::updateSelectInput(session, ns_app_controller("specific_dataset_selector"),
-                choices = c("Select category first" = ""), selected = ""
-            )
-        }
-    })
-
     main_selected_dataset_group <- shiny::reactive({
         selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
+        shiny::req(selected_cat, file_index_dt())
 
-        # Auto-select HC_HF datasets for categories that have them
-        if (!is.null(selected_cat) && selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
-            shiny::req(file_index_dt())
-            datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
-            specific_datasets_choices <- unique(datasets_in_category$group)
+        datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
+        specific_datasets_choices <- unique(datasets_in_category$group)
 
-            # Find the appropriate HC_HF dataset based on category
-            hc_hf_dataset <- NULL
+        # Find the appropriate HC_HF dataset (additive) or the first available dataset
+        hc_hf_dataset <- NULL
 
-            if (selected_cat == "Liver Genes") {
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Genes", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Liver Lipids") {
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Lipid", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Clinical Traits") {
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Clinical", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Plasma Metabolites") {
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Plasma.*Metabol", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            } else if (selected_cat == "Liver Isoforms") {
-                hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
-                    !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-            }
-
-            if (!is.null(hc_hf_dataset) && length(hc_hf_dataset) > 0) {
-                message(paste("Auto-selected dataset for", selected_cat, "category:", hc_hf_dataset[1]))
-                return(hc_hf_dataset[1])
-            } else {
-                message(paste("Warning: No HC_HF dataset found in", selected_cat, "category"))
-                return(NULL)
-            }
+        # This logic now covers all categories that have an auto-selectable HC_HF dataset
+        if (selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
+            pattern <- switch(selected_cat,
+                "Liver Genes" = "^HC_HF.*Liver.*Genes",
+                "Liver Lipids" = "^HC_HF.*Liver.*Lipid",
+                "Clinical Traits" = "^HC_HF.*Clinical",
+                "Plasma Metabolites" = "^HC_HF.*Plasma.*Metabol",
+                "Liver Isoforms" = "^HC_HF.*Liver.*Isoform"
+            )
+            hc_hf_dataset <- specific_datasets_choices[grepl(pattern, specific_datasets_choices, ignore.case = TRUE) &
+                !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
         }
 
-        # Normal handling for other categories
-        shiny::req(input[[ns_app_controller("specific_dataset_selector")]])
-        selected_group <- input[[ns_app_controller("specific_dataset_selector")]]
-
-        # Remove the forced dependency on interaction_type_rv to prevent circular reactive chain
-        # Instead, we'll handle interaction type mapping in a separate reactive
-
-        if (is.null(selected_group) || !nzchar(selected_group) ||
-            selected_group %in% c("Select category first", "No datasets in category")) {
-            return(NULL)
+        if (!is.null(hc_hf_dataset) && length(hc_hf_dataset) > 0) {
+            message(paste("Auto-selected dataset for", selected_cat, "category:", hc_hf_dataset[1]))
+            return(hc_hf_dataset[1])
         }
 
-        message(paste("Main selected dataset group:", selected_group))
-        return(selected_group)
+        # Fallback for other categories or if HC_HF is not found
+        if (length(specific_datasets_choices) > 0) {
+            message(paste("Defaulting to first available dataset for", selected_cat, ":", specific_datasets_choices[1]))
+            return(specific_datasets_choices[1])
+        }
+
+        message(paste("Warning: No datasets found for category:", selected_cat))
+        return(NULL)
     })
 
     # New reactive that handles the dataset name mapping for interactive analysis
@@ -1188,15 +1050,6 @@ server <- function(input, output, session) {
         do.call(tagList, info_elements)
     })
 
-    # Observer to reset peak selection when trait changes
-    # shiny::observeEvent(trait_for_lod_scan_rv(),
-    #   {
-    #     selected_peak_from_dropdown(NULL) # Reset selection when trait changes
-    #     message("scanApp: Reset peak selection due to trait change")
-    #   },
-    #   ignoreNULL = FALSE
-    # )
-
     # Render the allele effects plot
     output[[ns_app_controller("allele_effects_plot_output")]] <- shiny::renderPlot({
         effects_data <- allele_effects_data()
@@ -1243,37 +1096,6 @@ server <- function(input, output, session) {
     })
 
     # --- FIXED Trait Search Logic ---
-    observeEvent(input[[ns_app_controller("trait_search_button")]], {
-        # FIX: Use main_selected_dataset_group() directly (it's a string), not main_selected_dataset_group()$group
-        shiny::req(main_selected_dataset_group()) # Ensure a dataset is selected
-
-        searched_trait <- input[[ns_app_controller("trait_search_input")]] # Get selected value from selectizeInput
-
-        if (is.null(searched_trait) || !nzchar(searched_trait)) {
-            shiny::showNotification("Please select a trait/gene to search.", type = "warning", duration = 3)
-            return()
-        }
-
-        # Check if the searched trait is different from the current one to avoid re-triggering for no reason
-        # Or if current is NULL, then definitely update.
-        if (is.null(trait_for_lod_scan_rv()) || !identical(trait_for_lod_scan_rv(), searched_trait)) {
-            message(paste(
-                "scanApp: Trait search triggered. Trait for LOD scan set to:", searched_trait,
-                "for dataset:", main_selected_dataset_group()
-            ))
-            trait_for_lod_scan_rv(searched_trait)
-
-            # Show success notification
-            shiny::showNotification(
-                paste("Searching for trait:", searched_trait),
-                type = "message",
-                duration = 2
-            )
-        } else {
-            message(paste("scanApp: Trait search for already selected trait:", searched_trait, "- no change."))
-        }
-    })
-
     # Store a flag to prevent auto-search immediately after dataset changes
     dataset_just_changed <- shiny::reactiveVal(FALSE)
 
@@ -1445,16 +1267,6 @@ server <- function(input, output, session) {
                 yaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
             )
     })
-
-    # Observer to reset interaction types to default when dataset category changes
-    # shiny::observeEvent(input[[ns_app_controller("dataset_category_selector")]],
-    #   {
-    #     message("scanApp: Dataset category changed. Resetting interaction analysis to default (additive).")
-    #     current_interaction_type_rv("none")
-    #     sidebar_interaction_type_rv("none")
-    #   },
-    #   ignoreInit = TRUE
-    # )
 
     # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
     output[[ns_app_controller("peak_selection_sidebar")]] <- shiny::renderUI({
