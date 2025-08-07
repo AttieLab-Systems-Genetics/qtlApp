@@ -97,7 +97,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         choices = c(
                             "Sex" = "Sex",
                             "Diet" = "Diet",
-                            "Genetic Litter" = "GenLit"
+                            "Generation and Litter" = "Generation_Litter"
                         ),
                         selected = "Sex",
                         multiple = TRUE
@@ -117,6 +117,24 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             # --- ROBUSTNESS FIX: Clean and validate grouping variable ---
             plot_data_clean <- data.table::copy(plot_data)
 
+            # Derive Generation and Litter from GenLit (e.g., "G41_L2" -> Generation="G41", Litter="L2")
+            if ("GenLit" %in% names(plot_data_clean)) {
+                parts <- data.table::tstrsplit(as.character(plot_data_clean$GenLit), "_", fixed = TRUE)
+                if (length(parts) >= 2) {
+                    plot_data_clean[, Generation := parts[[1]]]
+                    plot_data_clean[, Litter := parts[[2]]]
+                } else {
+                    # Fallback if splitting fails
+                    plot_data_clean[, Generation := plot_data_clean$GenLit]
+                    plot_data_clean[, Litter := NA_character_]
+                }
+            }
+
+            # Map combined option to its component variables
+            if ("Generation_Litter" %in% grouping_vars) {
+                grouping_vars <- unique(c(setdiff(grouping_vars, "Generation_Litter"), "Generation", "Litter"))
+            }
+
             # 1. Sanitize all character columns to prevent encoding issues
             char_cols <- names(which(sapply(plot_data_clean, is.character)))
             if (length(char_cols) > 0) {
@@ -132,6 +150,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             if ("Diet" %in% grouping_vars) {
                 plot_data_clean <- plot_data_clean[Diet %in% c("HC", "HF")]
             }
+            # For Generation/Litter we keep all observed values; no explicit filtering
 
             # For all cases, remove rows where any of the grouping variables are NA or empty
             for (var in grouping_vars) {
@@ -153,7 +172,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             }
 
             # Ensure the grouping column is properly cleaned and formatted as a factor.
-            # This robustly handles columns like 'GenLit' by first converting to character,
+            # This robustly handles columns like 'Generation'/'Litter' by first converting to character,
             # then sanitizing with iconv, and finally converting to a factor for plotting.
             cleaned_col <- iconv(as.character(plot_data_clean[[grouping_col_name]]), to = "ASCII//TRANSLIT", sub = "")
             plot_data_clean[, (grouping_col_name) := as.factor(cleaned_col)]
