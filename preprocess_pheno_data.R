@@ -1,20 +1,20 @@
-#' Pre-process Phenotype Data for Profile Plot by Category
+#' Pre-process Phenotype Data (Separated by Category -> Long FST)
 #'
-#' This script reads the "wide" phenotype data, splits it by dataset category using
-#' the main annotation list, reshapes each subset into a "long" format, and saves
-#' them as separate FST and RDS files for high-performance loading in the Shiny app.
+#' This script now assumes each dataset category already has its own wide CSV
+#' (e.g., liver_genes_pheno_for_plot.csv). It reshapes each to a long format and
+#' saves FST + trait name RDS files consumable by `R/profilePlotApp.R`.
 #'
-#' @details
-#' It performs the following steps:
-#' 1. Reads 'annotation_list.rds' which maps traits to trait types.
-#' 2. Reads the main 'pheno_with_covar_for_plot.csv'.
-#' 3. For each category defined in the annotation list (genes, clinical, etc.):
-#'    a. Extracts the list of trait names from the annotation list.
-#'    b. Subsets the wide phenotype data to include only those traits.
-#'    c. Reshapes the subset from wide to long.
-#'    d. Saves the data to 'data/pheno_data_long_<category>.fst' and 'data/trait_names_<category>.rds'.
+#' Output file naming follows the profile plot module convention:
+#'   - pheno_data_long_<sanitized_category>.fst
+#'   - trait_names_<sanitized_category>.rds
+#' where <sanitized_category> = tolower(category) with non [a-z0-9] replaced by '_'.
+#'
+#' Optional: Pass one or more sanitized category names as CLI args to process a
+#' subset, e.g.: Rscript preprocess_pheno_data.R plasma_metabolites clinical_traits
+#'
+# --- Configuration ---
 
-# Load necessary libraries
+# Load necessary libraries (install if missing)
 if (!require("data.table")) install.packages("data.table")
 if (!require("fst")) install.packages("fst")
 if (!require("stringr")) install.packages("stringr")
@@ -23,174 +23,225 @@ library(data.table)
 library(fst)
 library(stringr)
 
-# --- Configuration ---
-pheno_csv_path <- "/data/dev/miniViewer_3.0/pheno_with_covar_for_plot.csv"
-annotation_path <- "/data/dev/miniViewer_3.0/annotation_list.rds"
-output_dir <- "/data/dev/miniViewer_3.0"
+# Base directory for input and outputs
+base_dir <- "/data/dev/miniViewer_3.0"
+output_dir <- base_dir
 
-# Create the output directory if it doesn't exist
+# Ensure output directory exists
 if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
 }
 
-# --- Step 1: Load Annotation and Phenotype Data ---
-message("Loading annotation list from: ", annotation_path)
-if (!file.exists(annotation_path)) {
-    stop("Fatal: annotation_list.rds not found at the specified path. This file is essential.")
-}
-annotation_list <- readRDS(annotation_path)
-
-# --- NEW: Consolidate all plasma metabolite types into one category ---
-message("Consolidating plasma metabolite annotation data...")
-plasma_keys <- c("plasma_metabolites", "plasma_2H_metabolite", "plasma_metabolite")
-existing_plasma_keys <- intersect(plasma_keys, names(annotation_list))
-
-if (length(existing_plasma_keys) > 0) {
-    # Use rbindlist to efficiently combine the data tables
-    combined_plasma_df <- rbindlist(annotation_list[existing_plasma_keys], use.names = TRUE, fill = TRUE)
-
-    # Remove the old, separate keys
-    for (key in existing_plasma_keys) {
-        annotation_list[[key]] <- NULL
+# Path to annotation list, used only for Genes/Isoforms mapping if available
+annotation_path <- file.path(base_dir, "annotation_list.rds")
+annotation_list <- NULL
+load_annotation_if_needed <- function() {
+    if (is.null(annotation_list) && file.exists(annotation_path)) {
+        message("Loading annotation list for ID->symbol mapping: ", annotation_path)
+        assign("annotation_list", readRDS(annotation_path), envir = .GlobalEnv)
     }
-
-    # Add the new, combined data under a single key and remove any duplicates
-    annotation_list[["plasma_metabolites"]] <- unique(combined_plasma_df)
-    message("Plasma metabolite categories combined successfully.")
 }
 
+# Helper to sanitize category labels to file-safe tokens
+sanitize_category <- function(x) {
+    x |>
+        tolower() |>
+        stringr::str_replace_all("[^a-z0-9]+", "_") |>
+        stringr::str_replace_all("^_+|_+$", "")
+}
 
-message("Reading wide phenotype data from: ", pheno_csv_path)
-pheno_dt <- fread(pheno_csv_path)
-message("Phenotype data loaded: ", nrow(pheno_dt), " rows, ", ncol(pheno_dt), " columns.")
-
-# Define the mapping from internal annotation list names to user-facing category names
-category_map <- c(
-    "genes" = "Liver Genes",
-    "isoforms" = "Liver Isoforms",
-    "clinical" = "Clinical Traits",
-    "lipids" = "Liver Lipids",
-    "plasma_metabolites" = "Plasma Metabolites"
-    # No longer need mappings for the other plasma types as they are now combined
+# Define category -> CSV path mapping (category labels must match UI labels)
+# If you add more CSVs, extend this list.
+categories <- list(
+    "Liver Genes" = file.path(base_dir, "liver_genes_pheno_for_plot.csv"),
+    "Liver Isoforms" = file.path(base_dir, "liver_isoforms_pheno_for_plot.csv"),
+    "Clinical Traits" = file.path(base_dir, "clinical_traits_pheno_for_plot.csv"),
+    "Liver Lipids" = file.path(base_dir, "liver_lipids_pheno_for_plot.csv"),
+    "Plasma Metabolites" = file.path(base_dir, "plasma_metabolites_pheno_for_plot.csv"),
+    # Optional: include splice junctions if used by the UI
+    "Liver Splice Juncs" = file.path(base_dir, "liver_splice_juncs_pheno_for_plot.csv")
 )
 
-# --- Step 2: Process Data for Each Category in the Annotation List ---
-all_annotation_types <- names(annotation_list)
-message("Found ", length(all_annotation_types), " annotation types to process: ", paste(all_annotation_types, collapse = ", "))
+# Compute sanitized keys for filtering via CLI args
+category_table <- data.table(
+    category_label = names(categories),
+    csv_path = unname(unlist(categories))
+)[
+    , sanitized := sanitize_category(category_label)
+]
 
-for (trait_type in all_annotation_types) {
-    user_facing_category <- category_map[trait_type]
+# --- Optional CLI filtering ---
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) > 0) {
+    message("Processing only requested categories: ", paste(args, collapse = ", "))
+    requested <- unique(sanitize_category(args))
+    category_table <- category_table[sanitized %in% requested]
+    if (nrow(category_table) == 0) {
+        stop("No matching categories found for: ", paste(args, collapse = ", "))
+    }
+}
 
-    if (is.null(user_facing_category) || is.na(user_facing_category)) {
-        warning("No user-facing category name defined for trait type '", trait_type, "'. Skipping.")
+# --- Main processing loop ---
+message("Starting processing for ", nrow(category_table), " category(ies)")
+
+id_vars <- c("Mouse", "GenLit", "Sex", "Diet")
+
+for (i in seq_len(nrow(category_table))) {
+    category_label <- category_table$category_label[i]
+    csv_path <- category_table$csv_path[i]
+    sanitized <- category_table$sanitized[i]
+
+    message("\n--- Category: ", category_label, " ---")
+    if (!file.exists(csv_path)) {
+        warning("CSV not found for category '", category_label, "': ", csv_path, ". Skipping.")
         next
     }
 
-    message("\n--- Processing category: ", user_facing_category, " (type: ", trait_type, ") ---")
+    # Clean to a temporary file using iconv to avoid encoding issues
+    message("Cleaning CSV (iconv) -> temp file...")
+    clean_temp_file <- tempfile(fileext = ".csv")
+    on.exit(unlink(clean_temp_file), add = TRUE)
 
-    trait_df <- as.data.table(annotation_list[[trait_type]])
-    id_vars <- c("Mouse", "GenLit", "Sex", "Diet")
+    iconv_cmd <- paste0(
+        "iconv -f UTF-8 -t UTF-8//IGNORE ", shQuote(csv_path), " > ", shQuote(clean_temp_file)
+    )
+    status <- system(iconv_cmd)
+    if (status != 0) {
+        warning("iconv failed for category '", category_label, "' (status ", status, "). Skipping.")
+        next
+    }
 
-    if (trait_type %in% c("genes", "isoforms")) {
-        # Logic for Genes/Isoforms: Match by ID with "liver_" prefix, then map back to symbol
-        id_col <- if (trait_type == "genes") "gene.id" else "transcript.id"
+    # Read the cleaned wide CSV
+    message("Reading cleaned CSV: ", clean_temp_file)
+    dt_wide <- tryCatch(
+        {
+            data.table::fread(clean_temp_file, fill = TRUE, encoding = "UTF-8", check.names = FALSE)
+        },
+        error = function(e) {
+            warning("Failed to read CSV for '", category_label, "': ", e$message)
+            NULL
+        }
+    )
+    if (is.null(dt_wide)) next
+
+    # Validate required ID columns
+    missing_ids <- setdiff(id_vars, names(dt_wide))
+    if (length(missing_ids) > 0) {
+        warning("Missing required ID columns for '", category_label, "': ", paste(missing_ids, collapse = ", "))
+        next
+    }
+
+    # Identify trait columns
+    trait_cols <- setdiff(names(dt_wide), id_vars)
+    if (length(trait_cols) == 0) {
+        warning("No trait columns found for '", category_label, "'. Skipping.")
+        next
+    }
+    message("Found ", length(trait_cols), " trait columns.")
+
+    # Special handling for Genes/Isoforms: map prefixed IDs to symbols for Trait_Name
+    is_genes <- identical(category_label, "Liver Genes")
+    is_isoforms <- identical(category_label, "Liver Isoforms")
+
+    if (is_genes || is_isoforms) {
+        load_annotation_if_needed()
+        if (is.null(annotation_list)) {
+            warning("Annotation list not available; proceeding without mapping. Trait names will remain as column names.")
+        }
+    }
+
+    if (is_genes && !is.null(annotation_list) && "genes" %in% names(annotation_list)) {
+        id_col <- "gene.id"
         symbol_col <- "symbol"
         prefix <- "liver_"
 
-        # Check if required columns exist in the annotation data
-        if (!all(c(id_col, symbol_col) %in% names(trait_df))) {
-            warning("Annotation data for '", trait_type, "' is missing required columns ('", id_col, "', '", symbol_col, "'). Skipping.")
-            next
+        annot_dt <- as.data.table(annotation_list[["genes"]])
+        if (!all(c(id_col, symbol_col) %in% names(annot_dt))) {
+            warning("Annotation for genes missing required columns; falling back to raw column names.")
+            annot_dt <- NULL
         }
 
-        # Create prefixed IDs to search for in the phenotype data
-        trait_ids_from_annot <- na.omit(trait_df[[id_col]])
-        prefixed_trait_ids <- paste0(prefix, trait_ids_from_annot)
-
-        # Find which of these exist in the phenotype data
-        available_prefixed_ids <- intersect(prefixed_trait_ids, colnames(pheno_dt))
-
-        if (length(available_prefixed_ids) == 0) {
-            warning("None of the ", length(prefixed_trait_ids), " prefixed trait IDs for category '", user_facing_category, "' were found as columns in the phenotype data file. Skipping.")
-            next
-        }
-        message(length(available_prefixed_ids), " out of ", length(prefixed_trait_ids), " prefixed trait IDs are available in the phenotype data.")
-
-        # Map available prefixed IDs back to their original IDs and then to symbols
-        available_unprefixed_ids <- gsub(prefix, "", available_prefixed_ids)
-        id_to_symbol_map <- trait_df[get(id_col) %in% available_unprefixed_ids, .SD, .SDcols = c(id_col, symbol_col)]
-        id_to_symbol_map <- unique(id_to_symbol_map, by = symbol_col)
-
-        # Subset the wide data using the available prefixed IDs
-        subset_cols <- c(id_vars, available_prefixed_ids)
-        category_dt_wide <- pheno_dt[, ..subset_cols]
-
-        # Reshape data
-        message("Reshaping data from wide to long format...")
-        category_dt_long <- melt(category_dt_wide,
+        message("Reshaping to long format with ID->symbol mapping...")
+        dt_long <- data.table::melt(
+            dt_wide,
             id.vars = id_vars,
-            measure.vars = available_prefixed_ids,
+            measure.vars = trait_cols,
             variable.name = "ID_prefixed",
             value.name = "Value",
             na.rm = TRUE
         )
 
-        # Map the prefixed IDs in the long data back to symbols for user-friendliness
-        category_dt_long[, (id_col) := gsub(prefix, "", ID_prefixed)]
-        setnames(id_to_symbol_map, c(id_col, symbol_col), c(id_col, "Trait_Name"))
-        category_dt_long[id_to_symbol_map, on = id_col, Trait_Name := i.Trait_Name]
-        category_dt_long[, c("ID_prefixed", id_col) := NULL] # Clean up intermediate columns
+        dt_long[, (id_col) := gsub(paste0("^", prefix), "", ID_prefixed)]
+        if (!is.null(annot_dt)) {
+            id_to_symbol <- unique(annot_dt[, .SD, .SDcols = c(id_col, symbol_col)], by = symbol_col)
+            setnames(id_to_symbol, c(id_col, symbol_col), c(id_col, "Trait_Name"))
+            dt_long[id_to_symbol, on = id_col, Trait_Name := i.Trait_Name]
+        }
+        # Fallback: if no symbol found, use the unprefixed id
+        dt_long[is.na(Trait_Name) | Trait_Name == "", Trait_Name := get(id_col)]
+        dt_long[, c("ID_prefixed", id_col) := NULL]
 
-        # The final list of traits are the symbols that had corresponding IDs
-        available_traits <- sort(unique(na.omit(category_dt_long$Trait_Name)))
-    } else {
-        # Logic for other data types (clinical, lipids, etc.)
-        trait_id_col <- "data_name"
-        if (!trait_id_col %in% names(trait_df)) {
-            warning("Trait ID column '", trait_id_col, "' not found for '", trait_type, "'. Skipping.")
-            next
+        trait_names_out <- sort(unique(dt_long$Trait_Name))
+    } else if (is_isoforms && !is.null(annotation_list) && "isoforms" %in% names(annotation_list)) {
+        id_col <- "transcript.id"
+        symbol_col <- "symbol"
+        prefix <- "liver_"
+
+        annot_dt <- as.data.table(annotation_list[["isoforms"]])
+        if (!all(c(id_col, symbol_col) %in% names(annot_dt))) {
+            warning("Annotation for isoforms missing required columns; falling back to raw column names.")
+            annot_dt <- NULL
         }
 
-        category_traits <- na.omit(trait_df[[trait_id_col]])
-        available_traits <- intersect(category_traits, colnames(pheno_dt))
-
-        if (length(available_traits) == 0) {
-            warning("None of the ", length(category_traits), " traits for category '", user_facing_category, "' were found. Skipping.")
-            next
-        }
-        message(length(available_traits), " traits are available.")
-
-        subset_cols <- c(id_vars, available_traits)
-        category_dt_wide <- pheno_dt[, ..subset_cols]
-
-        message("Reshaping data from wide to long format...")
-        category_dt_long <- melt(category_dt_wide,
+        message("Reshaping to long format with ID->symbol mapping (isoforms)...")
+        dt_long <- data.table::melt(
+            dt_wide,
             id.vars = id_vars,
-            measure.vars = available_traits,
+            measure.vars = trait_cols,
+            variable.name = "ID_prefixed",
+            value.name = "Value",
+            na.rm = TRUE
+        )
+
+        dt_long[, (id_col) := gsub(paste0("^", prefix), "", ID_prefixed)]
+        if (!is.null(annot_dt)) {
+            id_to_symbol <- unique(annot_dt[, .SD, .SDcols = c(id_col, symbol_col)], by = symbol_col)
+            setnames(id_to_symbol, c(id_col, symbol_col), c(id_col, "Trait_Name"))
+            dt_long[id_to_symbol, on = id_col, Trait_Name := i.Trait_Name]
+        }
+        # Fallback: use unprefixed id
+        dt_long[is.na(Trait_Name) | Trait_Name == "", Trait_Name := get(id_col)]
+        dt_long[, c("ID_prefixed", id_col) := NULL]
+
+        trait_names_out <- sort(unique(dt_long$Trait_Name))
+    } else {
+        # Default path: no mapping, use column names as Trait_Name
+        message("Reshaping to long format (no mapping)...")
+        dt_long <- data.table::melt(
+            dt_wide,
+            id.vars = id_vars,
+            measure.vars = trait_cols,
             variable.name = "Trait_Name",
             value.name = "Value",
             na.rm = TRUE
         )
+        trait_names_out <- sort(unique(trait_cols))
     }
 
-    message("Reshaped data has ", nrow(category_dt_long), " rows.")
+    message("Long data: ", nrow(dt_long), " rows, ", ncol(dt_long), " cols.")
 
-    # Generate sanitized file names
-    category_sanitized <- tolower(user_facing_category)
-    category_sanitized <- str_replace_all(category_sanitized, "[^a-z0-9]+", "_")
+    # Output paths
+    output_fst_path <- file.path(output_dir, paste0("pheno_data_long_", sanitized, ".fst"))
+    output_rds_path <- file.path(output_dir, paste0("trait_names_", sanitized, ".rds"))
 
-    # Define output paths
-    output_fst_path <- file.path(output_dir, paste0("pheno_data_long_", category_sanitized, ".fst"))
-    output_rds_path <- file.path(output_dir, paste0("trait_names_", category_sanitized, ".rds"))
+    # Save outputs
+    message("Saving long-format FST -> ", output_fst_path)
+    fst::write_fst(dt_long, output_fst_path)
 
-    # Save the long-format data and the trait names
-    message("Saving long-format data to: ", output_fst_path)
-    # Set a key on Trait_Name for ultra-fast reading of specific traits
-    setkey(category_dt_long, Trait_Name)
-    write_fst(category_dt_long, output_fst_path)
+    message("Saving trait names RDS -> ", output_rds_path)
+    saveRDS(trait_names_out, file = output_rds_path)
 
-    message("Saving unique trait names to: ", output_rds_path)
-    saveRDS(available_traits, file = output_rds_path)
+    message("Done: ", category_label)
 }
 
-message("\nPreprocessing complete!")
+message("\nAll requested categories processed.")

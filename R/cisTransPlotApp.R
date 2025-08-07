@@ -195,6 +195,15 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       chr_summary <- plot_data_list$chr_summary
       interaction_type <- plot_data_list$interaction_type
 
+      # Create a robust gene label for display/clicks: prefer symbol, else gene_id, else trait
+      if ("gene_id" %in% names(plot_data_dt)) {
+        plot_data_dt[, gene_label := ifelse(!is.na(gene_symbol) & gene_symbol != "" & gene_symbol != "N/A", gene_symbol, gene_id)]
+      } else if ("trait" %in% names(plot_data_dt)) {
+        plot_data_dt[, gene_label := ifelse(!is.na(gene_symbol) & gene_symbol != "" & gene_symbol != "N/A", gene_symbol, trait)]
+      } else {
+        plot_data_dt[, gene_label := gene_symbol]
+      }
+
       # Vectorized conditional creation of the difference text part for the hover text
       diff_text <- if ("lod_diff" %in% names(plot_data_dt)) {
         ifelse(!is.na(plot_data_dt$lod_diff), paste0(" (Diff: ", round(plot_data_dt$lod_diff, 2), ")"), "")
@@ -203,7 +212,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       }
 
       plot_data_dt[, hover_text := paste0(
-        "Gene: ", gene_symbol, "<br>",
+        "Gene: ", gene_label, "<br>",
         "LOD: ", round(qtl_lod, 2),
         diff_text,
         "<br>Gene Pos: ", gene_chr_char, ":", round(gene_start, 2), " Mb",
@@ -220,7 +229,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         x = qtl_BPcum, y = gene_BPcum,
         color = as.character(cis),
         text = hover_text,
-        customdata = gene_symbol
+        customdata = gene_label
       )) +
         ggplot2::geom_point(alpha = 0.6) +
         ggplot2::scale_color_manual(

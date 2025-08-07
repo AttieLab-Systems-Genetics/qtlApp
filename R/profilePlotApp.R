@@ -152,6 +152,15 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 xaxis_title <- grouping_vars
             }
 
+            # Ensure the grouping column is properly cleaned and formatted as a factor.
+            # This robustly handles columns like 'GenLit' by first converting to character,
+            # then sanitizing with iconv, and finally converting to a factor for plotting.
+            cleaned_col <- iconv(as.character(plot_data_clean[[grouping_col_name]]), to = "ASCII//TRANSLIT", sub = "")
+            plot_data_clean[, (grouping_col_name) := as.factor(cleaned_col)]
+
+            # HOTFIX: Filter out any remaining rows where the grouping column contains non-printable
+            # characters, which indicates data corruption. This prevents the plot from failing.
+            plot_data_clean <- plot_data_clean[!grepl("[^ -~]", get(grouping_col_name))]
 
             # Create safe trait name for title
             safe_trait_name <- iconv(trait_to_profile(), to = "ASCII//TRANSLIT", sub = "")
@@ -176,7 +185,10 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         text = paste("<b>Phenotype Distribution:", safe_trait_name, "</b>"),
                         x = 0.5
                     ),
-                    xaxis = list(title = paste("<b>", xaxis_title, "</b>")),
+                    xaxis = list(
+                        title = paste("<b>", xaxis_title, "</b>"),
+                        type = "category" # Force the x-axis to be treated as categorical
+                    ),
                     yaxis = list(title = "<b>Phenotype Value</b>"),
                     showlegend = FALSE
                 )
