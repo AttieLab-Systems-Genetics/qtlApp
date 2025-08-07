@@ -101,7 +101,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         ),
                         selected = "Sex",
                         multiple = TRUE
-                    )
+                    ) # here
                 ),
                 plotly::plotlyOutput(ns("profile_boxplot")) |>
                     shinycssloaders::withSpinner(type = 8, color = "#3498db")
