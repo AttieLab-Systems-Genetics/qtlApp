@@ -11,7 +11,8 @@
 #' @importFrom rlang .data
 #' @export
 ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
-                            overlay_diet_data = NULL, overlay_sex_data = NULL) {
+                            overlay_diet_data = NULL, overlay_sex_data = NULL,
+                            overlay_sex_diet_data = NULL) {
   if (!exists("create_modern_theme", mode = "function")) {
     source("R/plot_enhancements.R")
   }
@@ -44,14 +45,21 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
     message("ggplot_qtl_scan: Merged SEX overlay data.")
   }
 
-  plot_data$type <- factor(plot_data$type, levels = c("Additive", "Diet Interactive", "Sex Interactive"))
+  if (!is.null(overlay_sex_diet_data) && nrow(overlay_sex_diet_data) > 0) {
+    overlay_sex_diet_data$type <- "Sex x Diet Interactive"
+    plot_data <- rbind(plot_data, overlay_sex_diet_data)
+    message("ggplot_qtl_scan: Merged SEXxDIET overlay data.")
+  }
+
+  plot_data$type <- factor(plot_data$type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive"))
 
   # --- Color and Theme Setup ---
   # Define colors for each type of scan
   color_map <- c(
     "Additive" = "#3498db", # Blue
     "Diet Interactive" = "#2c3e50", # Dark Blue
-    "Sex Interactive" = "#e74c3c" # Light Red
+    "Sex Interactive" = "#e74c3c", # Light Red
+    "Sex x Diet Interactive" = "#8e44ad" # Purple
   )
 
   axisdf <- scan_table %>%
@@ -67,8 +75,8 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
 
     # Manual scales for aesthetics
     ggplot2::scale_color_manual(values = color_map, name = "Scan Type") +
-    ggplot2::scale_linewidth_manual(values = c("Additive" = 0.7, "Diet Interactive" = 1.2, "Sex Interactive" = 1.2), guide = "none") +
-    ggplot2::scale_alpha_manual(values = c("Additive" = 0.8, "Diet Interactive" = 0.85, "Sex Interactive" = 0.85), guide = "none") +
+    ggplot2::scale_linewidth_manual(values = c("Additive" = 0.7, "Diet Interactive" = 1.2, "Sex Interactive" = 1.2, "Sex x Diet Interactive" = 1.2), guide = "none") +
+    ggplot2::scale_alpha_manual(values = c("Additive" = 0.8, "Diet Interactive" = 0.85, "Sex Interactive" = 0.85, "Sex x Diet Interactive" = 0.85), guide = "none") +
 
     # Axis and theme setup
     ggplot2::scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = ggplot2::expansion(mult = c(0.01, 0.01))) +

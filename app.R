@@ -783,6 +783,11 @@ server <- function(input, output, session) {
                                     width = "100%"
                                 )
                             ),
+                            # Show overlay toggles only for additive scans
+                            shiny::conditionalPanel(
+                                condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] == 'none'"),
+                                shiny::uiOutput(ns_app_controller("overlay_toggles_ui"))
+                            ),
                             div(
                                 style = "flex: 0 0 auto;",
                                 shiny::actionButton(
@@ -814,7 +819,7 @@ server <- function(input, output, session) {
                     style = "margin-top: 15px;",
                     DT::DTOutput(ns_app_controller("lod_scan_click_table"))
                 ),
-                alleleEffectsUI(ns_app_controller("allele_effects_section"))
+                shiny::uiOutput(ns_app_controller("allele_effects_section"))
             )
         } else {
             div(
