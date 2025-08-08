@@ -96,48 +96,89 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
 
         current_colnames <- colnames(all_peaks_for_dataset_raw)
 
-        column_map <- c(
-          qtl_chr = "qtl_chr", qtl_pos = "qtl_pos", qtl_lod = "qtl_lod", marker = "marker", cis = "cis",
-          qtl_ci_lo = "qtl_ci_lo", qtl_ci_hi = "qtl_ci_hi", A = "A", B = "B", C = "C", D = "D",
-          E = "E", F = "F", G = "G", H = "H"
-        )
-        essential_old_names <- c("qtl_chr", "qtl_pos", "qtl_lod", "marker")
-        if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
-          column_map["gene_symbol"] <- "gene_symbol"
-          column_map["gene_id"] <- "gene_id"
-          column_map["trait"] <- "phenotype"
-          column_map["gene_chr"] <- "gene_chr"
-          column_map["gene_start"] <- "gene_start"
-          # 'cis' is essential for genes/isoforms for the cisTransPlot
-          essential_old_names <- c(essential_old_names, "phenotype", "gene_symbol", "gene_id", "gene_chr", "gene_start", "cis")
-        } else if (!is.null(trait_type) && trait_type == "clinical") { # Explicitly handle clinical
-          column_map["trait"] <- "phenotype"
-          # 'cis' is NOT essential for clinical traits if it doesn't exist or apply
-          essential_old_names <- c(essential_old_names, "phenotype")
-        } else {
-          column_map["trait"] <- "phenotype"
-          essential_old_names <- c(essential_old_names, "phenotype")
+        # Helper to find first present column among candidates
+        find_first_col <- function(candidates, cols) {
+          for (nm in candidates) {
+            if (nm %in% cols) {
+              return(nm)
+            }
+          }
+          return(NA_character_)
         }
+
+        # Flexible candidate mappings
+        candidates <- list(
+          qtl_chr = c("qtl_chr", "qtlChr", "qtl_chr_char", "qtlchr", "chr", "chromosome"),
+          qtl_pos = c("qtl_pos", "pos", "position", "qtl_pos_mb", "qtlPos", "mb", "peak_pos"),
+          qtl_lod = c("qtl_lod", "lod", "lod_score", "peak_lod", "qtl_lod_max"),
+          marker = c("marker", "markers", "snp", "id", "marker_name"),
+          phenotype = c("phenotype", "trait", "gene_symbol", "gene", "pheno", "lodcolumn"),
+          qtl_ci_lo = c("qtl_ci_lo", "ci_lo"),
+          qtl_ci_hi = c("qtl_ci_hi", "ci_hi"),
+          cis = c("cis", "cis_trans", "is_cis")
+        )
+
+        # Gene/isoform-specific fields
+        gene_candidates <- list(
+          gene_symbol = c("gene_symbol", "symbol", "gene"),
+          gene_id = c("gene_id", "ensembl_id", "geneid"),
+          gene_chr = c("gene_chr", "geneChromosome", "gene_chr_char", "genechr"),
+          gene_start = c("gene_start", "gene_start_mb", "geneStartMb", "tss_mb", "start_mb")
+        )
+
+        # Build rename map dynamically
         rename_vec <- c()
-        for (new_name_app in names(column_map)) {
-          old_name_csv <- column_map[new_name_app]
-          if (old_name_csv %in% current_colnames) {
-            rename_vec[new_name_app] <- old_name_csv
-          } else {
-            if (old_name_csv %in% essential_old_names) {
-              warning("peak_finder: Essential original column '", old_name_csv, "' for mapping to '", new_name_app, "' not found in CSV.")
+        essentials <- c("qtl_chr", "qtl_pos", "qtl_lod", "marker")
+
+        # Phenotype always needed
+        essentials <- c(essentials, "phenotype")
+
+        # Add gene-specific essentials for cis/trans plots
+        if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
+          essentials <- c(essentials, "gene_symbol", "gene_id", "gene_chr", "gene_start", "cis")
+        }
+
+        # Resolve base candidates
+        for (key in names(candidates)) {
+          src <- find_first_col(candidates[[key]], current_colnames)
+          if (!is.na(src)) {
+            rename_vec[key] <- src
+          }
+        }
+        # Resolve gene candidates if applicable
+        if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
+          for (key in names(gene_candidates)) {
+            src <- find_first_col(gene_candidates[[key]], current_colnames)
+            if (!is.na(src)) {
+              rename_vec[key] <- src
             }
           }
         }
-        successfully_mapped_essential_old_names <- intersect(essential_old_names, unname(rename_vec))
-        missing_essential_mappings <- setdiff(essential_old_names, successfully_mapped_essential_old_names)
-        if (length(missing_essential_mappings) > 0) {
-          warning("peak_finder: Missing or unmappable ESSENTIAL original columns in CSV for type '", trait_type, "': ", paste(missing_essential_mappings, collapse = ", "), ". Cannot proceed.")
+
+        # Determine missing essentials
+        missing <- setdiff(essentials, names(rename_vec))
+        if (length(missing) > 0) {
+          for (ms in missing) {
+            exp <- if (ms %in% names(candidates)) paste(candidates[[ms]], collapse = ", ") else if (ms %in% names(gene_candidates)) paste(gene_candidates[[ms]], collapse = ", ") else "(no candidates)"
+            warning("peak_finder: Essential original column for '", ms, "' not found. Tried candidates: ", exp)
+          }
+          warning("peak_finder: Missing or unmappable ESSENTIAL original columns in CSV for type '", trait_type, "': ", paste(missing, collapse = ", "), ". Cannot proceed.")
           stop("Essential columns missing, stopping processing in tryCatch.")
         }
-        all_peaks_for_dataset <- dplyr::select(as.data.frame(all_peaks_for_dataset_raw), dplyr::all_of(unname(rename_vec))) %>%
+
+        # Columns to keep: mapped rename_vec plus optional A-H and any present optional fields
+        optional_keep <- intersect(c("A", "B", "C", "D", "E", "F", "G", "H"), current_colnames)
+        select_cols <- unique(c(unname(rename_vec), optional_keep))
+
+        all_peaks_for_dataset <- dplyr::select(as.data.frame(all_peaks_for_dataset_raw), dplyr::all_of(select_cols)) %>%
           dplyr::rename(!!!rename_vec)
 
+        # Create 'trait' alias for downstream code if only 'phenotype' exists
+        if (("phenotype" %in% colnames(all_peaks_for_dataset)) && !("trait" %in% colnames(all_peaks_for_dataset))) {
+          all_peaks_for_dataset$trait <- all_peaks_for_dataset$phenotype
+        }
+
+        # Coerce numeric types
         if ("qtl_chr" %in% colnames(all_peaks_for_dataset)) {
           all_peaks_for_dataset$qtl_chr <- as.character(all_peaks_for_dataset$qtl_chr)
         }
@@ -153,6 +194,7 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
             all_peaks_for_dataset[[ac]] <- suppressWarnings(as.numeric(all_peaks_for_dataset[[ac]]))
           }
         }
+
         if (use_cache && !is.null(cache_env)) {
           cache_env[[cache_key]] <- all_peaks_for_dataset
         }
@@ -176,7 +218,7 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
     if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
       filter_col <- "gene_symbol"
     } else {
-      filter_col <- "trait"
+      filter_col <- "phenotype"
     }
     if (!(filter_col %in% colnames(all_peaks_for_dataset))) {
       warning("peak_finder: Column '", filter_col, "' needed for filtering type '", trait_type, "' not found after renaming. Returning all peaks.")
