@@ -269,7 +269,7 @@ scanApp <- function() {
     })
 
     # Initialize scan plot module
-    scan_plot_outputs <- scanPlotServer(
+    scan_plot_outputs <- scanServer(
       id = "scan_plot_module",
       trait_to_scan = trait_search$trait_for_lod_scan,
       selected_dataset_group = interactive_analysis$mapped_dataset,

@@ -35,25 +35,31 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                     return("HC_HF Liver Genes, interactive (Diet)")
                 }
             }
-            # HC_HF Liver Lipids (only supports Diet interaction)
+            # HC_HF Liver Lipids (supports Diet and Sex x Diet interactions)
             else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
                 if (interaction_type == "diet") {
                     return("HC_HF Liver Lipids, interactive (Diet)")
+                } else if (interaction_type == "sex_diet") {
+                    return("HC_HF Liver Lipids, interactive (Sex_Diet)")
                 }
-                # No Sex interaction available for Liver Lipids - return original
+                # No Sex-only interaction available for Liver Lipids - return original
             }
-            # HC_HF Clinical Traits (supports both Sex and Diet interactions)
+            # HC_HF Clinical Traits (supports Sex, Diet, and Sex x Diet interactions)
             else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
                 if (interaction_type == "sex") {
                     return("HC_HF Systemic Clinical Traits, interactive (Sex)")
                 } else if (interaction_type == "diet") {
                     return("HC_HF Systemic Clinical Traits, interactive (Diet)")
+                } else if (interaction_type == "sex_diet") {
+                    return("HC_HF Systemic Clinical Traits, interactive (Sex_Diet)")
                 }
-            } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", base_dataset, ignore.case = TRUE)) {
+            } else if (grepl("HC_HF.*Plasma.*plasma_metabolite|HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
                 if (interaction_type == "sex") {
                     return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
                 } else if (interaction_type == "diet") {
                     return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
+                } else if (interaction_type == "sex_diet") {
+                    return("HC_HF Plasma plasma_metabolite, interactive (Sex_Diet)")
                 }
             }
 
@@ -142,18 +148,21 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                     )
                 } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions,
-                        "Diet interaction" = "diet"
+                        "Diet interaction" = "diet",
+                        "Sex x Diet interaction" = "sex_diet"
                     )
-                    # No Sex interaction for Liver Lipids
+                    # No Sex-only interaction for Liver Lipids
                 } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions,
                         "Sex interaction" = "sex",
-                        "Diet interaction" = "diet"
+                        "Diet interaction" = "diet",
+                        "Sex x Diet interaction" = "sex_diet"
                     )
-                } else if (grepl("HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
+                } else if (grepl("HC_HF.*Plasma.*plasma_metabolite|HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions,
                         "Sex interaction" = "sex",
-                        "Diet interaction" = "diet"
+                        "Diet interaction" = "diet",
+                        "Sex x Diet interaction" = "sex_diet"
                     )
                 }
 

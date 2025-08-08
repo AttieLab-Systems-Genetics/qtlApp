@@ -76,25 +76,32 @@ server <- function(input, output, session) {
                 return("HC_HF Liver Genes, interactive (Diet)")
             }
         }
-        # HC_HF Liver Lipids (only supports Diet interaction)
+        # HC_HF Liver Lipids (supports Diet and Sex x Diet interactions)
         else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
             if (interaction_type == "diet") {
                 return("HC_HF Liver Lipids, interactive (Diet)")
+            } else if (interaction_type == "sex_diet") {
+                return("HC_HF Liver Lipids, interactive (Sex_Diet)")
             }
-            # No Sex interaction available for Liver Lipids - return original
+            # No Sex-only interaction available for Liver Lipids - return original
         }
-        # HC_HF Clinical Traits (supports both Sex and Diet interactions)
+        # HC_HF Clinical Traits (supports Sex, Diet, and Sex x Diet interactions)
         else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
             if (interaction_type == "sex") {
                 return("HC_HF Systemic Clinical Traits, interactive (Sex)")
             } else if (interaction_type == "diet") {
                 return("HC_HF Systemic Clinical Traits, interactive (Diet)")
+            } else if (interaction_type == "sex_diet") {
+                return("HC_HF Systemic Clinical Traits, interactive (Sex_Diet)")
             }
         } else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "diet") {
+            if (interaction_type == "sex") {
+                return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
+            } else if (interaction_type == "diet") {
                 return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
+            } else if (interaction_type == "sex_diet") {
+                return("HC_HF Plasma plasma_metabolite, interactive (Sex_Diet)")
             }
-            # No Sex interaction available for Plasma Metabolites - return original
         }
 
         # Fallback to original dataset if no mapping found
@@ -572,19 +579,22 @@ server <- function(input, output, session) {
                 )
             } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
-                    "Diet interaction" = "diet"
+                    "Diet interaction" = "diet",
+                    "Sex x Diet interaction" = "sex_diet"
                 )
-                # No Sex interaction for Liver Lipids
+                # No Sex-only interaction for Liver Lipids
             } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
                     "Sex interaction" = "sex",
-                    "Diet interaction" = "diet"
+                    "Diet interaction" = "diet",
+                    "Sex x Diet interaction" = "sex_diet"
                 )
             } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
-                    "Diet interaction" = "diet"
+                    "Sex interaction" = "sex",
+                    "Diet interaction" = "diet",
+                    "Sex x Diet interaction" = "sex_diet"
                 )
-                # No Sex interaction for Plasma Metabolites
             }
 
             tagList(
@@ -608,7 +618,7 @@ server <- function(input, output, session) {
                 )
             )
         } else {
-            NULL # Don't show for other datasets
+            NULL
         }
     })
 
@@ -737,72 +747,53 @@ server <- function(input, output, session) {
                 if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
                 } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Diet interaction" = "diet")
+                    available_interactions <- c(available_interactions, "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
+                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Diet interaction" = "diet")
+                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 }
 
-                interaction_analysis_ui <- div(
-                    style = "flex: 1 1 180px; min-width: 180px;",
-                    shiny::selectInput(
-                        ns_app_controller("interaction_type_selector"),
-                        label = "Interaction Analysis:",
-                        choices = available_interactions,
-                        selected = if (current_selection %in% available_interactions) current_selection else "none",
-                        width = "100%"
-                    )
-                )
-            }
-
-            tagList(
-                # Combined controls row
-                div(
-                    style = "margin-bottom: 15px; background: #f8f9fa; padding: 10px 15px; border-radius: 4px; border: 1px solid #bdc3c7;",
+                interaction_analysis_ui <- tagList(
                     div(
-                        style = "display: flex; align-items: flex-end; gap: 15px; flex-wrap: wrap;",
-
-                        # Interaction analysis dropdown (now on the left)
-                        interaction_analysis_ui,
-
-                        # Chromosome selector
+                        style = "margin-bottom: 15px; background: #f8f9fa; padding: 10px 15px; border-radius: 4px; border: 1px solid #bdc3c7;",
                         div(
-                            style = "flex: 1 1 120px; min-width: 120px;",
-                            shiny::selectInput(
-                                ns_app_controller("selected_chr"),
-                                label = "Chromosome:",
-                                choices = c(
-                                    "All" = "All",
-                                    setNames(as.character(1:19), paste("Chr", 1:19)),
-                                    "X" = "X", "Y" = "Y", "M" = "M"
-                                ),
-                                selected = "All",
-                                width = "100%"
-                            )
-                        ),
-
-                        # NEW: Transposition toggles for additive scans
-                        shiny::conditionalPanel(
-                            condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] == 'none'"),
-                            shiny::uiOutput(ns_app_controller("overlay_toggles_ui"))
-                        ),
-
-                        # Zoom/Reset buttons
-                        div(
-                            style = "flex: 0 0 auto; display: flex; gap: 5px;",
-                            shiny::actionButton(
-                                ns_app_controller("reset_chr_view"),
-                                "🌐 Reset Zoom",
-                                class = "btn btn-sm btn-secondary",
-                                style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
+                            style = "display: flex; align-items: flex-end; gap: 15px; flex-wrap: wrap;",
+                            div(
+                                style = "flex: 1 1 180px; min-width: 180px;",
+                                shiny::selectInput(
+                                    ns_app_controller("interaction_type_selector"),
+                                    label = "Select interaction analysis:",
+                                    choices = available_interactions,
+                                    selected = if (current_selection %in% available_interactions) current_selection else "none",
+                                    width = "100%"
+                                )
+                            ),
+                            div(
+                                style = "flex: 1 1 120px; min-width: 120px;",
+                                shiny::selectInput(
+                                    ns_app_controller("selected_chr"),
+                                    label = "Chromosome:",
+                                    choices = c(
+                                        "All" = "All",
+                                        setNames(as.character(1:19), paste("Chr", 1:19)),
+                                        "X" = "X", "Y" = "Y", "M" = "M"
+                                    ),
+                                    selected = "All",
+                                    width = "100%"
+                                )
+                            ),
+                            div(
+                                style = "flex: 0 0 auto;",
+                                shiny::actionButton(
+                                    ns_app_controller("reset_chr_view"),
+                                    "🌐 Reset Zoom",
+                                    class = "btn btn-sm btn-secondary",
+                                    style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
+                                )
                             )
                         )
-                    )
-                ),
-
-                # Conditional panel for interaction info
-                if (!is.null(interaction_analysis_ui)) {
+                    ),
                     shiny::conditionalPanel(
                         condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] != 'none'"),
                         div(
@@ -812,20 +803,20 @@ server <- function(input, output, session) {
                             )
                         )
                     )
-                },
+                )
+            }
 
-                # LOD scan plot
+            # Build the full plot UI including the interaction controls
+            tagList(
+                interaction_analysis_ui,
                 scanOutput(ns_app_controller("scan_plot_module")),
-                # Clicked point details table
                 div(
                     style = "margin-top: 15px;",
                     DT::DTOutput(ns_app_controller("lod_scan_click_table"))
                 ),
-                # Conditional allele effects plot
-                shiny::uiOutput(ns_app_controller("allele_effects_section"))
+                alleleEffectsUI(ns_app_controller("allele_effects_section"))
             )
         } else {
-            # Show a placeholder message when no trait is selected
             div(
                 style = "text-align: center; padding-top: 50px; color: #7f8c8d;",
                 h5("No trait selected for LOD scan"),
@@ -1271,22 +1262,9 @@ server <- function(input, output, session) {
     # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
     output[[ns_app_controller("peak_selection_sidebar")]] <- shiny::renderUI({
         dataset_group <- main_selected_dataset_group()
-
-        # Check if there's a current trait selected before attempting to get peaks
-        current_trait <- trait_for_lod_scan_rv()
-        available_peaks <- NULL
-
-        # Only get peaks if trait is selected and use isolate to prevent reactive invalidation during tab switches
-        if (!is.null(current_trait)) {
-            available_peaks <- shiny::isolate(available_peaks_for_trait())
-        }
-
-        # Show interaction analysis controls for all HC_HF datasets (independent of main UI)
+        # Only build the interaction menu; peak selection removed here
         if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
-            # Determine what interaction types are available for this dataset
             available_interactions <- c("None (Additive only)" = "none")
-
-            # Check what interactions are actually available based on dataset type
             if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
                     "Sex interaction" = "sex",
@@ -1294,22 +1272,22 @@ server <- function(input, output, session) {
                 )
             } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
-                    "Diet interaction" = "diet"
+                    "Diet interaction" = "diet",
+                    "Sex x Diet interaction" = "sex_diet"
                 )
-                # No Sex interaction for Liver Lipids
             } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
                     "Sex interaction" = "sex",
-                    "Diet interaction" = "diet"
+                    "Diet interaction" = "diet",
+                    "Sex x Diet interaction" = "sex_diet"
                 )
             } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
-                    "Diet interaction" = "diet"
+                    "Sex interaction" = "sex",
+                    "Diet interaction" = "diet",
+                    "Sex x Diet interaction" = "sex_diet"
                 )
-                # No Sex interaction for Plasma Metabolites
             }
-
-            # Remove peak selection dropdown - it's handled in the main LOD scan area
 
             tagList(
                 h6("Sidebar Plot Analysis:", style = "color: #2c3e50; margin-bottom: 8px; font-weight: bold; font-size: 12px;"),
@@ -1319,20 +1297,10 @@ server <- function(input, output, session) {
                     choices = available_interactions,
                     selected = if (sidebar_interaction_type_rv() %in% available_interactions) sidebar_interaction_type_rv() else "none",
                     width = "100%"
-                ),
-                div(
-                    style = "margin-top: 10px; padding: 8px; background-color: #e8f4fd; border-radius: 3px; border-left: 3px solid #3498db;",
-                    p("🔬 Independent control for sidebar Manhattan/Cis-Trans plots",
-                        style = "font-size: 10px; color: #2c3e50; margin: 0; font-style: italic;"
-                    )
                 )
             )
         } else {
-            div(
-                style = "padding: 10px; text-align: center; color: #7f8c8d;",
-                p("No peak analysis available", style = "margin: 0; font-size: 12px;"),
-                p("Select an HC_HF dataset to enable analysis", style = "margin: 5px 0 0 0; font-size: 10px; font-style: italic;")
-            )
+            NULL
         }
     })
 

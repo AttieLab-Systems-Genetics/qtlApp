@@ -56,25 +56,34 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     return("HC_HF Liver Genes, interactive (Diet)")
                 }
             }
-            # HC_HF Liver Lipids (only supports Diet interaction)
+            # HC_HF Liver Lipids (supports Diet and Sex x Diet interactions)
             else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
                 if (interaction_type == "diet") {
                     return("HC_HF Liver Lipids, interactive (Diet)")
+                } else if (interaction_type == "sex_diet") {
+                    return("HC_HF Liver Lipids, interactive (Sex_Diet)")
                 }
-                # No Sex interaction available for Liver Lipids - return original
+                # No Sex-only interaction available for Liver Lipids - return original
             }
-            # HC_HF Clinical Traits (supports both Sex and Diet interactions)
+            # HC_HF Clinical Traits (supports Sex, Diet, and Sex x Diet interactions)
             else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
                 if (interaction_type == "sex") {
                     return("HC_HF Systemic Clinical Traits, interactive (Sex)")
                 } else if (interaction_type == "diet") {
                     return("HC_HF Systemic Clinical Traits, interactive (Diet)")
+                } else if (interaction_type == "sex_diet") {
+                    return("HC_HF Systemic Clinical Traits, interactive (Sex_Diet)")
                 }
-            } else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
-                if (interaction_type == "diet") {
+            }
+            # HC_HF Plasma Metabolites (supports Sex and Sex x Diet interactions; allow Diet if present)
+            else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
+                if (interaction_type == "sex") {
+                    return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
+                } else if (interaction_type == "diet") {
                     return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
+                } else if (interaction_type == "sex_diet") {
+                    return("HC_HF Plasma plasma_metabolite, interactive (Sex_Diet)")
                 }
-                # No Sex interaction available for Plasma Metabolites - return original
             }
 
             # Fallback to original dataset if no mapping found
@@ -95,7 +104,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             base_path <- "/data/dev/miniViewer_3.0/" # Assuming path from repository rules
 
             # Derive base name (e.g., "HC_HF Liver Genes") from full dataset name
-            base_name <- gsub(",\\s*(interactive|additive).*", "", dataset_group, ignore.case = TRUE)
+            base_name <- gsub(",[[:space:]]*(interactive|additive).*$", "", dataset_group, ignore.case = TRUE)
             base_name <- trimws(base_name)
 
             dataset_component <- NULL
@@ -126,6 +135,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 file1 <- paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HC_mice_additive.csv")
                 file2 <- paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HF_mice_additive.csv")
                 labels <- c("HC Diet", "HF Diet")
+            } else if (interaction_type == "sex_diet") {
+                # No dedicated peak files defined for Sex x Diet; handle in click code
+                return(NULL)
             } else {
                 return(NULL)
             }
@@ -245,6 +257,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     return(10.5)
                 }
                 if (interaction_type == "diet") {
+                    return(10.5)
+                }
+                if (interaction_type == "sex_diet") {
                     return(10.5)
                 }
                 return(7.5) # Additive
@@ -396,7 +411,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     message("scanServer: In interactive mode with empty cache, triggering background additive load.")
 
                     # Derive the corresponding additive dataset name
-                    base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group_val)
+                    base_name <- gsub(",\\s*interactive\\s*\\([^)]*\\)", "", dataset_group_val)
                     additive_dataset_name <- paste0(trimws(base_name), ", additive")
 
                     # Load and process the additive data
@@ -602,8 +617,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             static_threshold <- static_lod_threshold_line() # Get the static threshold
 
             # Get overlay data if toggles are active
-            diet_overlay <- if (overlay_diet_toggle()) overlay_diet_scan_data() else NULL
-            sex_overlay <- if (overlay_sex_toggle()) overlay_sex_scan_data() else NULL
+            diet_overlay <- if (isTRUE(overlay_diet_toggle())) overlay_diet_scan_data() else NULL
+            sex_overlay <- if (isTRUE(overlay_sex_toggle())) overlay_sex_scan_data() else NULL
 
 
             # Streamlined plot creation
@@ -691,7 +706,10 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             }
 
             interaction_type <- interaction_type_reactive()
-            static_diff_threshold <- if (interaction_type == "sex") 4.1 else if (interaction_type == "diet") 4.1 else NULL
+            static_diff_threshold <- if (interaction_type == "sex") 4.1 else if (interaction_type == "diet") 4.1 else if (interaction_type == "sex_diet") 4.1 else NULL
+
+            # Display label for title
+            interaction_label <- if (identical(interaction_type, "sex_diet")) "Sex x Diet" else stringr::str_to_title(interaction_type)
 
             tryCatch(
                 {
@@ -702,7 +720,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chromosome)
 
                     if (!is.null(diff_plot)) {
-                        diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", stringr::str_to_title(interaction_type), "- Additive"))
+                        diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", interaction_label, "- Additive"))
                         if (!is.null(static_diff_threshold)) {
                             # Add horizontal lines for positive and negative thresholds
                             diff_plot <- diff_plot +
@@ -741,7 +759,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
             use_stacked <- show_stacked_plots()
 
-            if (use_stacked) {
+            if (isTRUE(use_stacked)) {
                 # Calculate height for each plot (split the total height)
                 individual_plot_height <- plot_height_rv() / 2
 
@@ -826,6 +844,13 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             diff_data <- diff_plot_data_reactive()
             req(diff_data, nrow(diff_data) > 0)
 
+            # Short-circuit for Sex x Diet: no dedicated peak files defined
+            interaction_type <- interaction_type_reactive()
+            if (!is.null(interaction_type) && interaction_type == "sex_diet") {
+                shiny::showNotification("Peak file lookup is not available for Sex x Diet interactive differences.", type = "warning", duration = 4)
+                return()
+            }
+
             # Find nearest point
             main_par_list <- main_par_inputs()
             selected_chr <- main_par_list$selected_chr()
@@ -838,11 +863,13 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             message(paste("scanServer (Diff Click): Nearest point is marker", nearest_point$markers, "on chr", nearest_point$chr, "at pos", nearest_point$position))
 
             # Get file paths for interactive peaks
-            interaction_type <- interaction_type_reactive()
             dataset_group <- selected_dataset_group()
 
             paths <- get_interactive_peak_filepaths(dataset_group, interaction_type)
-            req(paths)
+            if (is.null(paths)) {
+                shiny::showNotification(paste("Peak files not found for this interaction type."), type = "error")
+                return()
+            }
 
             if (!file.exists(paths$file1) || !file.exists(paths$file2)) {
                 shiny::showNotification(paste("Peak files not found for this interaction type."), type = "error")
