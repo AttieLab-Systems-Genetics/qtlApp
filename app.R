@@ -80,10 +80,11 @@ server <- function(input, output, session) {
         else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
             if (interaction_type == "diet") {
                 return("HC_HF Liver Lipids, interactive (Diet)")
+            } else if (interaction_type == "sex") {
+                return("HC_HF Liver Lipids, interactive (Sex)")
             } else if (interaction_type == "sex_diet") {
                 return("HC_HF Liver Lipids, interactive (Sex_Diet)")
             }
-            # No Sex-only interaction available for Liver Lipids - return original
         }
         # HC_HF Clinical Traits (supports Sex, Diet, and Sex x Diet interactions)
         else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
@@ -579,10 +580,10 @@ server <- function(input, output, session) {
                 )
             } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
+                    "Sex interaction" = "sex",
                     "Diet interaction" = "diet",
                     "Sex x Diet interaction" = "sex_diet"
                 )
-                # No Sex-only interaction for Liver Lipids
             } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
                     "Sex interaction" = "sex",
@@ -748,7 +749,7 @@ server <- function(input, output, session) {
                 if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
                 } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
@@ -850,7 +851,7 @@ server <- function(input, output, session) {
         }
 
         # Check for Sex interaction availability
-        if (any(grepl("Genes|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
+        if (any(grepl("Genes|Lipids|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
             toggles <- c(toggles, list(
                 shiny::checkboxInput(ns_app_controller("overlay_sex"), "Overlay Sex", FALSE, width = "auto")
             ))
@@ -1285,6 +1286,7 @@ server <- function(input, output, session) {
                 )
             } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,
+                    "Sex interaction" = "sex",
                     "Diet interaction" = "diet",
                     "Sex x Diet interaction" = "sex_diet"
                 )

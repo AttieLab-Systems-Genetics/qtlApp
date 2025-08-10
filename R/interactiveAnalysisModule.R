@@ -35,10 +35,12 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                     return("HC_HF Liver Genes, interactive (Diet)")
                 }
             }
-            # HC_HF Liver Lipids (supports Diet and Sex x Diet interactions)
+            # HC_HF Liver Lipids (supports Sex, Diet, and Sex x Diet interactions)
             else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
                 if (interaction_type == "diet") {
                     return("HC_HF Liver Lipids, interactive (Diet)")
+                } else if (interaction_type == "sex") {
+                    return("HC_HF Liver Lipids, interactive (Sex)")
                 } else if (interaction_type == "sex_diet") {
                     return("HC_HF Liver Lipids, interactive (Sex_Diet)")
                 }
@@ -148,6 +150,7 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                     )
                 } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions,
+                        "Sex interaction" = "sex",
                         "Diet interaction" = "diet",
                         "Sex x Diet interaction" = "sex_diet"
                     )
