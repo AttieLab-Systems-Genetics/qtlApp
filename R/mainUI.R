@@ -70,7 +70,7 @@ mainUI <- function() {
 
                         # Peak Selection Dropdown for future peak differences analysis
                         hr(style = "border-top: 1px solid #bdc3c7; margin: 15px 0;"),
-                        h5("🎯 Peak Analysis", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
+                        h5("Peak Analysis", style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"),
                         shiny::uiOutput(shiny::NS("app_controller", "peak_selection_sidebar")),
                         p("Control interaction analysis for the overview plots below",
                             style = "font-size: 11px; color: #7f8c8d; margin: 5px 0 15px 0;"

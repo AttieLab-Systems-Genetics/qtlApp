@@ -34,6 +34,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                            FALSE
                        }), overlay_sex_toggle = reactive({
                            FALSE
+                       }), overlay_sex_diet_toggle = reactive({
+                           FALSE
                        })) {
     shiny::moduleServer(id, function(input, output, session) {
         ns <- session$ns
@@ -588,6 +590,75 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             )
         }) %>% shiny::debounce(250)
 
+        # NEW: Reactive to load SEX x DIET interactive data for overlay
+        overlay_sex_diet_scan_data <- shiny::reactive({
+            # Only run if the Sex x Diet overlay toggle is on
+            if (!overlay_sex_diet_toggle()) {
+                return(NULL)
+            }
+
+            trait_val <- current_trait_for_scan()
+            dataset_group_val <- selected_dataset_group()
+
+            # Ensure this is an additive scan context (toggles only show for additive scans)
+            if (is.null(trait_val) || is.null(dataset_group_val) ||
+                grepl("interactive", dataset_group_val, ignore.case = TRUE)) {
+                return(NULL)
+            }
+
+            # Derive the corresponding interactive dataset name
+            interactive_dataset_name <- get_interactive_dataset_name(dataset_group_val, "sex_diet")
+            if (interactive_dataset_name == dataset_group_val) {
+                return(NULL)
+            }
+
+            message("scanServer: Loading SEXxDIET overlay data for '", trait_val, "' from dataset '", interactive_dataset_name, "'")
+
+            tryCatch(
+                {
+                    file_dir_val <- import_reactives()$file_directory
+                    req(file_dir_val)
+
+                    # Load the interactive scan data
+                    result_list <- trait_scan(
+                        file_dir = file_dir_val,
+                        selected_dataset = interactive_dataset_name,
+                        selected_trait = trait_val,
+                        cache_env = NULL
+                    )
+
+                    if (is.null(result_list) || is.null(result_list$scan_data) || nrow(result_list$scan_data) == 0) {
+                        return(NULL)
+                    }
+                    scan_data <- result_list$scan_data
+
+                    # Process it with interactive-specific LOD threshold (10.5)
+                    main_par_list <- main_par_inputs()
+                    req(main_par_list$LOD_thr, import_reactives()$markers)
+                    interactive_lod_threshold <- 10.5
+
+                    processed_data <- QTL_plot_visualizer(scan_data, trait_val, interactive_lod_threshold, import_reactives()$markers)
+
+                    # Apply chromosome filtering to match main plot
+                    selected_chr <- main_par_list$selected_chr()
+                    if (selected_chr != "All" && !is.null(processed_data) && nrow(processed_data) > 0) {
+                        sel_chr_num <- selected_chr
+                        if (selected_chr == "X") sel_chr_num <- 20
+                        if (selected_chr == "Y") sel_chr_num <- 21
+                        if (selected_chr == "M") sel_chr_num <- 22
+                        sel_chr_num <- as.numeric(sel_chr_num)
+                        processed_data <- dplyr::filter(processed_data, chr == sel_chr_num)
+                    }
+
+                    return(processed_data)
+                },
+                error = function(e) {
+                    message("scanServer: Error loading SEXxDIET overlay data: ", e$message)
+                    return(NULL)
+                }
+            )
+        }) %>% shiny::debounce(250)
+
         # Old observers for additive data are now replaced by the single observer above
 
         current_scan_plot_gg <- shiny::reactive({
@@ -619,6 +690,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             # Get overlay data if toggles are active
             diet_overlay <- if (isTRUE(overlay_diet_toggle())) overlay_diet_scan_data() else NULL
             sex_overlay <- if (isTRUE(overlay_sex_toggle())) overlay_sex_scan_data() else NULL
+            sex_diet_overlay <- if (isTRUE(overlay_sex_diet_toggle())) overlay_sex_diet_scan_data() else NULL
 
 
             # Streamlined plot creation
@@ -629,7 +701,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         -Inf, # Pass -Inf to remove the interactive threshold bar
                         selected_chr,
                         overlay_diet_data = diet_overlay,
-                        overlay_sex_data = sex_overlay
+                        overlay_sex_data = sex_overlay,
+                        overlay_sex_diet_data = sex_diet_overlay
                     )
                     if (!is.null(p) && !is.null(static_threshold)) {
                         p <- p + ggplot2::geom_hline(yintercept = static_threshold, linetype = "dashed", color = "grey20")

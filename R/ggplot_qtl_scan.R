@@ -59,7 +59,7 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
     "Additive" = "#3498db", # Blue
     "Diet Interactive" = "#2c3e50", # Dark Blue
     "Sex Interactive" = "#e74c3c", # Light Red
-    "Sex x Diet Interactive" = "#8e44ad" # Purple
+    "Sex x Diet Interactive" = "#f6ae2d" # Dark burnt yellow
   )
 
   axisdf <- scan_table %>%

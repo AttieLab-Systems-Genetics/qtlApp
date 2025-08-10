@@ -689,7 +689,8 @@ server <- function(input, output, session) {
         main_par_inputs = active_main_par, # Pass the combined main parameters (for LOD_thr, etc.)
         interaction_type_reactive = current_interaction_type_rv, # Pass the interaction type reactive
         overlay_diet_toggle = reactive(input[[ns_app_controller("overlay_diet")]]),
-        overlay_sex_toggle = reactive(input[[ns_app_controller("overlay_sex")]])
+        overlay_sex_toggle = reactive(input[[ns_app_controller("overlay_sex")]]),
+        overlay_sex_diet_toggle = reactive(input[[ns_app_controller("overlay_sex_diet")]])
     )
 
     # Render the LOD scan click details table
@@ -844,20 +845,27 @@ server <- function(input, output, session) {
         # Check for Diet interaction availability
         if (any(grepl("Genes|Lipids|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
             toggles <- c(toggles, list(
-                shiny::checkboxInput(ns_app_controller("overlay_diet"), "Overlay Diet Interactive", FALSE)
+                shiny::checkboxInput(ns_app_controller("overlay_diet"), "Overlay Diet", FALSE, width = "auto")
             ))
         }
 
         # Check for Sex interaction availability
-        if (any(grepl("Genes|Clinical", dataset_group, ignore.case = TRUE))) {
+        if (any(grepl("Genes|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
             toggles <- c(toggles, list(
-                shiny::checkboxInput(ns_app_controller("overlay_sex"), "Overlay Sex Interactive", FALSE)
+                shiny::checkboxInput(ns_app_controller("overlay_sex"), "Overlay Sex", FALSE, width = "auto")
+            ))
+        }
+
+        # Check for Sex x Diet interaction availability (Clinical, Lipids, Plasma Metabolites)
+        if (any(grepl("Clinical|Lipid|Metabolites", dataset_group, ignore.case = TRUE))) {
+            toggles <- c(toggles, list(
+                shiny::checkboxInput(ns_app_controller("overlay_sex_diet"), "Overlay Sex x Diet", FALSE, width = "auto")
             ))
         }
 
         if (length(toggles) > 0) {
             div(
-                style = "display: flex; gap: 10px; align-items: center; margin-left: 15px;",
+                style = "display: flex; gap: 8px; align-items: center; margin-left: 15px; font-size: 12px; line-height: 1.1; white-space: nowrap; flex-wrap: nowrap;",
                 toggles
             )
         } else {
