@@ -26,7 +26,8 @@ pkgs <- c(
     'plotly', 'ggiraph', 'writexl', 'fontawesome', 
     'fst', 'R.utils', 
     'qtl2', # Bioconductor package
-    'reshape2' # Added missing package
+    'reshape2', # Added missing package
+    'promises', 'future' # For async/parallel improvements
 )
 
 # Install packages using BiocManager
