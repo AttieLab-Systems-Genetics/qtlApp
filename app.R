@@ -1259,25 +1259,12 @@ server <- function(input, output, session) {
         trait_to_profile = trait_for_lod_scan_rv # Pass the selected trait
     )
 
-    # Correlation Plot output
-    output[[ns_app_controller("correlation_plot_output")]] <- plotly::renderPlotly({
-        plotly::plot_ly() %>%
-            plotly::add_annotations(
-                text = "Correlation Analysis Coming Soon",
-                x = 0.5,
-                y = 0.5,
-                xref = "paper",
-                yref = "paper",
-                showarrow = FALSE,
-                font = list(size = 20, color = "#2c3e50")
-            ) %>%
-            plotly::layout(
-                title = "Correlation Analysis",
-                showlegend = FALSE,
-                xaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE),
-                yaxis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
-            )
-    })
+    # Correlation module
+    correlationServer(
+        ns_app_controller("correlation_module"),
+        import_reactives = import_reactives,
+        main_par = active_main_par
+    )
 
     # Peak Analysis dropdown for sidebar - separate from main UI interaction controls
     output[[ns_app_controller("peak_selection_sidebar")]] <- shiny::renderUI({

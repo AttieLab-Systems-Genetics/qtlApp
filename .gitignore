@@ -54,3 +54,6 @@ rsconnect/
 # Ignore specific R script
 kalynn_R/latest_app_kalynn/chromosome_compile.R
 cross_DO1200_grcm39.rds
+
+
+man/

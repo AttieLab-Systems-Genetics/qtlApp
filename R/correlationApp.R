@@ -1,33 +1,418 @@
-#' Correlation Module UI
+#' Correlation Module Inputs
 #'
 #' @param id Module ID.
+#' @return UI elements for correlation controls
+#' @importFrom shiny NS selectInput tags div
 #' @export
 correlationInput <- function(id) {
-    # No input needed for placeholder
-    return(NULL)
+    ns <- shiny::NS(id)
+    shiny::div(
+        shiny::div(
+            style = "display: flex; align-items: center; gap: 12px;",
+            shiny::tags$label(
+                `for` = ns("correlation_dataset_selector"),
+                style = "margin: 0; font-weight: 600;",
+                "Correlate against dataset"
+            ),
+            shiny::selectInput(
+                inputId = ns("correlation_dataset_selector"),
+                label = NULL,
+                choices = character(0),
+                selected = NULL,
+                width = "420px"
+            )
+        )
+    )
 }
 
 #' Correlation Module UI Output
 #'
 #' @param id Module ID.
+#' @return UI container for the correlation table
+#' @importFrom bslib card card_header
+#' @importFrom shinycssloaders withSpinner
+#' @importFrom DT DTOutput
 #' @export
 correlationUI <- function(id) {
     ns <- shiny::NS(id)
     shiny::div(
-        style = "padding: 20px; text-align: center; color: #7f8c8d;",
-        shiny::p("Correlation analysis functionality coming soon.")
+        bslib::card(
+            bslib::card_header("Correlations"),
+            shinycssloaders::withSpinner(
+                DT::DTOutput(ns("correlation_table")),
+                type = 4, color = "#3498db"
+            )
+        )
     )
 }
 
 #' Correlation Module Server
 #'
+#' Displays a table of correlations for the currently selected trait against
+#' a chosen dataset. The table includes columns: trait, correlation_value, p_value.
+#'
+#' Correlation CSV files are expected in the directory:
+#'   /mnt/rdrive/mkeller3/General/main_directory/correlations
+#' and named like: "liver_genes_vs_clinical_traits_corr.csv".
+#'
 #' @param id Module ID.
-#' @param import_reactives Reactive that returns a list containing file_directory.
-#' @param main_par Reactive that returns a list containing selected_dataset.
+#' @param import_reactives Reactive that returns a list containing file_directory and annotation_list.
+#' @param main_par Reactive that returns a list containing selected_dataset and which_trait.
+#' @return Invisibly returns NULL. UI is rendered via outputs.
+#' @importFrom data.table fread as.data.table melt setDT setnames
+#' @importFrom DT DTOutput renderDT datatable
+#' @importFrom shiny moduleServer NS reactive req validate need observeEvent updateSelectInput updateSelectizeInput
 #' @export
 correlationServer <- function(id, import_reactives, main_par) {
     shiny::moduleServer(id, function(input, output, session) {
-        # Placeholder - no functionality yet
-        return(NULL)
+        ns <- session$ns
+
+        # Prefer Docker-mounted correlation dir(s)
+        candidate_dirs <- c(
+            "/data/dev/miniViewer_3.0/correlations",
+            "/data/dev/miniViewer_3.0",
+            "/data/dev/miniviewier_3.0/correlations", # typo variant mentioned
+            "/mnt/rdrive/mkeller3/General/main_directory/correlations"
+        )
+        correlations_dir <- NULL
+        for (d in candidate_dirs) {
+            if (dir.exists(d)) {
+                correlations_dir <- d
+                break
+            }
+        }
+        if (is.null(correlations_dir)) {
+            correlations_dir <- "/data/dev/miniViewer_3.0/correlations" # default fallback
+        }
+
+        # Map internal trait type to correlation file tokens and labels
+        trait_type_to_token <- function(trait_type_char) {
+            if (is.null(trait_type_char) || !nzchar(trait_type_char)) {
+                return(NULL)
+            }
+            if (grepl("^gene", trait_type_char, ignore.case = TRUE)) {
+                return("liver_genes")
+            }
+            if (grepl("isoform", trait_type_char, ignore.case = TRUE)) {
+                return("liver_isoforms")
+            }
+            if (grepl("lipid", trait_type_char, ignore.case = TRUE)) {
+                return("liver_lipids")
+            }
+            if (grepl("plasma.*metabol", trait_type_char, ignore.case = TRUE)) {
+                return("plasma_metabolites")
+            }
+            if (grepl("clinical", trait_type_char, ignore.case = TRUE)) {
+                return("clinical_traits")
+            }
+            return(NULL)
+        }
+
+        token_to_label <- function(token) {
+            switch(token,
+                liver_genes = "Liver Genes",
+                liver_isoforms = "Liver Isoforms",
+                liver_lipids = "Liver Lipids",
+                plasma_metabolites = "Plasma Metabolites",
+                clinical_traits = "Clinical Traits",
+                token
+            )
+        }
+
+        # Load annotation list (for mapping gene ids -> symbols) once
+        annotation_map_rv <- shiny::reactiveVal(NULL)
+        get_gene_symbol_map <- function() {
+            map <- annotation_map_rv()
+            if (!is.null(map)) {
+                return(map)
+            }
+            # Try Docker-mounted RDS first; if missing, fall back to import_reactives()$annotation_list
+            ann <- NULL
+            ann_candidates <- c(
+                "/data/dev/miniViewer_3.0/annotationlist.RDS",
+                "/data/dev/miniviewier_3.0/annotationlist.RDS"
+            )
+            for (p in ann_candidates) {
+                if (file.exists(p)) {
+                    try(
+                        {
+                            ann <- readRDS(p)
+                        },
+                        silent = TRUE
+                    )
+                    if (!is.null(ann)) break
+                }
+            }
+            if (is.null(ann)) {
+                imp <- import_reactives()
+                if (!is.null(imp) && !is.null(imp$annotation_list)) ann <- imp$annotation_list
+            }
+            if (is.null(ann) || is.null(ann$genes)) {
+                return(NULL)
+            }
+            genes_dt <- ann$genes
+            # Robustly detect id and symbol columns
+            id_candidates <- c("gene.id", "gene_id", "ensembl_id", "ensembl_gene_id", "ensemblid", "geneid")
+            sym_candidates <- c("symbol", "gene_symbol", "mgi_symbol", "Gene.symbol", "gene.name")
+            id_col <- id_candidates[id_candidates %in% colnames(genes_dt)][1]
+            sym_col <- sym_candidates[sym_candidates %in% colnames(genes_dt)][1]
+            if (is.na(id_col) || is.na(sym_col) || is.null(id_col) || is.null(sym_col)) {
+                return(NULL)
+            }
+            # Build a named vector: names = gene ids, values = symbols
+            valid_rows <- !is.na(genes_dt[[id_col]]) & nzchar(as.character(genes_dt[[id_col]]))
+            ids <- as.character(genes_dt[[id_col]][valid_rows])
+            syms <- as.character(genes_dt[[sym_col]][valid_rows])
+            syms[is.na(syms)] <- ""
+            out_map <- syms
+            names(out_map) <- ids
+            annotation_map_rv(out_map)
+            out_map
+        }
+
+        # Utility: List available correlation files and parse source/target tokens
+        list_available_pairs <- shiny::reactive({
+            # Expected/fallback files to show even if directory scan fails
+            expected_files <- c(
+                file.path(correlations_dir, "clinical_traits_vs_clinical_traits_corr.csv"),
+                file.path(correlations_dir, "liver_genes_vs_clinical_traits_corr.csv")
+            )
+
+            files <- character(0)
+            if (dir.exists(correlations_dir)) {
+                files <- list.files(correlations_dir, pattern = "_corr\\.csv$", full.names = TRUE)
+            } else {
+                warning("correlationServer: correlations_dir not found: ", correlations_dir)
+            }
+
+            # Include expected files regardless of current presence; parsing will still work
+            files <- unique(c(files, expected_files))
+            if (length(files) == 0) {
+                return(data.frame(file = character(0), source = character(0), target = character(0)))
+            }
+
+            # Parse names like foo_vs_bar_corr.csv
+            parse_one <- function(fp) {
+                bn <- basename(fp)
+                m <- regexec("^([a-z0-9_]+)_vs_([a-z0-9_]+)_corr\\.csv$", tolower(bn))
+                r <- regmatches(tolower(bn), m)[[1]]
+                if (length(r) == 3) {
+                    return(data.frame(file = fp, source = r[2], target = r[3]))
+                }
+                return(NULL)
+            }
+            parsed <- lapply(files, parse_one)
+            parsed <- parsed[!vapply(parsed, is.null, logical(1))]
+            if (length(parsed) == 0) {
+                return(data.frame(file = character(0), source = character(0), target = character(0)))
+            }
+            data.table::as.data.table(do.call(rbind, parsed))
+        })
+
+        # Determine current trait and its tokenized type
+        current_trait_reactive <- shiny::reactive({
+            mp <- main_par()
+            shiny::req(mp, mp$which_trait)
+            trait_val <- tryCatch(mp$which_trait(), error = function(e) NULL)
+            if (is.null(trait_val) || !nzchar(trait_val)) {
+                return(NULL)
+            }
+            trait_val
+        })
+
+        current_type_token <- shiny::reactive({
+            mp <- main_par()
+            shiny::req(mp, mp$selected_dataset)
+            selected_group <- tryCatch(mp$selected_dataset(), error = function(e) NULL)
+            shiny::req(selected_group)
+            trait_type <- get_trait_type(import_reactives(), selected_group)
+            trait_type_to_token(trait_type)
+        })
+
+        # Populate dataset choices based on available pairs that involve current trait type
+        shiny::observeEvent(list(list_available_pairs(), current_type_token()),
+            {
+                shiny::req(current_type_token())
+                pairs_dt <- list_available_pairs()
+                if (nrow(pairs_dt) == 0) {
+                    shiny::updateSelectInput(session, "correlation_dataset_selector",
+                        choices = character(0), selected = character(0)
+                    )
+                    return()
+                }
+                token <- current_type_token()
+                # Files where current type is on either side
+                subset_dt <- pairs_dt[(source == token) | (target == token)]
+                if (nrow(subset_dt) == 0) {
+                    shiny::updateSelectInput(session, "correlation_dataset_selector",
+                        choices = character(0), selected = character(0)
+                    )
+                    return()
+                }
+                # Build choices mapping: label -> file path
+                build_label <- function(src, tgt) paste(token_to_label(src), "vs", token_to_label(tgt))
+                labels <- mapply(build_label, subset_dt$source, subset_dt$target, USE.NAMES = FALSE)
+                choices <- stats::setNames(subset_dt$file, labels)
+                shiny::updateSelectInput(session, "correlation_dataset_selector",
+                    choices = choices,
+                    selected = if (length(choices) > 0) choices[[1]] else NULL
+                )
+            },
+            ignoreInit = FALSE
+        )
+
+        # Resolve the proper column or row key for the current trait in a given file
+        # For gene traits, correlation files typically use columns like "liver_<gene_id>"
+        resolve_trait_keys <- function(trait_string, token_side, corr_file, import) {
+            # token_side is one of c("liver_genes", "liver_isoforms", "liver_lipids", "plasma_metabolites", "clinical_traits")
+            # Return list(mode = "column"|"row", key = <name>)
+            header_only <- tryCatch(data.table::fread(corr_file, nrows = 0), error = function(e) NULL)
+            if (is.null(header_only)) {
+                return(NULL)
+            }
+            headers <- names(header_only)
+
+            # Column candidates
+            column_candidates <- character(0)
+
+            if (token_side == "liver_genes") {
+                # Try exact match
+                if (trait_string %in% headers) column_candidates <- c(column_candidates, trait_string)
+                # Try adding liver_ prefix if missing
+                if (!grepl("^liver_", trait_string) && paste0("liver_", trait_string) %in% headers) {
+                    column_candidates <- c(column_candidates, paste0("liver_", trait_string))
+                }
+                # Try mapping gene symbol -> gene.id via annotations available in import
+                if (length(column_candidates) == 0) {
+                    ann <- import$annotation_list
+                    if (!is.null(ann) && !is.null(ann$genes)) {
+                        genes_dt <- ann$genes
+                        id_col <- if ("gene.id" %in% colnames(genes_dt)) "gene.id" else if ("gene_id" %in% colnames(genes_dt)) "gene_id" else NULL
+                        sym_col <- if ("symbol" %in% colnames(genes_dt)) "symbol" else NULL
+                        if (!is.null(id_col) && !is.null(sym_col)) {
+                            match_row <- genes_dt[genes_dt[[sym_col]] == trait_string, , drop = FALSE]
+                            if (nrow(match_row) > 0) {
+                                gene_id <- match_row[[id_col]][1]
+                                candidate <- paste0("liver_", gene_id)
+                                if (candidate %in% headers) column_candidates <- c(column_candidates, candidate)
+                            }
+                        }
+                    }
+                }
+            } else {
+                # For non-gene types, first column should be phenotype; we'll usually match as a row
+                if (trait_string %in% headers) column_candidates <- c(column_candidates, trait_string)
+            }
+
+            # If a direct column match exists, prefer column mode (efficient select)
+            if (length(column_candidates) > 0) {
+                return(list(mode = "column", key = column_candidates[1]))
+            }
+
+            # Otherwise, attempt row mode via Phenotype/phenotype column
+            pheno_col <- if ("phenotype" %in% tolower(headers)) headers[which(tolower(headers) == "phenotype")[1]] else NULL
+            if (!is.null(pheno_col)) {
+                return(list(mode = "row", key = trait_string, phenotype_col = pheno_col))
+            }
+
+            return(NULL)
+        }
+
+        # Build the correlation table for display
+        correlation_table <- shiny::reactive({
+            shiny::req(input$correlation_dataset_selector)
+            trait <- current_trait_reactive()
+            shiny::req(trait)
+
+            file_path <- input$correlation_dataset_selector
+            if (!file.exists(file_path)) {
+                shiny::showNotification(paste("Correlation file not found:", basename(file_path)), type = "error", duration = 4)
+                return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+            }
+            # Determine which side (source/target) corresponds to the current trait type
+            pairs_dt <- list_available_pairs()
+            shiny::req(nrow(pairs_dt) > 0)
+            token <- current_type_token()
+            row <- pairs_dt[file == file_path]
+            shiny::req(nrow(row) == 1)
+
+            side_token <- if (row$source[1] == token) row$source[1] else if (row$target[1] == token) row$target[1] else token
+
+            key_info <- resolve_trait_keys(trait, side_token, file_path, import_reactives())
+            if (is.null(key_info)) {
+                shiny::showNotification(paste("Trait not found in correlation file:", trait), type = "warning", duration = 4)
+                return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+            }
+
+            if (key_info$mode == "column") {
+                # Read only phenotype and the specific column for efficiency
+                select_cols <- c("phenotype", "Phenotype", key_info$key)
+                select_cols <- select_cols[select_cols %in% names(data.table::fread(file_path, nrows = 0))]
+                dt <- data.table::fread(file_path, select = select_cols)
+                # Normalize phenotype column name
+                if ("Phenotype" %in% names(dt)) data.table::setnames(dt, "Phenotype", "phenotype")
+                if (!"phenotype" %in% names(dt)) dt[, phenotype := seq_len(.N)]
+                # Build output table
+                out <- dt[, .(trait = phenotype, correlation_value = .SD[[1]]), .SDcols = key_info$key]
+            } else {
+                # Row mode: read entire file, find the row, and transpose to long format
+                dt_full <- data.table::fread(file_path)
+                # Normalize phenotype column name
+                if ("Phenotype" %in% names(dt_full)) data.table::setnames(dt_full, "Phenotype", "phenotype")
+                if (!"phenotype" %in% names(dt_full)) {
+                    shiny::showNotification("Correlation file missing 'phenotype' column.", type = "error", duration = NULL)
+                    return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+                }
+                row_dt <- dt_full[phenotype == key_info$key]
+                if (nrow(row_dt) == 0) {
+                    shiny::showNotification(paste("Trait not found in 'phenotype' column:", trait), type = "warning", duration = 4)
+                    return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+                }
+                # Convert the single row (excluding phenotype) to long format
+                numeric_cols <- setdiff(names(row_dt), "phenotype")
+                long_dt <- data.table::melt(row_dt,
+                    id.vars = "phenotype", measure.vars = numeric_cols,
+                    variable.name = "trait", value.name = "correlation_value"
+                )
+                out <- long_dt[, .(trait, correlation_value)]
+
+                # Map gene ids -> symbols when the other side is genes (columns), i.e., when traits look like 'liver_<gene_id>'
+                has_liver_prefix <- any(grepl("^liver_ENSMUSG", out$trait, perl = TRUE))
+                if (has_liver_prefix) {
+                    id_to_symbol <- get_gene_symbol_map()
+                    gene_ids <- sub("^liver_", "", out$trait)
+                    if (!is.null(id_to_symbol)) {
+                        mapped <- id_to_symbol[gene_ids]
+                    } else {
+                        mapped <- rep(NA_character_, length(gene_ids))
+                    }
+                    # Display symbol when available; otherwise show bare gene id (no liver_ prefix)
+                    display <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, gene_ids)
+                    out$trait <- display
+                }
+            }
+
+            # Add p_value as NA for now (sample size unknown)
+            out[, p_value := as.numeric(NA)]
+            # Sort by correlation_value descending
+            out <- out[order(-correlation_value)]
+            out
+        }) %>% shiny::debounce(150)
+
+        output$correlation_table <- DT::renderDT({
+            tbl <- correlation_table()
+            DT::datatable(
+                tbl,
+                rownames = FALSE,
+                options = list(
+                    pageLength = 25,
+                    autoWidth = TRUE,
+                    order = list(list(1, "desc")), # default sort by correlation_value desc
+                    dom = "tip"
+                )
+            )
+        })
+
+        return(invisible(NULL))
     })
 }

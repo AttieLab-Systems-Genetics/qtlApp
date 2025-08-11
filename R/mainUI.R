@@ -134,20 +134,9 @@ mainUI <- function() {
                 bslib::nav_panel(
                     "Correlation",
                     div(
-                        style = "padding: 10px;",
-                        div(
-                            id = "correlation-plot-container",
-                            class = "sidebar-plot-container",
-                            style = "height: 50vh; min-height: 300px; max-height: 500px; border: 1px solid #bdc3c7; border-radius: 5px; overflow: hidden;",
-                            shinycssloaders::withSpinner(
-                                plotly::plotlyOutput(shiny::NS("app_controller", "correlation_plot_output"),
-                                    height = "100%", width = "100%"
-                                )
-                            )
-                        ),
-                        p("Correlation analysis visualization coming soon",
-                            style = "font-size: 11px; color: #7f8c8d; margin: 10px 0 0 0; text-align: center;"
-                        )
+                        style = "padding: 10px; display: flex; flex-direction: column; gap: 10px;",
+                        correlationInput(shiny::NS("app_controller", "correlation_module")),
+                        correlationUI(shiny::NS("app_controller", "correlation_module"))
                     )
                 )
             )
