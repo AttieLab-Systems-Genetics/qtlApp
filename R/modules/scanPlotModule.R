@@ -257,16 +257,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
             if (is_lod_scan_view) {
                 # For the main LOD scan plot
-                if (interaction_type == "sex") {
-                    return(10.5)
-                }
-                if (interaction_type == "diet") {
-                    return(10.5)
-                }
-                if (interaction_type == "sex_diet") {
-                    return(10.5)
-                }
-                return(7.5) # Additive
+                return(get_scan_threshold(interaction_type))
             } else {
                 # This part is for any other context, but this reactive is inside scanServer,
                 # which is only active for LOD scans. So this is fallback.
@@ -291,6 +282,17 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             markers_data <- import_reactives()$markers
 
             result <- QTL_plot_visualizer(scan_data, trait_val, lod_val, markers_data)
+            # Ensure a safe empty structure to avoid downstream filter crashes
+            if (is.null(result) || !is.data.frame(result) || nrow(result) == 0) {
+                return(data.frame(
+                  chr = numeric(0),
+                  BPcum = numeric(0),
+                  position = numeric(0),
+                  LOD = numeric(0),
+                  markers = character(0),
+                  stringsAsFactors = FALSE
+                ))
+            }
             result
         }) %>% shiny::debounce(150) # Add debouncing to prevent rapid re-computation
 
@@ -304,6 +306,10 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             )
             current_scan_table <- scan_table()
             selected_chromosome <- main_par_list$selected_chr()
+            # If structure is empty or missing expected column, return as-is (safe empty)
+            if (!"chr" %in% colnames(current_scan_table)) {
+                return(current_scan_table)
+            }
             if (selected_chromosome == "All") {
                 current_scan_table
             } else {
@@ -313,6 +319,10 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 if (selected_chromosome == "M") sel_chr_num <- 22
                 sel_chr_num <- as.numeric(sel_chr_num)
 
+                # Guard against missing column again just in case
+                if (!"chr" %in% colnames(current_scan_table)) {
+                    return(current_scan_table)
+                }
                 dplyr::filter(current_scan_table, chr == sel_chr_num)
             }
         }) %>% shiny::debounce(200) # Debounce scan table chr filtering
@@ -781,7 +791,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             }
 
             interaction_type <- interaction_type_reactive()
-            static_diff_threshold <- if (interaction_type == "sex") 4.1 else if (interaction_type == "diet") 4.1 else if (interaction_type == "sex_diet") 4.1 else NULL
+            static_diff_threshold <- get_diff_threshold(interaction_type)
 
             # Display label for title
             interaction_label <- if (identical(interaction_type, "sex_diet")) "Sex x Diet" else stringr::str_to_title(interaction_type)

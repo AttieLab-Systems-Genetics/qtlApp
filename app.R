@@ -43,6 +43,8 @@ source("R/modules/scanPlotModule.R") # Source our scan module
 source("R/modules/profilePlotApp.R") # Profile plot module
 source("R/modules/interactiveAnalysisModule.R") # Interactive analysis controls/module
 source("R/modules/splitAlleleEffectsModule.R") # Split allele effects module
+source("R/modules/overlayControlsModule.R") # Overlay controls module
+source("R/modules/lodThresholdModule.R") # LOD threshold module
 source("R/ui/mainUI.R") # Main UI module
 
 # Set maximum file upload size
@@ -77,39 +79,15 @@ server <- function(input, output, session) {
     scan_type <- NULL
     show_stacked_plots <- NULL
 
-    # Dynamic LOD threshold slider based on scan type
+    # LOD Threshold module (replaces inline slider)
     output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
-        interaction_type <- sidebar_interaction_type_rv()
-        # For overview plots, "sex" and "diet" imply difference plots using qtlxcovar files.
-        scan_info <- switch(interaction_type,
-            "sex" = list(type = "Sex Difference", min = 4.1),
-            "diet" = list(type = "Diet Difference", min = 4.1),
-            "none" = list(type = "Additive", min = 7.5),
-            list(type = "Additive", min = 7.5) # Default
-        )
-
-        # Use the input value if it exists and is valid, otherwise default to the new min
-        current_val <- input[[ns_app_controller("LOD_thr")]]
-        default_val <- if (!is.null(current_val) && current_val >= scan_info$min) {
-            current_val
-        } else {
-            scan_info$min
-        }
-
-        sliderInput(shiny::NS("app_controller", "LOD_thr"),
-            label = paste0("LOD Threshold (", scan_info$type, " scan):"),
-            min = scan_info$min, max = 20, value = default_val, step = 0.5,
-            width = "100%"
-        )
+        lodThresholdUI(ns_app_controller("lod_thr"))
     })
-
-    # Our own LOD threshold reactive (no longer from mainParServer)
-    lod_threshold_rv <- shiny::reactive({
-        # Fallback to the same min used in the slider render, based on sidebar_interaction_type
-        itype <- sidebar_interaction_type_rv()
-        fallback_min <- if (identical(itype, "sex") || identical(itype, "diet") || identical(itype, "sex_diet")) 4.1 else 7.5
-        input[[ns_app_controller("LOD_thr")]] %||% fallback_min
-    }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
+    lod_thr_module <- lodThresholdServer(
+        id = ns_app_controller("lod_thr"),
+        interaction_type_reactive = sidebar_interaction_type_rv
+    )
+    lod_threshold_rv <- lod_thr_module$lod_threshold
 
     # Reactive for selected chromosome (for zooming into specific chromosomes)
     selected_chromosome_rv <- shiny::reactive({
@@ -205,6 +183,12 @@ server <- function(input, output, session) {
         shiny::req(ds)
         ds
     }) %>% shiny::debounce(100)
+
+    # Mount overlay controls early so we can pass their reactives to scanServer
+    overlay_module <- overlayControlsServer(
+        id = ns_app_controller("overlay_controls"),
+        selected_dataset_group_reactive = main_selected_dataset_group
+    )
 
     # removed: duplicate mapping and scan_type logic (handled by interactiveAnalysisModule)
 
@@ -497,12 +481,10 @@ server <- function(input, output, session) {
         ignoreInit = TRUE
     )
 
-    # removed: inlined renderUI for interactive analysis; handled by interactiveAnalysisUI within LOD scan UI
 
     # Store the sidebar interaction type separately (for independent sidebar plot control)
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
-    # removed: local observer for interaction_type_selector; module now owns interaction state
 
     # Observer to update sidebar interaction type when input changes (independent of main UI)
     shiny::observeEvent(input[[ns_app_controller("sidebar_interaction_type")]],
@@ -550,9 +532,9 @@ server <- function(input, output, session) {
         import_reactives = import_reactives,
         main_par_inputs = active_main_par,
         interaction_type_reactive = current_interaction_type_rv,
-        overlay_diet_toggle = reactive(input[[ns_app_controller("overlay_diet")]]),
-        overlay_sex_toggle = reactive(input[[ns_app_controller("overlay_sex")]]),
-        overlay_sex_diet_toggle = reactive(input[[ns_app_controller("overlay_sex_diet")]])
+        overlay_diet_toggle = overlay_module$diet_toggle,
+        overlay_sex_toggle = overlay_module$sex_toggle,
+        overlay_sex_diet_toggle = overlay_module$sex_diet_toggle
     )
 
     # Render the LOD scan click details table
@@ -624,7 +606,7 @@ server <- function(input, output, session) {
                                 width = "100%"
                             )
                         ),
-                        if (isTRUE(is_additive)) shiny::uiOutput(ns_app_controller("overlay_toggles_ui")),
+                        if (isTRUE(is_additive)) overlayControlsUI(ns_app_controller("overlay_controls")),
                         div(
                             style = "flex: 0 0 auto;",
                             shiny::actionButton(
@@ -658,47 +640,11 @@ server <- function(input, output, session) {
         }
     })
 
-    # NEW: UI for overlay toggles
-    output[[ns_app_controller("overlay_toggles_ui")]] <- shiny::renderUI({
-        dataset_group <- main_selected_dataset_group()
-        req(dataset_group)
-
-        # Only show for HC_HF datasets that have interactive options
-        if (!grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
-            return(NULL)
-        }
-
-        toggles <- list()
-        # Check for Diet interaction availability
-        if (any(grepl("Genes|Lipids|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
-            toggles <- c(toggles, list(
-                shiny::checkboxInput(ns_app_controller("overlay_diet"), "Overlay Diet", FALSE, width = "auto")
-            ))
-        }
-
-        # Check for Sex interaction availability
-        if (any(grepl("Genes|Lipids|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
-            toggles <- c(toggles, list(
-                shiny::checkboxInput(ns_app_controller("overlay_sex"), "Overlay Sex", FALSE, width = "auto")
-            ))
-        }
-
-        # Check for Sex x Diet interaction availability (Clinical, Lipids, Plasma Metabolites)
-        if (any(grepl("Clinical|Lipid|Metabolites", dataset_group, ignore.case = TRUE))) {
-            toggles <- c(toggles, list(
-                shiny::checkboxInput(ns_app_controller("overlay_sex_diet"), "Overlay Sex x Diet", FALSE, width = "auto")
-            ))
-        }
-
-        if (length(toggles) > 0) {
-            div(
-                style = "display: flex; gap: 8px; align-items: center; margin-left: 15px; font-size: 12px; line-height: 1.1; white-space: nowrap; flex-wrap: nowrap;",
-                toggles
-            )
-        } else {
-            NULL
-        }
-    })
+    # Mount overlay controls module and wire toggle outputs to scanServer
+    overlay_module <- overlayControlsServer(
+        id = ns_app_controller("overlay_controls"),
+        selected_dataset_group_reactive = main_selected_dataset_group
+    )
 
     # Dynamic title for the main LOD scan card
     output[[ns_app_controller("main_plot_title")]] <- shiny::renderUI({
