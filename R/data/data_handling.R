@@ -144,60 +144,9 @@ validate_trait <- function(trait, gene_symbols) {
 # =============================================================================
 # Functions for preparing data for display and creating user-friendly output
 
-#' Format peak information for display
-#' 
-#' Converts raw peak data into a structured, user-friendly format suitable
-#' for display in tables, tooltips, or detailed views. Handles missing data gracefully.
-#' 
-#' @param peak Single row data frame containing peak information with columns:
-#'   - marker: SNP/marker identifier
-#'   - chr: Chromosome number (numeric, with 20/21/22 for X/Y/M)
-#'   - pos: Genomic position in Mb
-#'   - lod: LOD score
-#'   - A-H: Strain effect coefficients (optional)
-#' @return Named list with formatted peak information, or NULL if invalid input
-#' @examples
-#' # Format peak for display
-#' formatted <- format_peak_info(peak_row)
-#' # Result: list(marker="rs123", chromosome="X", position=45.67, lod=8.23, ...)
-format_peak_info <- function(peak) {
-  # Validate input data
-  if (is.null(peak) || nrow(peak) == 0) {
-    return(NULL)
-  }
-  
-  # Convert numeric chromosome codes to labels for display
-  chr_label <- if(peak$chr %in% c(20,21,22)) {
-    c("X","Y","M")[peak$chr-19]  # Map 20->X, 21->Y, 22->M
-  } else {
-    peak$chr  # Keep numeric for autosomes
-  }
-  
-  # Create formatted info structure
-  info <- list(
-    marker = peak$marker,
-    chromosome = chr_label,
-    position = round(peak$pos, 2),    # Position in Mb, 2 decimal places
-    lod = round(peak$lod, 2)          # LOD score, 2 decimal places
-  )
-  
-  # Add strain effects if available (founder strain coefficients)
-  strain_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-  if (all(strain_cols %in% colnames(peak))) {
-    info$strain_effects <- list(
-      AJ = round(peak$A, 3),      # A/J strain
-      B6 = round(peak$B, 3),      # C57BL/6J strain  
-      `129` = round(peak$C, 3),   # 129S1/SvImJ strain
-      NOD = round(peak$D, 3),     # NOD/ShiLtJ strain
-      NZO = round(peak$E, 3),     # NZO/HlLtJ strain
-      CAST = round(peak$F, 3),    # CAST/EiJ strain
-      PWK = round(peak$G, 3),     # PWK/PhJ strain
-      WSB = round(peak$H, 3)      # WSB/EiJ strain
-    )
-  }
-  
-  return(info)
-}
+## Removed: format_peak_info()
+## Rationale: superseded by `peakInfoModule.R` which renders peak details and
+## founder effects. No call sites remained in the codebase.
 
 #' Safe number formatting with error handling
 #' 
@@ -236,6 +185,7 @@ safe_number_format <- function(x, digits = 2) {
 #' error_msg <- create_message("Invalid trait selection", "error")
 #' # Create info message
 #' info_msg <- create_message("Analysis complete", "info")
+#' @importFrom htmltools HTML
 create_message <- function(message, type = "error") {
   # Define color scheme for different message types
   color <- switch(type,

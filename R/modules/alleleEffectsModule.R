@@ -54,112 +54,39 @@ alleleEffectsServer <- function(id, selected_peak_reactive) {
             reshaped_data
         })
 
-        # Render allele effects section conditionally
+        # Render allele effects section using peakInfoModule
         output$allele_effects_section <- shiny::renderUI({
-            peak_info <- selected_peak_data()
-
-            if (!is.null(peak_info)) {
-                tagList(
-                    hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
-                    div(
-                        style = "margin-bottom: 15px;",
-                        h5("Strain Effects",
-                            style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
-                        ),
-                        p("Showing strain effects for the selected peak. Click another peak on the LOD plot to update.",
-                            style = "color: #7f8c8d; margin-bottom: 10px; font-size: 12px;"
-                        ),
-                        div(
-                            id = ns("peak_summary_info"),
-                            style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db;",
-                            shiny::uiOutput(ns("peak_info_display"))
-                        )
+            htmltools::tagList(
+                htmltools::hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
+                htmltools::div(
+                    style = "margin-bottom: 15px;",
+                    htmltools::h5("Strain Effects",
+                        style = "color: #2c3e50; margin-bottom: 10px; font-weight: bold;"
                     ),
-                    shiny::plotOutput(ns("allele_effects_plot_output"), height = "350px") %>%
-                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
-                )
-            } else {
-                # Optionally, show a message when no peak is selected
-                tagList(
-                    hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
-                    div(
-                        style = "text-align: center; padding: 20px; color: #7f8c8d;",
-                        h5("No Peak Selected"),
-                        p("Click a peak on the LOD scan plot to view strain effects.")
+                    htmltools::p("Showing strain effects for the selected peak. Click another peak on the LOD plot to update.",
+                        style = "color: #7f8c8d; margin-bottom: 10px; font-size: 12px;"
+                    ),
+                    htmltools::div(
+                        id = ns("peak_summary_info"),
+                        style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db;",
+                        peakInfoUI(ns("peak_info"))
                     )
+                ),
+                shinycssloaders::withSpinner(
+                    shiny::plotOutput(ns("allele_effects_plot_output"), height = "350px"),
+                    type = 8, color = "#3498db"
                 )
-            }
-        })
-
-        # Dynamic peak info display
-        output$peak_info_display <- shiny::renderUI({
-            peak_info <- selected_peak_data()
-            if (is.null(peak_info)) {
-                return(NULL)
-            }
-
-            # Build summary info
-            info_elements <- list()
-
-            # Trait, Marker, Position, LOD
-            info_elements$trait <- tags$div(tags$strong("Trait:"), peak_info$trait)
-            info_elements$marker <- tags$div(tags$strong("Marker:"), peak_info$marker)
-            info_elements$position <- tags$div(tags$strong("Position:"), paste0(peak_info$qtl_chr, ":", round(peak_info$qtl_pos, 2), " Mb"))
-            info_elements$lod <- tags$div(tags$strong("LOD:"), round(peak_info$qtl_lod, 2))
-
-            # Cis/Trans Status
-            if ("cis" %in% colnames(peak_info)) {
-                cis_status <- ifelse(isTRUE(peak_info$cis), "Cis", "Trans")
-                status_color <- ifelse(isTRUE(peak_info$cis), "#27ae60", "#c0392b")
-                info_elements$cis <- tags$div(tags$strong("Status:"), tags$span(cis_status, style = paste("color: white; background-color:", status_color, "; padding: 2px 6px; border-radius: 4px; font-size: 11px;")))
-            }
-
-            # Confidence Interval
-            if ("qtl_ci_lo" %in% colnames(peak_info) && "qtl_ci_hi" %in% colnames(peak_info)) {
-                info_elements$ci <- tags$div(tags$strong("CI:"), paste0("[", round(peak_info$qtl_ci_lo, 2), " - ", round(peak_info$qtl_ci_hi, 2), "] Mb"))
-            }
-
-            # Founder Allele Effects
-            allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-            strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
-            available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
-
-            if (length(available_alleles) > 0) {
-                allele_effects_list <- lapply(seq_along(available_alleles), function(i) {
-                    col <- available_alleles[i]
-                    value <- peak_info[[col]]
-                    if (!is.na(value)) {
-                        paste0(strain_names[i], ": ", round(value, 3))
-                    }
-                })
-                allele_effects_list <- Filter(Negate(is.null), allele_effects_list)
-
-                if (length(allele_effects_list) > 0) {
-                    info_elements$effects_header <- tags$div(tags$strong("Founder Effects:"), style = "margin-top: 5px;")
-                    info_elements$effects <- tags$div(
-                        style = "font-family: monospace; font-size: 11px; margin-left: 10px;",
-                        lapply(allele_effects_list, tags$div)
-                    )
-                }
-            }
-
-            # Arrange in a two-column layout
-            half_len <- ceiling(length(info_elements) / 2)
-            col1 <- info_elements[1:half_len]
-            col2 <- info_elements[(half_len + 1):length(info_elements)]
-
-            tags$div(
-                style = "display: flex; flex-wrap: wrap; gap: 10px;",
-                tags$div(style = "flex: 1 1 45%; min-width: 200px;", tagList(col1)),
-                tags$div(style = "flex: 1 1 45%; min-width: 200px;", tagList(col2))
             )
         })
+
+        # Mount peakInfoServer for detailed info panel
+        peakInfoServer(ns("peak_info"), selected_peak_data)
 
         # Plotting allele effects
         output$allele_effects_plot_output <- shiny::renderPlot({
             plot_data <- allele_effects_data_for_plot()
             if (is.null(plot_data)) {
-                return(plot_null("Select a peak on the LOD scan plot to see strain effects."))
+                return(NULL)
             }
 
             # Generate plot

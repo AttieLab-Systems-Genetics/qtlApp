@@ -34,7 +34,6 @@ source("R/data/trait_scan.R")
 source("R/plots/ggplot_alleles.R")
 source("R/plots/ggplot_qtl_scan.R")
 source("R/plots/ggplotly_qtl_scan.R")
-source("R/plots/peak_info.R")
 source("R/plots/QTL_plot_visualizer.R")
 source("R/data/fst_rows.R")
 source("R/modules/traitApp.R")
@@ -43,8 +42,10 @@ source("R/modules/scanPlotModule.R") # Source our scan module
 source("R/modules/profilePlotApp.R") # Profile plot module
 source("R/modules/interactiveAnalysisModule.R") # Interactive analysis controls/module
 source("R/modules/splitAlleleEffectsModule.R") # Split allele effects module
+source("R/modules/peakInfoModule.R") # Peak info panel module
 source("R/modules/overlayControlsModule.R") # Overlay controls module
 source("R/modules/lodThresholdModule.R") # LOD threshold module
+source("R/modules/fileIndexModule.R") # File index + dataset util module
 source("R/ui/mainUI.R") # Main UI module
 
 # Set maximum file upload size
@@ -96,15 +97,14 @@ server <- function(input, output, session) {
 
 
 
-    file_index_dt <- shiny::reactive({
-        shiny::req(import_reactives()$file_directory)
-        dt <- data.table::as.data.table(import_reactives()$file_directory)
-        shiny::validate(
-            shiny::need("dataset_category" %in% names(dt), "Error: 'dataset_category' column missing in file_index.csv."),
-            shiny::need("group" %in% names(dt), "Error: 'group' column missing in file_index.csv.")
-        )
-        return(dt)
-    })
+    # Use fileIndexModule to manage file index and selected dataset group
+    selected_category_reactive <- shiny::reactive({ input[[ns_app_controller("dataset_category_selector")]] })
+    file_index_mod <- fileIndexServer(
+        id = ns_app_controller("file_index"),
+        import_reactives = import_reactives,
+        selected_category_reactive = selected_category_reactive
+    )
+    file_index_dt <- file_index_mod$file_index
 
     shiny::observe({
         shiny::req(file_index_dt())
@@ -121,43 +121,7 @@ server <- function(input, output, session) {
         }
     })
 
-    main_selected_dataset_group <- shiny::reactive({
-        selected_cat <- input[[ns_app_controller("dataset_category_selector")]]
-        shiny::req(selected_cat, file_index_dt())
-
-        datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
-        specific_datasets_choices <- unique(datasets_in_category$group)
-
-        # Find the appropriate HC_HF dataset (additive) or the first available dataset
-        hc_hf_dataset <- NULL
-
-        # This logic now covers all categories that have an auto-selectable HC_HF dataset
-        if (selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
-            pattern <- switch(selected_cat,
-                "Liver Genes" = "^HC_HF.*Liver.*Genes",
-                "Liver Lipids" = "^HC_HF.*Liver.*Lipid",
-                "Clinical Traits" = "^HC_HF.*Clinical",
-                "Plasma Metabolites" = "^HC_HF.*Plasma.*Metabol",
-                "Liver Isoforms" = "^HC_HF.*Liver.*Isoform"
-            )
-            hc_hf_dataset <- specific_datasets_choices[grepl(pattern, specific_datasets_choices, ignore.case = TRUE) &
-                !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
-        }
-
-        if (!is.null(hc_hf_dataset) && length(hc_hf_dataset) > 0) {
-            message(paste("Auto-selected dataset for", selected_cat, "category:", hc_hf_dataset[1]))
-            return(hc_hf_dataset[1])
-        }
-
-        # Fallback for other categories or if HC_HF is not found
-        if (length(specific_datasets_choices) > 0) {
-            message(paste("Defaulting to first available dataset for", selected_cat, ":", specific_datasets_choices[1]))
-            return(specific_datasets_choices[1])
-        }
-
-        message(paste("Warning: No datasets found for category:", selected_cat))
-        return(NULL)
-    })
+    main_selected_dataset_group <- file_index_mod$selected_dataset_group
 
     # Initialize interactive analysis module now that dataset reactive exists (single instance)
     interactive_analysis <- interactiveAnalysisServer(
