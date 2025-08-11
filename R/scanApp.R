@@ -172,9 +172,14 @@ scanApp <- function() {
     # Dynamic LOD threshold slider based on scan type
     output$lod_threshold_slider <- shiny::renderUI({
       current_scan_type <- scan_type()
+      interaction_type <- interactive_analysis$interaction_type()
 
       # Set different minimums based on scan type
-      min_val <- if (current_scan_type == "interactive") 10.5 else 7.5
+      min_val <- if (current_scan_type == "interactive") {
+        if (!is.null(interaction_type) && interaction_type == "sex_diet") 15.7 else 10.5
+      } else {
+        7.5
+      }
       default_val <- min_val # Start at minimum value
 
       sliderInput("LOD_thr",
@@ -187,7 +192,12 @@ scanApp <- function() {
     # Our own LOD threshold reactive
     lod_threshold_rv <- shiny::reactive({
       current_scan_type <- scan_type()
-      default_threshold <- if (current_scan_type == "interactive") 10.5 else 7.5
+      interaction_type <- interactive_analysis$interaction_type()
+      default_threshold <- if (current_scan_type == "interactive") {
+        if (!is.null(interaction_type) && interaction_type == "sex_diet") 15.7 else 10.5
+      } else {
+        7.5
+      }
       input$LOD_thr %||% default_threshold
     }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
 

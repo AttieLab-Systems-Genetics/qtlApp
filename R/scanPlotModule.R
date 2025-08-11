@@ -264,7 +264,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     return(10.5)
                 }
                 if (interaction_type == "sex_diet") {
-                    return(10.5)
+                    return(15.7)
                 }
                 return(7.5) # Additive
             } else {
@@ -634,10 +634,10 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     }
                     scan_data <- result_list$scan_data
 
-                    # Process it with interactive-specific LOD threshold (10.5)
+                    # Process it with interactive-specific LOD threshold (Sex x Diet uses 15.7)
                     main_par_list <- main_par_inputs()
                     req(main_par_list$LOD_thr, import_reactives()$markers)
-                    interactive_lod_threshold <- 10.5
+                    interactive_lod_threshold <- 15.7
 
                     processed_data <- QTL_plot_visualizer(scan_data, trait_val, interactive_lod_threshold, import_reactives()$markers)
 
@@ -781,7 +781,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             }
 
             interaction_type <- interaction_type_reactive()
-            static_diff_threshold <- if (interaction_type == "sex") 4.1 else if (interaction_type == "diet") 4.1 else if (interaction_type == "sex_diet") 4.1 else NULL
+            static_diff_threshold <- if (interaction_type == "sex") 4.1 else if (interaction_type == "diet") 4.1 else if (interaction_type == "sex_diet") 9.5 else NULL
 
             # Display label for title
             interaction_label <- if (identical(interaction_type, "sex_diet")) "Sex x Diet" else stringr::str_to_title(interaction_type)

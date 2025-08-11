@@ -126,10 +126,11 @@ server <- function(input, output, session) {
     # Dynamic LOD threshold slider based on scan type
     output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
         interaction_type <- sidebar_interaction_type_rv()
-        # For overview plots, "sex" and "diet" imply difference plots using qtlxcovar files.
+        # For overview plots, interaction types imply difference plots using qtlxcovar files.
         scan_info <- switch(interaction_type,
             "sex" = list(type = "Sex Difference", min = 4.1),
             "diet" = list(type = "Diet Difference", min = 4.1),
+            "sex_diet" = list(type = "Sex x Diet Difference", min = 9.5),
             "none" = list(type = "Additive", min = 7.5),
             list(type = "Additive", min = 7.5) # Default
         )
@@ -152,7 +153,12 @@ server <- function(input, output, session) {
     # Our own LOD threshold reactive (no longer from mainParServer)
     lod_threshold_rv <- shiny::reactive({
         current_scan_type <- scan_type()
-        default_threshold <- if (current_scan_type == "interactive") 10.5 else 7.5
+        interaction_type <- current_interaction_type_rv()
+        default_threshold <- if (current_scan_type == "interactive") {
+            if (!is.null(interaction_type) && interaction_type == "sex_diet") 15.7 else 10.5
+        } else {
+            7.5
+        }
         input[[ns_app_controller("LOD_thr")]] %||% default_threshold
     }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
 
