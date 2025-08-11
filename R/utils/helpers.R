@@ -211,29 +211,27 @@ pivot_peaks <- function(peaks, which_peak) {
     allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
     strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
 
-    # Verify all required allele columns are present
-    if (all(allele_cols %in% colnames(peak_subset))) {
-      # Select relevant columns for reshaping
-      peak_for_melt <- peak_subset[, c("marker", allele_cols), drop = FALSE]
-
-      # Rename allele columns to strain names for clearer output
-      if (length(allele_cols) == length(strain_names)) {
-        colnames(peak_for_melt)[(which(colnames(peak_for_melt) %in% allele_cols))] <- strain_names
-      } else {
-        warning("pivot_peaks: Mismatch between allele_cols and strain_names length. Using original allele column names.")
-        strain_names <- allele_cols
-      }
-
-      # Reshape from wide to long format
-      peak_reshaped <- reshape2::melt(peak_for_melt,
-        id.vars = "marker",
-        measure.vars = strain_names,
-        variable.name = "variable",
-        value.name = "value"
-      )
-    } else {
-      warning(paste("pivot_peaks: Not all allele columns (A-H) found for marker:", which_peak, ". Cannot reshape."))
+    available_alleles <- intersect(allele_cols, colnames(peak_subset))
+    if (length(available_alleles) == 0) {
+      warning(paste("pivot_peaks: No allele effect columns (A-H) available for marker:", which_peak))
+      return(peak_reshaped)
     }
+
+    # Build rename map only for available alleles
+    idx <- match(available_alleles, allele_cols)
+    names_map <- stats::setNames(strain_names[idx], available_alleles)
+
+    # Select relevant columns and rename to strain names
+    peak_for_melt <- peak_subset[, c("marker", available_alleles), drop = FALSE]
+    colnames(peak_for_melt)[match(available_alleles, colnames(peak_for_melt))] <- names_map[available_alleles]
+
+    # Reshape from wide to long format
+    peak_reshaped <- reshape2::melt(peak_for_melt,
+      id.vars = "marker",
+      measure.vars = unname(names_map[available_alleles]),
+      variable.name = "variable",
+      value.name = "value"
+    )
   } else {
     warning(paste("pivot_peaks: No peak data found for marker:", which_peak, "after subsetting."))
   }
@@ -326,6 +324,61 @@ numeric_to_chr <- function(chr_num) {
 #' @export
 chr_XYM <- function(chr_vector) {
   numeric_to_chr(chr_vector)
+}
+
+# =============================================================================
+# INTERACTIVE DATASET MAPPING UTILITIES
+# =============================================================================
+
+#' Map base dataset to interactive dataset name
+#'
+#' Centralized mapping for HC_HF datasets to their interactive counterparts.
+#' Returns the base dataset when `interaction_type` is "none" or unsupported.
+#'
+#' @param base_dataset Character. The selected base dataset name (e.g.,
+#'   "HC_HF Liver Genes, additive").
+#' @param interaction_type Character. One of "none", "sex", "diet", or
+#'   "sex_diet".
+#' @return Character dataset name to use for the requested interaction type.
+#' @export
+map_interactive_dataset_name <- function(base_dataset, interaction_type) {
+  if (is.null(base_dataset) || is.null(interaction_type) || interaction_type == "none") {
+    return(base_dataset)
+  }
+
+  if (grepl("HC_HF Liver Genes", base_dataset, ignore.case = TRUE)) {
+    if (interaction_type == "sex")  return("HC_HF Liver Genes, interactive (Sex)")
+    if (interaction_type == "diet") return("HC_HF Liver Genes, interactive (Diet)")
+  } else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
+    if (interaction_type == "diet")     return("HC_HF Liver Lipids, interactive (Diet)")
+    if (interaction_type == "sex")      return("HC_HF Liver Lipids, interactive (Sex)")
+    if (interaction_type == "sex_diet") return("HC_HF Liver Lipids, interactive (Sex_Diet)")
+  } else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
+    if (interaction_type == "sex")      return("HC_HF Systemic Clinical Traits, interactive (Sex)")
+    if (interaction_type == "diet")     return("HC_HF Systemic Clinical Traits, interactive (Diet)")
+    if (interaction_type == "sex_diet") return("HC_HF Systemic Clinical Traits, interactive (Sex_Diet)")
+  } else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
+    if (interaction_type == "sex")  return("HC_HF Plasma Metabolites, interactive (Sex)")
+    if (interaction_type == "diet") return("HC_HF Plasma Metabolites, interactive (Diet)")
+    if (interaction_type == "sex_diet") return("HC_HF Plasma Metabolites, interactive (Sex_Diet)")
+  }
+
+  # Fallback to original dataset if no mapping found
+  base_dataset
+}
+
+#' Derive additive dataset name from interactive dataset
+#'
+#' Given an interactive dataset name, derive the corresponding additive
+#' dataset by removing the interactive suffix and appending ", additive".
+#'
+#' @param interactive_dataset_name Character interactive dataset name.
+#' @return Character additive dataset name.
+#' @export
+derive_additive_dataset_name <- function(interactive_dataset_name) {
+  if (is.null(interactive_dataset_name)) return(NULL)
+  base_name <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", interactive_dataset_name)
+  paste0(trimws(base_name), ", additive")
 }
 
 # =============================================================================

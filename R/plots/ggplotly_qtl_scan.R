@@ -36,7 +36,7 @@ ggplotly_qtl_scan <- function(scan_object, peak_table,
   }
   # Show the highest LOD peak
   peak_table <- peak_table |>
-    dplyr::arrange(desc(lod)) |>
+    dplyr::arrange(dplyr::desc(lod)) |>
     dplyr::slice(1)
   if (nrow(peak_table)) {
     peak_point <- scan_table |>

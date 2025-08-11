@@ -39,9 +39,9 @@ to attach the package. The following apps are available:
 
 ```
 > qtlApp()     # full app (similar in appearance to previous app)
-> scanApp()    # scan app (read and plot QTL genome scan)
+> shiny::runApp()    # Launch the app (scan module is integrated into main app)
 > peakApp()    # peak app (read and show table of peaks and plot of allele estimates)
-> traitApp()   # trait app (read datasets and trait file and show tables)
+> # traitApp() has been deprecated; use the integrated app instead
 > mainParApp() # main parameter app (set up parameters used by other apps)
 ```
 

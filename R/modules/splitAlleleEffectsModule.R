@@ -63,8 +63,10 @@ splitAlleleEffectsServer <- function(id,
       reshaped
     })
 
-    # Mount peak info module for left panel (primary)
-    peakInfoServer(ns("peak_info"), selected_peak_reactive = selected_peak_reactive)
+    # Mount peak info module servers (server IDs should be un-namespaced)
+    peakInfoServer("peak_info", selected_peak_reactive = selected_peak_reactive)
+    peakInfoServer("diff_peak_info_1", selected_peak_reactive = diff_peak_1_reactive)
+    peakInfoServer("diff_peak_info_2", selected_peak_reactive = diff_peak_2_reactive)
 
 
     # Single additive allele effects plot
@@ -134,6 +136,10 @@ splitAlleleEffectsServer <- function(id,
             bslib::card(
               bslib::card_header(shiny::textOutput(ns("diff_plot_title_1"))),
               bslib::card_body(
+              htmltools::tags$div(
+                style = "background: #f8f9fa; padding: 8px; border-radius: 5px; margin-bottom: 8px; height: 180px; overflow-y: auto;",
+                peakInfoUI("diff_peak_info_1")
+              ),
                 shiny::plotOutput(ns("diff_allele_plot_1"), height = "400px") |>
                   shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
               )
@@ -145,6 +151,10 @@ splitAlleleEffectsServer <- function(id,
             bslib::card(
               bslib::card_header(shiny::textOutput(ns("diff_plot_title_2"))),
               bslib::card_body(
+              htmltools::tags$div(
+                style = "background: #f8f9fa; padding: 8px; border-radius: 5px; margin-bottom: 8px; height: 180px; overflow-y: auto;",
+                peakInfoUI("diff_peak_info_2")
+              ),
                 shiny::plotOutput(ns("diff_allele_plot_2"), height = "400px") |>
                   shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
               )

@@ -12,14 +12,14 @@
 traitApp <- function() {
   ui <- bslib::page_sidebar(
     title = "Test Trait Module",
-    sidebar = bslib::sidebar("side_panel",
-      mainParInput("main_par")),
+    sidebar = bslib::sidebar("side_panel"),
     traitUI("trait"),
     traitOutput("trait")
 )
   server <- function(input, output, session) {
     import <- importServer("import")
-    main_par <- mainParServer("main_par", import)
+    # Minimal wiring to keep this demo working without legacy mainPar*
+    main_par <- list(selected_dataset = shiny::reactive(NULL))
     traitServer("trait", main_par, import)
   }
   shiny::shinyApp(ui = ui, server = server)

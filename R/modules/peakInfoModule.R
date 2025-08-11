@@ -22,6 +22,15 @@ peakInfoServer <- function(id, selected_peak_reactive) {
 
     output$peak_info_display <- shiny::renderUI({
       peak_info <- selected_peak_reactive()
+      # Debug: log structure
+      if (is.null(peak_info)) {
+        message("peakInfoModule: selected_peak is NULL")
+      } else {
+        message("peakInfoModule: selected_peak type=", paste(class(peak_info), collapse=","))
+        if (is.data.frame(peak_info)) {
+          message("peakInfoModule: selected_peak nrow=", nrow(peak_info), " cols=", paste(colnames(peak_info), collapse=","))
+        }
+      }
       if (is.null(peak_info) || nrow(peak_info) == 0) {
         return(htmltools::tags$div("No peak selected.", style = "color: #7f8c8d; text-align: center; padding-top: 20px;"))
       }
@@ -29,6 +38,21 @@ peakInfoServer <- function(id, selected_peak_reactive) {
       # Ensure 1-row frame for simple extraction
       if (nrow(peak_info) > 1) {
         peak_info <- peak_info[1, , drop = FALSE]
+      }
+      # Ensure we are working with a 1-row data.frame
+      if (inherits(peak_info, "data.table")) {
+        peak_info <- as.data.frame(peak_info)
+      }
+      if (!is.data.frame(peak_info)) {
+        # Handle named vector/list cases defensively
+        if (is.atomic(peak_info) && !is.null(names(peak_info))) {
+          peak_info <- as.data.frame(as.list(peak_info), stringsAsFactors = FALSE)
+        } else if (is.list(peak_info)) {
+          peak_info <- as.data.frame(peak_info, stringsAsFactors = FALSE)
+        }
+      }
+      if (nrow(peak_info) == 0) {
+        return(htmltools::tags$div("No peak selected.", style = "color: #7f8c8d; text-align: center; padding-top: 20px;"))
       }
 
       # Helper to get the first available non-NA value from candidate columns
@@ -42,10 +66,10 @@ peakInfoServer <- function(id, selected_peak_reactive) {
         return(NA)
       }
 
-      marker <- get_field(c("marker", "markers"))
-      chr_raw <- get_field(c("qtl_chr", "chr", "qtl_chr_char"))
-      pos <- get_field(c("qtl_pos", "pos", "position"))
-      lod <- get_field(c("qtl_lod", "lod", "LOD"))
+      marker <- get_field(c("marker", "markers", "snp", "id", "marker_name"))
+      chr_raw <- get_field(c("qtl_chr", "chr", "qtl_chr_char", "chromosome"))
+      pos <- get_field(c("qtl_pos", "pos", "position", "mb", "bp", "bp_grcm39"))
+      lod <- get_field(c("qtl_lod", "lod", "LOD", "lod_diff"))
       ci_lo <- get_field(c("qtl_ci_lo", "ci_lo"))
       ci_hi <- get_field(c("qtl_ci_hi", "ci_hi"))
       trait <- get_field(c("trait", "phenotype"))
@@ -96,9 +120,17 @@ peakInfoServer <- function(id, selected_peak_reactive) {
         ))
       }
       if (!is.null(lod) && !is.na(lod)) {
-        info_elements <- c(info_elements, list(
-          htmltools::tags$strong("LOD Score: "), round(as.numeric(lod), 3), htmltools::tags$br()
-        ))
+        # If this came from lod_diff, show both signed and |lod|
+        if ("lod_diff" %in% colnames(peak_info) && !is.na(peak_info$lod_diff[1])) {
+          info_elements <- c(info_elements, list(
+            htmltools::tags$strong("LOD Difference: "), paste0(round(as.numeric(peak_info$lod_diff[1]), 3),
+            " (|LOD| = ", round(abs(as.numeric(peak_info$lod_diff[1])), 3), ")"), htmltools::tags$br()
+          ))
+        } else {
+          info_elements <- c(info_elements, list(
+            htmltools::tags$strong("LOD Score: "), round(as.numeric(lod), 3), htmltools::tags$br()
+          ))
+        }
       }
 
       # Cis/Trans status
@@ -153,6 +185,32 @@ peakInfoServer <- function(id, selected_peak_reactive) {
                 htmltools::tags$div(effect, style = "margin: 2px 0;")
               })
             )
+          ))
+        }
+      }
+
+      # If nothing was captured (all fields missing), show a compact key-value dump as fallback
+      if (length(info_elements) == 0) {
+        message("peakInfoModule: No standard fields found. Available columns:", paste(colnames(peak_info), collapse = ", "))
+        # Build a compact table of key fields if present
+        key_cols <- c("trait", "phenotype", "marker", "markers", "qtl_chr", "chr", "qtl_pos", "pos", "qtl_lod", "lod", "lod_diff",
+                      "A","B","C","D","E","F","G","H")
+        present <- intersect(key_cols, colnames(peak_info))
+        if (length(present) > 0) {
+          rows <- lapply(present, function(nm) {
+            htmltools::tags$tr(
+              htmltools::tags$td(htmltools::tags$strong(nm), style = "padding:2px 6px;"),
+              htmltools::tags$td(as.character(peak_info[[nm]][1]), style = "padding:2px 6px;")
+            )
+          })
+          return(htmltools::tags$table(
+            style = "font-size:11px; width:100%;",
+            do.call(htmltools::tagList, rows)
+          ))
+        } else {
+          return(htmltools::tags$div(
+            "No metadata available for this peak.",
+            style = "color: #7f8c8d; text-align: center; padding: 6px;"
           ))
         }
       }

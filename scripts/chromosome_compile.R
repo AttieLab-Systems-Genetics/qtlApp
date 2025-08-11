@@ -23,7 +23,7 @@ input_dirname <- basename(dirname(INPUT_DIR))
 
 # Define all chromosomes
 
-CHROMOSOMES <- c(1:3)
+CHROMOSOMES <- c(10:15)
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
@@ -123,10 +123,17 @@ process_file <- function(file_path) {
   )
 }
 
+########################################
 # List all gz files in the input directory
 message("Listing gz files...")
 gz_files <- list.files(INPUT_DIR, pattern = "\\.gz$", full.names = TRUE)
 message(paste("Found", length(gz_files), "gz files"))
+
+# Short-circuit gracefully when no input files are found
+if (length(gz_files) == 0) {
+  message("No gz files found. Exiting without writing any FST files.")
+  quit(save = "no", status = 0)
+}
 
 # Process files in parallel
 message("Processing files...")
@@ -144,32 +151,34 @@ for (chr in CHROMOSOMES) {
 chunk_size <- 100
 num_chunks <- ceiling(length(gz_files) / chunk_size)
 
-for (i in 1:num_chunks) {
+for (i in seq_len(num_chunks)) {
   message(paste("Processing chunk", i, "of", num_chunks))
   start_idx <- (i - 1) * chunk_size + 1
   end_idx <- min(i * chunk_size, length(gz_files))
   chunk_files <- gz_files[start_idx:end_idx]
 
   # Process this chunk of files
-  chunk_results <- mclapply(chunk_files, process_file, mc.cores = num_cores)
+  chunk_results <- parallel::mclapply(chunk_files, process_file, mc.cores = num_cores)
 
   # Combine results from this chunk for each chromosome
   for (chr in CHROMOSOMES) {
     chr_char <- as.character(chr) # Use character version for indexing
     # Extract data for this chromosome from all files in the chunk
     # Use chr_char to access the named list elements from chunk_results
-    chr_chunk_data <- rbindlist(
-      lapply(
-        chunk_results[!sapply(chunk_results, is.null)],
-        function(x) x[[chr_char]]
-      ), # Access using character name
-      fill = TRUE
-    )
+    valid_results <- chunk_results[!vapply(chunk_results, is.null, logical(1))]
+    if (length(valid_results) == 0) {
+      chr_chunk_data <- data.table()
+    } else {
+      chr_chunk_data <- data.table::rbindlist(
+        lapply(valid_results, function(x) x[[chr_char]]),
+        fill = TRUE
+      )
+    }
 
     # Append to the main data table for this chromosome
     if (nrow(chr_chunk_data) > 0) {
       # Access all_chr_data using character name
-      if (chr_char %in% names(all_chr_data)) {
+      if (!is.null(chr_char) && chr_char %in% names(all_chr_data)) {
         all_chr_data[[chr_char]] <- rbindlist(list(all_chr_data[[chr_char]], chr_chunk_data), fill = TRUE)
         message(paste("  Accumulated", nrow(all_chr_data[[chr_char]]), "rows for chromosome", chr_char))
       } else {
@@ -179,7 +188,7 @@ for (i in 1:num_chunks) {
   }
 
   # Clean up to free memory
-  rm(chunk_results, chr_chunk_data)
+  rm(chunk_results, valid_results, chr_chunk_data)
   gc()
 }
 
@@ -187,7 +196,9 @@ for (i in 1:num_chunks) {
 for (chr in CHROMOSOMES) {
   chr_char <- as.character(chr) # Use character version for indexing
   # Check if the name exists and if data exists before writing
-  if (chr_char %in% names(all_chr_data) && nrow(all_chr_data[[chr_char]]) > 0) {
+  has_entry <- (!is.null(chr_char)) && (chr_char %in% names(all_chr_data))
+  has_rows <- has_entry && is.data.frame(all_chr_data[[chr_char]]) && nrow(all_chr_data[[chr_char]]) > 0
+  if (has_rows) {
     output_file <- file.path(OUTPUT_DIR, paste0("chromosome", chr_char, "_", input_dirname, "_data.fst"))
     message(paste("Writing chromosome", chr_char, "data to FST file..."))
     # Explicitly use the custom temp directory for writing

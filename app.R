@@ -80,6 +80,10 @@ server <- function(input, output, session) {
     scan_type <- NULL
     show_stacked_plots <- NULL
 
+    # Sidebar interaction type (used by LOD threshold and sidebar-only plots)
+    # Define early so downstream modules can depend on it safely
+    sidebar_interaction_type_rv <- shiny::reactiveVal("none")
+
     # LOD Threshold module (replaces inline slider)
     output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
         lodThresholdUI(ns_app_controller("lod_thr"))
@@ -446,10 +450,6 @@ server <- function(input, output, session) {
     )
 
 
-    # Store the sidebar interaction type separately (for independent sidebar plot control)
-    sidebar_interaction_type_rv <- shiny::reactiveVal("none")
-
-
     # Observer to update sidebar interaction type when input changes (independent of main UI)
     shiny::observeEvent(input[[ns_app_controller("sidebar_interaction_type")]],
         {
@@ -604,11 +604,7 @@ server <- function(input, output, session) {
         }
     })
 
-    # Mount overlay controls module and wire toggle outputs to scanServer
-    overlay_module <- overlayControlsServer(
-        id = ns_app_controller("overlay_controls"),
-        selected_dataset_group_reactive = main_selected_dataset_group
-    )
+    # overlay_module already initialized above; reuse its reactives
 
     # Dynamic title for the main LOD scan card
     output[[ns_app_controller("main_plot_title")]] <- shiny::renderUI({
