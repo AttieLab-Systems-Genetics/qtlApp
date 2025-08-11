@@ -76,13 +76,14 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
         shiny::observeEvent(input$interaction_type,
             {
                 new_value <- input$interaction_type
-                if (!is.null(new_value)) {
+                # Guard: only update on real user changes; ignore re-renders setting same value
+                if (!is.null(new_value) && !identical(new_value, interaction_type_rv())) {
                     interaction_type_rv(new_value)
                     message(paste("interactiveAnalysisModule: Updated interaction type to:", new_value))
                 }
             },
             ignoreNULL = TRUE,
-            ignoreInit = TRUE # Prevent firing on startup
+            ignoreInit = TRUE # Prevent firing on initial binding
         )
 
         # New reactive that handles the dataset name mapping for interactive analysis
@@ -112,7 +113,7 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
             }
 
             return(base_dataset)
-        })
+        }) %>% shiny::debounce(150)
 
         # Detect if current dataset is additive or interactive based on dataset name and interaction type
         scan_type <- shiny::reactive({

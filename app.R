@@ -42,6 +42,7 @@ source("R/modules/traitProcessingModule.R")
 source("R/modules/scanPlotModule.R") # Source our scan module
 source("R/modules/profilePlotApp.R") # Profile plot module
 source("R/modules/interactiveAnalysisModule.R") # Interactive analysis controls/module
+source("R/modules/splitAlleleEffectsModule.R") # Split allele effects module
 source("R/ui/mainUI.R") # Main UI module
 
 # Set maximum file upload size
@@ -180,20 +181,7 @@ server <- function(input, output, session) {
         return(NULL)
     })
 
-    # Initialize interactive analysis module now that dataset reactive exists
-    interactive_analysis <- interactiveAnalysisServer(
-        id = ns_app_controller("interactive_analysis_module"),
-        selected_dataset_reactive = main_selected_dataset_group
-    )
-    current_interaction_type_rv <- interactive_analysis$interaction_type
-    mapped_dataset_for_interaction <- interactive_analysis$mapped_dataset
-    scan_type <- interactive_analysis$scan_type
-    show_stacked_plots <- shiny::reactive({
-        type <- current_interaction_type_rv()
-        !is.null(type) && type != "none"
-    })
-
-    # Initialize interactive analysis module now that dataset reactive exists
+    # Initialize interactive analysis module now that dataset reactive exists (single instance)
     interactive_analysis <- interactiveAnalysisServer(
         id = ns_app_controller("interactive_analysis_module"),
         selected_dataset_reactive = main_selected_dataset_group
@@ -210,6 +198,13 @@ server <- function(input, output, session) {
     shiny::observeEvent(current_interaction_type_rv(), {
         shiny::updateSelectInput(session, ns_app_controller("selected_chr"), selected = "All")
     }, ignoreInit = TRUE)
+
+    # Ensure scanServer only runs when mapped dataset is stable/non-null
+    mapped_dataset_stable <- shiny::reactive({
+        ds <- mapped_dataset_for_interaction()
+        shiny::req(ds)
+        ds
+    }) %>% shiny::debounce(100)
 
     # removed: duplicate mapping and scan_type logic (handled by interactiveAnalysisModule)
 
@@ -551,7 +546,7 @@ server <- function(input, output, session) {
     scan_module_outputs <- scanServer(
         id = ns_app_controller("scan_plot_module"),
         trait_to_scan = trait_for_lod_scan_rv,
-        selected_dataset_group = mapped_dataset_for_interaction,
+        selected_dataset_group = mapped_dataset_stable,
         import_reactives = import_reactives,
         main_par_inputs = active_main_par,
         interaction_type_reactive = current_interaction_type_rv,
@@ -599,19 +594,6 @@ server <- function(input, output, session) {
             rownames = FALSE,
             selection = "none"
         ))
-    })
-
-    # Initialize interactive analysis module after dataset reactive exists
-    interactive_analysis <- interactiveAnalysisServer(
-        id = ns_app_controller("interactive_analysis_module"),
-        selected_dataset_reactive = main_selected_dataset_group
-    )
-    current_interaction_type_rv <- interactive_analysis$interaction_type
-    mapped_dataset_for_interaction <- interactive_analysis$mapped_dataset
-    scan_type <- interactive_analysis$scan_type
-    show_stacked_plots <- shiny::reactive({
-        type <- current_interaction_type_rv()
-        !is.null(type) && type != "none"
     })
 
     # UI for LOD Scan plot - refactored for clarity and dynamic content
@@ -665,7 +647,7 @@ server <- function(input, output, session) {
                     style = "margin-top: 15px;",
                     DT::DTOutput(ns_app_controller("lod_scan_click_table"))
                 ),
-                shiny::uiOutput(ns_app_controller("allele_effects_section"))
+                splitAlleleEffectsUI(ns_app_controller("split_allele_effects"))
             )
         } else {
             div(
@@ -729,220 +711,13 @@ server <- function(input, output, session) {
         h4(title_text, style = "font-weight: bold; margin-bottom: 0;")
     })
 
-    # Render allele effects section conditionally
-    output[[ns_app_controller("allele_effects_section")]] <- shiny::renderUI({
-        additive_peak <- scan_module_outputs$selected_peak()
-        diff_peak_1 <- scan_module_outputs$diff_peak_1()
-        diff_peak_2 <- scan_module_outputs$diff_peak_2()
-
-        # View 1: Additive Peak Details
-        if (!is.null(additive_peak)) {
-            message(paste("scanApp: Rendering SINGLE allele effects for peak:", additive_peak$marker))
-            return(tagList(
-                hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
-                div(
-                    style = "margin-bottom: 15px;",
-                    h5("Strain Effects", style = "color: #2c3e50; font-weight: bold;"),
-                    p("Showing strain effects for the selected peak.", style = "font-size: 12px;")
-                ),
-                bslib::layout_columns(
-                    col_widths = c(5, 7),
-                    div(
-                        style = "background: #f8f9fa; padding: 10px; border-radius: 5px; height: 450px; overflow-y: auto;",
-                        shiny::uiOutput(ns_app_controller("peak_info_display"))
-                    ),
-                    shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "450px", width = "450px") %>%
-                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
-                )
-            ))
-        }
-
-        # View 2: Comparative Difference Peak Details
-        if (!is.null(diff_peak_1) || !is.null(diff_peak_2)) {
-            message("scanApp: Rendering SIDE-BY-SIDE allele effects for difference plot click.")
-
-            ui_elements <- list()
-
-            # Card for the first peak, if it exists
-            if (!is.null(diff_peak_1)) {
-                ui_elements <- c(ui_elements, list(
-                    bslib::card(
-                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_1"))),
-                        bslib::card_body(
-                            shiny::plotOutput(ns_app_controller("diff_allele_plot_1"), height = "400px") %>%
-                                shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
-                        )
-                    )
-                ))
-            }
-
-            # Card for the second peak, if it exists
-            if (!is.null(diff_peak_2)) {
-                ui_elements <- c(ui_elements, list(
-                    bslib::card(
-                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_2"))),
-                        bslib::card_body(
-                            shiny::plotOutput(ns_app_controller("diff_allele_plot_2"), height = "400px") %>%
-                                shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
-                        )
-                    )
-                ))
-            }
-
-            # Message if one of the peaks was not found
-            info_message <- NULL
-            if (is.null(diff_peak_1) || is.null(diff_peak_2)) {
-                info_message <- p("Note: A corresponding peak was found in only one of the comparison datasets within the search window.", style = "font-style: italic; font-size: 12px; color: #7f8c8d; margin-top: 0;")
-            }
-
-            return(tagList(
-                hr(style = "margin: 20px 0; border-top: 2px solid #e74c3c;"),
-                h5("Comparative Strain Effects", style = "color: #2c3e50; font-weight: bold; margin-bottom: 15px;"),
-                p("Showing strain effects for the peak found in each respective dataset based on your click on the difference plot.", style = "font-size: 12px; margin-bottom: 2px;"),
-                info_message,
-                do.call(bslib::layout_columns, c(list(col_widths = 6), ui_elements))
-            ))
-        }
-
-        # Default: Nothing to show
-        message("scanApp: No allele effects to display.")
-        return(NULL)
-    })
-
-    # Dynamic peak info display
-    output[[ns_app_controller("peak_info_display")]] <- shiny::renderUI({
-        # This now correctly uses the output from the scanServer module
-        peak_info <- scan_module_outputs$selected_peak()
-
-        if (is.null(peak_info) || nrow(peak_info) == 0) {
-            return(tags$div("No peak selected.", style = "color: #7f8c8d; text-align: center; padding-top: 20px;"))
-        }
-
-        # Build summary info
-        info_elements <- list()
-
-        # Basic info
-        info_elements <- c(info_elements, list(
-            tags$strong("Marker: "), peak_info$marker, tags$br(),
-            tags$strong("Position: "), paste0("Chr", peak_info$qtl_chr, ":", round(peak_info$qtl_pos, 2), " Mb"), tags$br(),
-            tags$strong("LOD Score: "), round(peak_info$qtl_lod, 3), tags$br()
-        ))
-
-        # Cis/Trans status
-        if ("cis" %in% colnames(peak_info)) {
-            cis_status <- if (is.logical(peak_info$cis)) {
-                ifelse(peak_info$cis, "Cis", "Trans")
-            } else if (is.character(peak_info$cis)) {
-                ifelse(toupper(peak_info$cis) %in% c("TRUE", "1", "YES"), "Cis", "Trans")
-            } else {
-                "Unknown"
-            }
-
-            cis_color <- if (cis_status == "Cis") "#27ae60" else "#e74c3c"
-            info_elements <- c(info_elements, list(
-                tags$strong("Type: "),
-                tags$span(cis_status, style = paste0("color: ", cis_color, "; font-weight: bold;")),
-                tags$br()
-            ))
-        }
-
-        # Confidence interval
-        if ("qtl_ci_lo" %in% colnames(peak_info) && "qtl_ci_hi" %in% colnames(peak_info)) {
-            if (!is.na(peak_info$qtl_ci_lo) && !is.na(peak_info$qtl_ci_hi)) {
-                info_elements <- c(info_elements, list(
-                    tags$strong("95% CI: "),
-                    paste0(round(peak_info$qtl_ci_lo, 2), " - ", round(peak_info$qtl_ci_hi, 2), " Mb"),
-                    tags$br()
-                ))
-            }
-        }
-
-        # Add founder allele effects with actual values
-        allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-        strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
-        available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
-
-        if (length(available_alleles) > 0) {
-            # Get non-NA allele effects with their values
-            allele_effects <- list()
-            for (i in seq_along(available_alleles)) {
-                col <- available_alleles[i]
-                value <- peak_info[[col]]
-                if (!is.na(value) && !is.null(value)) {
-                    strain <- strain_names[i]
-                    allele_effects[[length(allele_effects) + 1]] <- paste0(strain, ": ", round(value, 3))
-                }
-            }
-
-            if (length(allele_effects) > 0) {
-                # Create a more detailed display of founder effects
-                info_elements <- c(info_elements, list(
-                    tags$strong("Founder Effects:"), tags$br(),
-                    # Display effects in a more readable format
-                    tags$div(
-                        style = "margin-left: 10px; font-family: monospace; font-size: 11px;",
-                        lapply(allele_effects, function(effect) {
-                            tags$div(effect, style = "margin: 2px 0;")
-                        })
-                    )
-                ))
-            } else {
-                # Fallback to old display if no valid effects found
-                info_elements <- c(info_elements, list(
-                    tags$strong("Founder Effects: "),
-                    paste0(length(available_alleles), " available (", paste(available_alleles, collapse = ", "), ")"),
-                    tags$br()
-                ))
-            }
-        }
-
-        do.call(tagList, info_elements)
-    })
-
-    # Render the allele effects plot
-    output[[ns_app_controller("allele_effects_plot_output")]] <- shiny::renderPlot({
-        effects_data <- allele_effects_data()
-
-        message(paste("scanApp: Rendering allele effects plot. Data available:", !is.null(effects_data)))
-
-        if (is.null(effects_data)) {
-            message("scanApp: No allele effects data - showing placeholder")
-            # Create a placeholder plot when no data
-            ggplot2::ggplot() +
-                ggplot2::theme_void() +
-                ggplot2::labs(title = "No strain effects data available for this peak") +
-                ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
-        } else {
-            message(paste("scanApp: Creating allele effects plot with", nrow(effects_data), "data points"))
-            # Use the ggplot_alleles function to create the plot
-            ggplot_alleles(effects_data)
-        }
-    })
-
-    # NEW: Render logic for side-by-side plots
-    output[[ns_app_controller("diff_plot_title_1")]] <- renderText({
-        data <- diff_allele_data_1()
-        req(data)
-        unique(data$plot_label)
-    })
-
-    output[[ns_app_controller("diff_allele_plot_1")]] <- shiny::renderPlot({
-        data <- diff_allele_data_1()
-        req(data)
-        ggplot_alleles(data)
-    })
-
-    output[[ns_app_controller("diff_plot_title_2")]] <- renderText({
-        data <- diff_allele_data_2()
-        req(data)
-        unique(data$plot_label)
-    })
-
-    output[[ns_app_controller("diff_allele_plot_2")]] <- shiny::renderPlot({
-        data <- diff_allele_data_2()
-        req(data)
-        ggplot_alleles(data)
-    })
+    # Mount allele effects module server (single or side-by-side)
+    splitAlleleEffectsServer(
+      id = ns_app_controller("split_allele_effects"),
+      selected_peak_reactive = scan_module_outputs$selected_peak,
+      diff_peak_1_reactive = scan_module_outputs$diff_peak_1,
+      diff_peak_2_reactive = scan_module_outputs$diff_peak_2
+    )
 
     # --- FIXED Trait Search Logic ---
     # Store a flag to prevent auto-search immediately after dataset changes
