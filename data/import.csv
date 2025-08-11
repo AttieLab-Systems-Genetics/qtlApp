@@ -1,5 +1,0 @@
-object,filename
-file_directory,/data/dev/miniViewer_3.0/file_index.csv
-chr_breaks,/data/dev/miniViewer_3.0/chromosomal_sep_mm11.csv
-annotation_list,/data/dev/miniViewer_3.0/annotation_list.rds
-markers,/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds
