@@ -173,8 +173,10 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
         all_peaks_for_dataset <- dplyr::select(as.data.frame(all_peaks_for_dataset_raw), dplyr::all_of(select_cols)) %>%
           dplyr::rename(!!!rename_vec)
 
-        # Create 'trait' alias for downstream code if only 'phenotype' exists
-        if (("phenotype" %in% colnames(all_peaks_for_dataset)) && !("trait" %in% colnames(all_peaks_for_dataset))) {
+        # Create 'trait' alias for downstream code
+        if ("gene_symbol" %in% colnames(all_peaks_for_dataset)) {
+          all_peaks_for_dataset$trait <- all_peaks_for_dataset$gene_symbol
+        } else if (("phenotype" %in% colnames(all_peaks_for_dataset)) && !("trait" %in% colnames(all_peaks_for_dataset))) {
           all_peaks_for_dataset$trait <- all_peaks_for_dataset$phenotype
         }
 
@@ -214,21 +216,34 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
   }
 
   if (!is.null(selected_trait) && selected_trait != "") {
-    filter_col <- NULL
+    # Flexible filtering: support gene symbol or gene id for gene datasets
     if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
-      filter_col <- "gene_symbol"
+      filtered_peaks <- data.frame()
+      # Try gene_symbol first if present
+      if ("gene_symbol" %in% colnames(all_peaks_for_dataset)) {
+        filtered_peaks <- dplyr::filter(all_peaks_for_dataset, .data$gene_symbol == selected_trait)
+      }
+      # If no match, try gene_id if present
+      if ((nrow(filtered_peaks) == 0 || is.null(filtered_peaks)) && ("gene_id" %in% colnames(all_peaks_for_dataset))) {
+        filtered_peaks <- dplyr::filter(all_peaks_for_dataset, .data$gene_id == selected_trait)
+      }
+      if (is.null(filtered_peaks) || nrow(filtered_peaks) == 0) {
+        warning("peak_finder: No peaks found for gene '", selected_trait, "' by symbol or ID. CSV: ", basename(peaks_file_path_for_warning))
+        return(data.frame())
+      }
     } else {
-      filter_col <- "phenotype"
+      # Non-gene datasets filter by phenotype
+      if (!("phenotype" %in% colnames(all_peaks_for_dataset))) {
+        warning("peak_finder: Column 'phenotype' not found for filtering.")
+        return(all_peaks_for_dataset)
+      }
+      filtered_peaks <- dplyr::filter(all_peaks_for_dataset, .data$phenotype == selected_trait)
+      if (nrow(filtered_peaks) == 0) {
+        warning("peak_finder: No peaks found for phenotype '", selected_trait, "' in ", basename(peaks_file_path_for_warning))
+        return(data.frame())
+      }
     }
-    if (!(filter_col %in% colnames(all_peaks_for_dataset))) {
-      warning("peak_finder: Column '", filter_col, "' needed for filtering type '", trait_type, "' not found after renaming. Returning all peaks.")
-      return(all_peaks_for_dataset)
-    }
-    filtered_peaks <- dplyr::filter(all_peaks_for_dataset, .data[[filter_col]] == selected_trait)
 
-    if (nrow(filtered_peaks) == 0 && trait_type %in% c("genes", "isoforms")) {
-      warning("peak_finder: No peaks found for gene symbol '", selected_trait, "'. Check if this symbol exists in the 'gene_symbol' column of the CSV: ", basename(peaks_file_path_for_warning))
-    }
     if (nrow(filtered_peaks) > 0 && "marker" %in% colnames(filtered_peaks) && "qtl_lod" %in% colnames(filtered_peaks)) {
       filtered_peaks <- filtered_peaks %>%
         dplyr::group_by(marker) %>%
