@@ -20,6 +20,12 @@ correlationInput <- function(id) {
                 choices = character(0),
                 selected = NULL,
                 width = "420px"
+            ),
+            shiny::textInput(
+                inputId = ns("correlation_search"),
+                label = NULL,
+                placeholder = "Search trait...",
+                width = "280px"
             )
         )
     )
@@ -440,8 +446,27 @@ correlationServer <- function(id, import_reactives, main_par) {
             out
         }) %>% shiny::debounce(150)
 
-        output$correlation_table <- DT::renderDT({
+        # Debounced search query
+        search_query <- shiny::reactive({
+            val <- input$correlation_search
+            if (is.null(val)) "" else trimws(as.character(val))
+        }) |> shiny::debounce(150)
+
+        # Filtered table by trait search; preserves ordering by absolute correlation
+        filtered_table <- shiny::reactive({
             tbl <- correlation_table()
+            q <- search_query()
+            if (!is.null(tbl) && nrow(tbl) > 0 && nzchar(q)) {
+                keep <- tryCatch(grepl(q, tbl$trait, ignore.case = TRUE, perl = TRUE),
+                    error = function(e) grepl(q, tbl$trait, ignore.case = TRUE, fixed = TRUE)
+                )
+                tbl <- tbl[keep]
+            }
+            tbl
+        })
+
+        output$correlation_table <- DT::renderDT({
+            tbl <- filtered_table()
             # Include a hidden abs_correlation column for default ordering by magnitude
             dt <- DT::datatable(
                 tbl[, .(abs_correlation, trait, correlation_value, p_value)],
