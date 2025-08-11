@@ -354,6 +354,20 @@ correlationServer <- function(id, import_reactives, main_par) {
                 if (!"phenotype" %in% names(dt)) dt[, phenotype := seq_len(.N)]
                 # Build output table
                 out <- dt[, .(trait = phenotype, correlation_value = .SD[[1]]), .SDcols = key_info$key]
+
+                # Add p-values from companion file if available
+                pval_path <- sub("_corr\\.csv$", "_pval.csv", file_path)
+                if (file.exists(pval_path)) {
+                    psel <- c("phenotype", "Phenotype", key_info$key)
+                    psel <- psel[psel %in% names(data.table::fread(pval_path, nrows = 0))]
+                    pdt <- data.table::fread(pval_path, select = psel)
+                    if ("Phenotype" %in% names(pdt)) data.table::setnames(pdt, "Phenotype", "phenotype")
+                    if (!"phenotype" %in% names(pdt)) pdt[, phenotype := seq_len(.N)]
+                    pmerge <- pdt[, .(trait = phenotype, p_value = .SD[[1]]), .SDcols = key_info$key]
+                    out <- merge(out, pmerge, by = "trait", all.x = TRUE, sort = FALSE)
+                } else {
+                    out[, p_value := as.numeric(NA)]
+                }
             } else {
                 # Row mode: read entire file, find the row, and transpose to long format
                 dt_full <- data.table::fread(file_path)
@@ -376,6 +390,31 @@ correlationServer <- function(id, import_reactives, main_par) {
                 )
                 out <- long_dt[, .(trait, correlation_value)]
 
+                # Add p-values from companion pval file (same row)
+                pval_path <- sub("_corr\\.csv$", "_pval.csv", file_path)
+                if (file.exists(pval_path)) {
+                    pdt_full <- data.table::fread(pval_path)
+                    if ("Phenotype" %in% names(pdt_full)) data.table::setnames(pdt_full, "Phenotype", "phenotype")
+                    if ("phenotype" %in% names(pdt_full)) {
+                        prow <- pdt_full[phenotype == key_info$key]
+                        if (nrow(prow) == 1) {
+                            pnumeric <- setdiff(names(prow), "phenotype")
+                            plong <- data.table::melt(prow,
+                                id.vars = "phenotype", measure.vars = pnumeric,
+                                variable.name = "trait", value.name = "p_value"
+                            )
+                            pmerge <- plong[, .(trait, p_value)]
+                            out <- merge(out, pmerge, by = "trait", all.x = TRUE, sort = FALSE)
+                        } else {
+                            out[, p_value := as.numeric(NA)]
+                        }
+                    } else {
+                        out[, p_value := as.numeric(NA)]
+                    }
+                } else {
+                    out[, p_value := as.numeric(NA)]
+                }
+
                 # Map gene ids -> symbols when the other side is genes (columns), i.e., when traits look like 'liver_<gene_id>'
                 has_liver_prefix <- any(grepl("^liver_ENSMUSG", out$trait, perl = TRUE))
                 if (has_liver_prefix) {
@@ -392,25 +431,30 @@ correlationServer <- function(id, import_reactives, main_par) {
                 }
             }
 
-            # Add p_value as NA for now (sample size unknown)
-            out[, p_value := as.numeric(NA)]
-            # Sort by correlation_value descending
-            out <- out[order(-correlation_value)]
+            # Prepare display formatting and default sort by absolute correlation
+            if ("p_value" %in% names(out)) {
+                out[, p_value := ifelse(is.na(p_value), NA_character_, format(p_value, digits = 3, scientific = TRUE))]
+            }
+            out[, abs_correlation := abs(correlation_value)]
+            out <- out[order(-abs_correlation, -correlation_value)]
             out
         }) %>% shiny::debounce(150)
 
         output$correlation_table <- DT::renderDT({
             tbl <- correlation_table()
-            DT::datatable(
-                tbl,
+            # Include a hidden abs_correlation column for default ordering by magnitude
+            dt <- DT::datatable(
+                tbl[, .(abs_correlation, trait, correlation_value, p_value)],
                 rownames = FALSE,
                 options = list(
                     pageLength = 25,
                     autoWidth = TRUE,
-                    order = list(list(1, "desc")), # default sort by correlation_value desc
+                    order = list(list(0, "desc")), # order by hidden abs_correlation
+                    columnDefs = list(list(visible = FALSE, targets = 0)),
                     dom = "tip"
                 )
             )
+            DT::formatRound(dt, columns = "correlation_value", digits = 4)
         })
 
         return(invisible(NULL))
