@@ -18,30 +18,30 @@ library(reshape2)
 library(htmltools) # Added for tags
 library(stats) # Added for setNames
 
-# Source files in specific order
-source("R/helpers.R")
-source("R/data_handling.R")
-source("R/import_data.R")
-source("R/importApp.R")
-source("R/downloadApp.R")
-source("R/cisTransPlotApp.R")
-source("R/manhattanPlotApp.R")
-source("R/ui_styles.R")
-source("R/plot_enhancements.R")
-source("R/plot_null.R")
-source("R/peak_finder.R")
-source("R/trait_scan.R")
-source("R/ggplot_alleles.R")
-source("R/ggplot_qtl_scan.R")
-source("R/ggplotly_qtl_scan.R")
-source("R/peak_info.R")
-source("R/QTL_plot_visualizer.R")
-source("R/fst_rows.R")
-source("R/traitApp.R")
-source("R/traitProcessingModule.R")
-source("R/scanPlotModule.R") # Source our new module
-source("R/profilePlotApp.R") # Source the new profile plot module
-source("R/mainUI.R") # Source our new UI module
+# Source files in specific order (updated paths)
+source("R/utils/helpers.R")
+source("R/data/data_handling.R")
+source("R/data/import_data.R")
+source("R/modules/importApp.R")
+source("R/modules/downloadApp.R")
+source("R/modules/cisTransPlotApp.R")
+source("R/modules/manhattanPlotApp.R")
+source("R/ui/ui_styles.R")
+source("R/plots/plot_enhancements.R")
+source("R/plots/plot_null.R")
+source("R/data/peak_finder.R")
+source("R/data/trait_scan.R")
+source("R/plots/ggplot_alleles.R")
+source("R/plots/ggplot_qtl_scan.R")
+source("R/plots/ggplotly_qtl_scan.R")
+source("R/plots/peak_info.R")
+source("R/plots/QTL_plot_visualizer.R")
+source("R/data/fst_rows.R")
+source("R/modules/traitApp.R")
+source("R/modules/traitProcessingModule.R")
+source("R/modules/scanPlotModule.R") # Source our scan module
+source("R/modules/profilePlotApp.R") # Profile plot module
+source("R/ui/mainUI.R") # Main UI module
 
 # Set maximum file upload size
 options(shiny.maxRequestSize = 20000 * 1024^2) # 20 GB
@@ -55,7 +55,7 @@ server <- function(input, output, session) {
 
     # Source helper for allele plots if not already available
     if (!exists("ggplot_alleles", mode = "function")) {
-        source("R/ggplot_alleles.R")
+        source("R/plots/ggplot_alleles.R")
     }
 
     # Define the %||% operator for null coalescing
