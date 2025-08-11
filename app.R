@@ -41,6 +41,7 @@ source("R/modules/traitApp.R")
 source("R/modules/traitProcessingModule.R")
 source("R/modules/scanPlotModule.R") # Source our scan module
 source("R/modules/profilePlotApp.R") # Profile plot module
+source("R/modules/interactiveAnalysisModule.R") # Interactive analysis controls/module
 source("R/ui/mainUI.R") # Main UI module
 
 # Set maximum file upload size
@@ -61,67 +62,19 @@ server <- function(input, output, session) {
     # Define the %||% operator for null coalescing
     `%||%` <- function(a, b) if (!is.null(a)) a else b
 
-    # Helper function to map HC_HF dataset names to their interactive versions
-    # Only maps to datasets that actually exist in the file system
-    get_interactive_dataset_name <- function(base_dataset, interaction_type) {
-        if (is.null(interaction_type) || interaction_type == "none") {
-            return(base_dataset)
-        }
-
-        # HC_HF Liver Genes (supports both Sex and Diet interactions)
-        if (grepl("HC_HF Liver Genes", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "sex") {
-                return("HC_HF Liver Genes, interactive (Sex)")
-            } else if (interaction_type == "diet") {
-                return("HC_HF Liver Genes, interactive (Diet)")
-            }
-        }
-        # HC_HF Liver Lipids (supports Diet and Sex x Diet interactions)
-        else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "diet") {
-                return("HC_HF Liver Lipids, interactive (Diet)")
-            } else if (interaction_type == "sex") {
-                return("HC_HF Liver Lipids, interactive (Sex)")
-            } else if (interaction_type == "sex_diet") {
-                return("HC_HF Liver Lipids, interactive (Sex_Diet)")
-            }
-        }
-        # HC_HF Clinical Traits (supports Sex, Diet, and Sex x Diet interactions)
-        else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "sex") {
-                return("HC_HF Systemic Clinical Traits, interactive (Sex)")
-            } else if (interaction_type == "diet") {
-                return("HC_HF Systemic Clinical Traits, interactive (Diet)")
-            } else if (interaction_type == "sex_diet") {
-                return("HC_HF Systemic Clinical Traits, interactive (Sex_Diet)")
-            }
-        } else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "sex") {
-                return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
-            } else if (interaction_type == "diet") {
-                return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
-            } else if (interaction_type == "sex_diet") {
-                return("HC_HF Plasma plasma_metabolite, interactive (Sex_Diet)")
-            }
-        }
-
-        # Fallback to original dataset if no mapping found
-        return(base_dataset)
-    }
+    # Use interactiveAnalysisModule for dataset mapping; remove local duplicate helper
 
     trait_cache <- new.env(parent = emptyenv())
     peaks_cache <- new.env(parent = emptyenv())
 
     import_reactives <- importServer("import")
 
-    # Store the current interaction type to preserve across UI re-renders
-    current_interaction_type_rv <- shiny::reactiveVal("none")
-
-    # NEW: Reactive to determine if stacked plots should be shown
-    show_stacked_plots <- shiny::reactive({
-        interaction_type <- current_interaction_type_rv()
-        !is.null(interaction_type) && interaction_type != "none"
-    })
+    # Placeholder; module will be instantiated after dataset reactive is defined
+    interactive_analysis <- NULL
+    current_interaction_type_rv <- NULL
+    mapped_dataset_for_interaction <- NULL
+    scan_type <- NULL
+    show_stacked_plots <- NULL
 
     # Dynamic LOD threshold slider based on scan type
     output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
@@ -151,9 +104,10 @@ server <- function(input, output, session) {
 
     # Our own LOD threshold reactive (no longer from mainParServer)
     lod_threshold_rv <- shiny::reactive({
-        current_scan_type <- scan_type()
-        default_threshold <- if (current_scan_type == "interactive") 10.5 else 7.5
-        input[[ns_app_controller("LOD_thr")]] %||% default_threshold
+        # Fallback to the same min used in the slider render, based on sidebar_interaction_type
+        itype <- sidebar_interaction_type_rv()
+        fallback_min <- if (identical(itype, "sex") || identical(itype, "diet") || identical(itype, "sex_diet")) 4.1 else 7.5
+        input[[ns_app_controller("LOD_thr")]] %||% fallback_min
     }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
 
     # Reactive for selected chromosome (for zooming into specific chromosomes)
@@ -226,50 +180,38 @@ server <- function(input, output, session) {
         return(NULL)
     })
 
-    # New reactive that handles the dataset name mapping for interactive analysis
-    mapped_dataset_for_interaction <- shiny::reactive({
-        base_dataset <- main_selected_dataset_group()
-        interaction_type <- current_interaction_type_rv()
-
-        if (is.null(base_dataset)) {
-            return(NULL)
-        }
-
-        # Check if this is an HC_HF dataset that supports interactive analysis
-        is_hc_hf_dataset <- grepl("^HC_HF", base_dataset, ignore.case = TRUE)
-
-        if (is_hc_hf_dataset && !is.null(interaction_type) && interaction_type != "none") {
-            message(paste("mapped_dataset_for_interaction: HC_HF dataset detected:", base_dataset, "interaction_type is:", interaction_type))
-
-            # Use helper function to get the appropriate dataset name
-            interactive_dataset <- get_interactive_dataset_name(base_dataset, interaction_type)
-
-            if (interactive_dataset != base_dataset) {
-                message(paste("Interactive analysis mode: Using dataset", interactive_dataset, "for interaction type:", interaction_type))
-                return(interactive_dataset)
-            } else {
-                message("mapped_dataset_for_interaction: Interaction type is none or null, using additive dataset")
-            }
-        }
-
-        return(base_dataset)
+    # Initialize interactive analysis module now that dataset reactive exists
+    interactive_analysis <- interactiveAnalysisServer(
+        id = ns_app_controller("interactive_analysis_module"),
+        selected_dataset_reactive = main_selected_dataset_group
+    )
+    current_interaction_type_rv <- interactive_analysis$interaction_type
+    mapped_dataset_for_interaction <- interactive_analysis$mapped_dataset
+    scan_type <- interactive_analysis$scan_type
+    show_stacked_plots <- shiny::reactive({
+        type <- current_interaction_type_rv()
+        !is.null(type) && type != "none"
     })
 
-    # Detect if current dataset is additive or interactive based on dataset name and interaction type
-    scan_type <- shiny::reactive({
-        dataset_name <- main_selected_dataset_group()
-
-        if (is.null(dataset_name) || dataset_name == "") {
-            return("additive") # Default to additive
-        }
-
-        # Check if dataset name contains "interactive" or if interaction type is selected
-        if (grepl("interactive", dataset_name, ignore.case = TRUE)) {
-            return("interactive")
-        } else {
-            return("additive")
-        }
+    # Initialize interactive analysis module now that dataset reactive exists
+    interactive_analysis <- interactiveAnalysisServer(
+        id = ns_app_controller("interactive_analysis_module"),
+        selected_dataset_reactive = main_selected_dataset_group
+    )
+    current_interaction_type_rv <- interactive_analysis$interaction_type
+    mapped_dataset_for_interaction <- interactive_analysis$mapped_dataset
+    scan_type <- interactive_analysis$scan_type
+    show_stacked_plots <- shiny::reactive({
+        type <- current_interaction_type_rv()
+        !is.null(type) && type != "none"
     })
+
+    # Reset chromosome view when interaction type changes to avoid stale zoom state
+    shiny::observeEvent(current_interaction_type_rv(), {
+        shiny::updateSelectInput(session, ns_app_controller("selected_chr"), selected = "All")
+    }, ignoreInit = TRUE)
+
+    # removed: duplicate mapping and scan_type logic (handled by interactiveAnalysisModule)
 
     # Reactive to find peak data for the selected trait
     peaks_data_for_trait <- shiny::reactive({
@@ -560,87 +502,12 @@ server <- function(input, output, session) {
         ignoreInit = TRUE
     )
 
-    # Interactive Analysis section - show for all HC_HF datasets
-    output[[ns_app_controller("interactive_analysis_section")]] <- shiny::renderUI({
-        dataset_group <- main_selected_dataset_group()
-
-        # Show interactive analysis controls for all HC_HF datasets (Genes, Lipids, Clinical Traits, Metabolites)
-        if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
-            # Preserve the current selection when re-rendering
-            current_selection <- current_interaction_type_rv()
-
-            # Determine what interaction types are available for this dataset
-            available_interactions <- c("None (Additive only)" = "none")
-
-            # Check what interactions are actually available based on dataset type
-            if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
-                available_interactions <- c(available_interactions,
-                    "Sex interaction" = "sex",
-                    "Diet interaction" = "diet"
-                )
-            } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
-                available_interactions <- c(available_interactions,
-                    "Sex interaction" = "sex",
-                    "Diet interaction" = "diet",
-                    "Sex x Diet interaction" = "sex_diet"
-                )
-            } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
-                available_interactions <- c(available_interactions,
-                    "Sex interaction" = "sex",
-                    "Diet interaction" = "diet",
-                    "Sex x Diet interaction" = "sex_diet"
-                )
-            } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
-                available_interactions <- c(available_interactions,
-                    "Sex interaction" = "sex",
-                    "Diet interaction" = "diet",
-                    "Sex x Diet interaction" = "sex_diet"
-                )
-            }
-
-            tagList(
-                hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
-                h5("🧬 Interactive Analysis", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
-                shiny::selectInput(
-                    ns_app_controller("interaction_type_selector"),
-                    label = "Select interaction analysis:",
-                    choices = available_interactions,
-                    selected = if (current_selection %in% available_interactions) current_selection else "none",
-                    width = "100%"
-                ),
-                shiny::conditionalPanel(
-                    condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] != 'none'"),
-                    div(
-                        style = "margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #e74c3c;",
-                        p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
-                            style = "font-size: 12px; color: #6c757d; margin: 0;"
-                        )
-                    )
-                )
-            )
-        } else {
-            NULL
-        }
-    })
+    # removed: inlined renderUI for interactive analysis; handled by interactiveAnalysisUI within LOD scan UI
 
     # Store the sidebar interaction type separately (for independent sidebar plot control)
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
-    # NEW: Observer to decouple interaction type selection from downstream reactivity
-    shiny::observeEvent(input[[ns_app_controller("interaction_type_selector")]],
-        {
-            req(input[[ns_app_controller("interaction_type_selector")]])
-            current_interaction_type_rv(input[[ns_app_controller("interaction_type_selector")]])
-            message(paste("Interaction type updated to:", input[[ns_app_controller("interaction_type_selector")]]))
-
-            # Reset chromosome view to "All" when interaction type changes
-            # This prevents being stuck on a chromosome view from a previous scan type
-            shiny::updateSelectInput(session, ns_app_controller("selected_chr"), selected = "All")
-            message("Reset chromosome view to 'All' due to interaction type change.")
-        },
-        ignoreNULL = TRUE,
-        ignoreInit = TRUE
-    )
+    # removed: local observer for interaction_type_selector; module now owns interaction state
 
     # Observer to update sidebar interaction type when input changes (independent of main UI)
     shiny::observeEvent(input[[ns_app_controller("sidebar_interaction_type")]],
@@ -680,15 +547,14 @@ server <- function(input, output, session) {
         )
     })
 
-    # Call scanServer, passing the necessary reactives
-    # scan_module_outputs will be a list of reactives/values returned by scanServer
+    # Call scanServer, passing the necessary reactives (after interactive_analysis is available)
     scan_module_outputs <- scanServer(
         id = ns_app_controller("scan_plot_module"),
-        trait_to_scan = trait_for_lod_scan_rv, # Pass the reactive directly
-        selected_dataset_group = mapped_dataset_for_interaction, # Use mapped dataset for interactive analysis
-        import_reactives = import_reactives, # Pass the whole list of import reactives
-        main_par_inputs = active_main_par, # Pass the combined main parameters (for LOD_thr, etc.)
-        interaction_type_reactive = current_interaction_type_rv, # Pass the interaction type reactive
+        trait_to_scan = trait_for_lod_scan_rv,
+        selected_dataset_group = mapped_dataset_for_interaction,
+        import_reactives = import_reactives,
+        main_par_inputs = active_main_par,
+        interaction_type_reactive = current_interaction_type_rv,
         overlay_diet_toggle = reactive(input[[ns_app_controller("overlay_diet")]]),
         overlay_sex_toggle = reactive(input[[ns_app_controller("overlay_sex")]]),
         overlay_sex_diet_toggle = reactive(input[[ns_app_controller("overlay_sex_diet")]])
@@ -735,87 +601,65 @@ server <- function(input, output, session) {
         ))
     })
 
+    # Initialize interactive analysis module after dataset reactive exists
+    interactive_analysis <- interactiveAnalysisServer(
+        id = ns_app_controller("interactive_analysis_module"),
+        selected_dataset_reactive = main_selected_dataset_group
+    )
+    current_interaction_type_rv <- interactive_analysis$interaction_type
+    mapped_dataset_for_interaction <- interactive_analysis$mapped_dataset
+    scan_type <- interactive_analysis$scan_type
+    show_stacked_plots <- shiny::reactive({
+        type <- current_interaction_type_rv()
+        !is.null(type) && type != "none"
+    })
+
     # UI for LOD Scan plot - refactored for clarity and dynamic content
     output[[ns_app_controller("lod_scan_plot_ui_placeholder")]] <- shiny::renderUI({
         if (!is.null(trait_for_lod_scan_rv())) {
-            # Logic for interactive analysis dropdown (moved from its own renderUI)
-            dataset_group <- main_selected_dataset_group()
-            interaction_analysis_ui <- NULL
-
-            if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
-                current_selection <- current_interaction_type_rv()
-                available_interactions <- c("None (Additive only)" = "none")
-
-                if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
-                } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
-                } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
-                } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
-                }
-
-                interaction_analysis_ui <- tagList(
+            # Build the full plot UI including the interaction controls from the module
+            is_additive <- identical(interactive_analysis$interaction_type(), "none")
+            tagList(
+                div(
+                    style = "margin-bottom: 15px; background: #f8f9fa; padding: 10px 15px; border-radius: 4px; border: 1px solid #bdc3c7;",
                     div(
-                        style = "margin-bottom: 15px; background: #f8f9fa; padding: 10px 15px; border-radius: 4px; border: 1px solid #bdc3c7;",
+                        style = "display: flex; align-items: flex-end; gap: 15px; flex-wrap: wrap;",
                         div(
-                            style = "display: flex; align-items: flex-end; gap: 15px; flex-wrap: wrap;",
-                            div(
-                                style = "flex: 1 1 180px; min-width: 180px;",
-                                shiny::selectInput(
-                                    ns_app_controller("interaction_type_selector"),
-                                    label = "Select interaction analysis:",
-                                    choices = available_interactions,
-                                    selected = if (current_selection %in% available_interactions) current_selection else "none",
-                                    width = "100%"
-                                )
-                            ),
-                            div(
-                                style = "flex: 1 1 120px; min-width: 120px;",
-                                shiny::selectInput(
-                                    ns_app_controller("selected_chr"),
-                                    label = "Chromosome:",
-                                    choices = c(
-                                        "All" = "All",
-                                        setNames(as.character(1:19), paste("Chr", 1:19)),
-                                        "X" = "X", "Y" = "Y", "M" = "M"
-                                    ),
-                                    selected = "All",
-                                    width = "100%"
-                                )
-                            ),
-                            # Show overlay toggles only for additive scans
-                            shiny::conditionalPanel(
-                                condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] == 'none'"),
-                                shiny::uiOutput(ns_app_controller("overlay_toggles_ui"))
-                            ),
-                            div(
-                                style = "flex: 0 0 auto;",
-                                shiny::actionButton(
-                                    ns_app_controller("reset_chr_view"),
-                                    "🌐 Reset Zoom",
-                                    class = "btn btn-sm btn-secondary",
-                                    style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
-                                )
+                            style = "flex: 1 1 180px; min-width: 180px;",
+                            interactiveAnalysisUI(ns_app_controller("interactive_analysis_module"))
+                        ),
+                        div(
+                            style = "flex: 1 1 120px; min-width: 120px;",
+                            shiny::selectInput(
+                                ns_app_controller("selected_chr"),
+                                label = "Chromosome:",
+                                choices = c(
+                                    "All" = "All",
+                                    setNames(as.character(1:19), paste("Chr", 1:19)),
+                                    "X" = "X", "Y" = "Y", "M" = "M"
+                                ),
+                                selected = "All",
+                                width = "100%"
                             )
-                        )
-                    ),
-                    shiny::conditionalPanel(
-                        condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] != 'none'"),
+                        ),
+                        if (isTRUE(is_additive)) shiny::uiOutput(ns_app_controller("overlay_toggles_ui")),
                         div(
-                            style = "margin-bottom: 15px; padding: 10px; background-color: #e8f4fd; border-radius: 5px; border-left: 4px solid #3498db;",
-                            p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
-                                style = "font-size: 12px; color: #2c3e50; margin: 0;"
+                            style = "flex: 0 0 auto;",
+                            shiny::actionButton(
+                                ns_app_controller("reset_chr_view"),
+                                "🌐 Reset Zoom",
+                                class = "btn btn-sm btn-secondary",
+                                style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
                             )
                         )
                     )
-                )
-            }
-
-            # Build the full plot UI including the interaction controls
-            tagList(
-                interaction_analysis_ui,
+                ),
+                if (!isTRUE(is_additive)) div(
+                    style = "margin-bottom: 15px; padding: 10px; background-color: #e8f4fd; border-radius: 5px; border-left: 4px solid #3498db;",
+                    p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
+                        style = "font-size: 12px; color: #2c3e50; margin: 0;"
+                    )
+                ),
                 scanOutput(ns_app_controller("scan_plot_module")),
                 div(
                     style = "margin-top: 15px;",
