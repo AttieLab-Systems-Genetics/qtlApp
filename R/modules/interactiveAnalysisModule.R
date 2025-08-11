@@ -56,7 +56,8 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
                 message(paste("interactiveAnalysisModule: HC_HF dataset detected:", base_dataset, "interaction_type is:", interaction_type))
 
                 # Use helper function to get the appropriate dataset name
-                interactive_dataset <- get_interactive_dataset_name(base_dataset, interaction_type)
+                # Stabilize if base already is interactive to prevent double-switch bounce
+                interactive_dataset <- if (grepl("interactive", base_dataset, ignore.case = TRUE)) base_dataset else get_interactive_dataset_name(base_dataset, interaction_type)
 
                 if (interactive_dataset != base_dataset) {
                     message(paste("interactiveAnalysisModule: Interactive analysis mode: Using dataset", interactive_dataset, "for interaction type:", interaction_type))

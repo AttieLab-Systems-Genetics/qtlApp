@@ -40,8 +40,12 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     shiny::moduleServer(id, function(input, output, session) {
         ns <- session$ns
 
-        # Create local cache for peaks data
-        local_peaks_cache <- new.env(parent = emptyenv())
+        # Create local caches
+        local_peaks_cache <- new.env(parent = emptyenv())      # peaks by dataset
+        local_scan_cache <- new.env(parent = emptyenv())       # raw scan_data by dataset+trait
+        local_processed_cache <- new.env(parent = emptyenv())  # processed scan table by dataset+trait
+        local_diff_cache <- new.env(parent = emptyenv())       # diff plot data by dataset+trait+chr
+        last_trait_for_scan_rv <- shiny::reactiveVal(NULL)     # guard against spurious resets
 
         # Use centralized mapping from helpers.R to avoid duplication
         get_interactive_dataset_name <- map_interactive_dataset_name
@@ -166,6 +170,13 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 message(paste0("  - Chr ", debug_files$ID_code[i], ": ", basename(debug_files$File_path[i])))
             }
 
+            # Cache key for raw scans (include selected_chr to prevent infinite re-run on same data)
+            selected_chr_val <- tryCatch({ main_par_inputs()$selected_chr() }, error = function(e) "All")
+            cache_key <- paste0(dataset_group_val, "||", trait_val, "||", selected_chr_val)
+            if (!is.null(local_scan_cache[[cache_key]])) {
+                return(local_scan_cache[[cache_key]])
+            }
+
             result_list <- tryCatch(
                 {
                     trait_scan(
@@ -183,6 +194,14 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
             if (is.null(result_list) || is.null(result_list$scan_data)) {
                 numb_mice_rv(NULL)
+                # Graceful fallback: if prior cache (legacy or chr-scoped) has data, serve it instead of blanking UI
+                legacy_key <- paste0(dataset_group_val, "||", trait_val)
+                prior <- local_scan_cache[[cache_key]]
+                if (is.null(prior) || (is.data.frame(prior) && nrow(prior) == 0)) prior <- local_scan_cache[[legacy_key]]
+                if (!is.null(prior) && is.data.frame(prior) && nrow(prior) > 0) {
+                    message("scanServer: trait_scan returned NULL; serving prior cached scan to avoid blank plot.")
+                    return(prior)
+                }
                 return(data.table::data.table())
             }
 
@@ -193,12 +212,22 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
             # Additional check: if result is NULL due to error, or if it's an empty data frame, handle appropriately.
             if (is.null(scan_data) || ((is.data.frame(scan_data) || is.data.table(scan_data)) && nrow(scan_data) == 0)) {
-                message(paste0("scanServer: trait_scan returned NULL or empty for Trait: '", trait_val, "', Dataset: '", dataset_group_val, "'. Propagating as empty result."))
-                # Return an empty data.table or data.frame as expected by downstream reactives to prevent crashes
-                # Make sure it has the columns expected by QTL_plot_visualizer if possible, or handle this there.
-                return(data.table::data.table())
+                message(paste0("scanServer: trait_scan returned NULL or empty for Trait: '", trait_val, "', Dataset: '", dataset_group_val, "'. Using prior cached scan if available."))
+                legacy_key <- paste0(dataset_group_val, "||", trait_val)
+                prior <- local_scan_cache[[cache_key]]
+                if (is.null(prior) || (is.data.frame(prior) && nrow(prior) == 0)) prior <- local_scan_cache[[legacy_key]]
+                if (!is.null(prior) && is.data.frame(prior) && nrow(prior) > 0) {
+                    return(prior)
+                }
+                local_scan_cache[[cache_key]] <- data.table::data.table()
+                return(local_scan_cache[[cache_key]])
             }
 
+            # Save to cache and return
+            local_scan_cache[[cache_key]] <- scan_data
+            # Also store a backward-compatible key without chr component for consumers that don't scope by chr
+            legacy_key <- paste0(dataset_group_val, "||", trait_val)
+            local_scan_cache[[legacy_key]] <- scan_data
             scan_data
         }) %>% shiny::debounce(150) # Add debouncing to prevent rapid re-computation
 
@@ -230,21 +259,43 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             # Streamlined processing - reduce debug messages
             scan_data <- scans()
             trait_val <- current_trait_for_scan()
+            dataset_group_val <- selected_dataset_group()
             lod_val <- static_lod_threshold_line() # Use static threshold for data processing
             markers_data <- import_reactives()$markers
+
+            # Processed cache keys – include selected chr, plus a legacy latest key for fallback
+            selected_chr_val <- main_par_list$selected_chr()
+            processed_key <- paste0(dataset_group_val, "||", trait_val, "||", selected_chr_val, "||processed")
+            processed_latest_key <- paste0(dataset_group_val, "||", trait_val, "||processed_latest")
+            if (!is.null(local_processed_cache[[processed_key]])) {
+                return(local_processed_cache[[processed_key]])
+            }
+
+            # Guard against empty scan_data before processing
+            if (is.null(scan_data) || ((is.data.frame(scan_data) || data.table::is.data.table(scan_data)) && nrow(scan_data) == 0)) {
+                # Fallback to last successful processed table to avoid blank UI
+                if (!is.null(local_processed_cache[[processed_latest_key]])) {
+                    message("scanServer: scans() yielded empty; using last processed cache for UI continuity.")
+                    return(local_processed_cache[[processed_latest_key]])
+                }
+            }
 
             result <- QTL_plot_visualizer(scan_data, trait_val, lod_val, markers_data)
             # Ensure a safe empty structure to avoid downstream filter crashes
             if (is.null(result) || !is.data.frame(result) || nrow(result) == 0) {
-                return(data.frame(
+                local_processed_cache[[processed_key]] <- data.frame(
                   chr = numeric(0),
                   BPcum = numeric(0),
                   position = numeric(0),
                   LOD = numeric(0),
                   markers = character(0),
                   stringsAsFactors = FALSE
-                ))
+                )
+                return(local_processed_cache[[processed_key]])
             }
+            # Save processed table to cache and return (write both chr-scoped and latest)
+            local_processed_cache[[processed_key]] <- result
+            local_processed_cache[[processed_latest_key]] <- result
             result
         }) %>% shiny::debounce(150) # Add debouncing to prevent rapid re-computation
 
@@ -341,18 +392,20 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         # Reactive to store additive plot data for difference calculations
         additive_scan_data_rv <- shiny::reactiveVal(NULL)
 
-        # Observer to clear the additive data cache whenever the selected trait changes
-        shiny::observeEvent(current_trait_for_scan(),
-            {
-                # This ensures we don't use stale additive data from a previous trait
+        # Observer to clear the additive data cache only when the trait truly changes
+        shiny::observeEvent(current_trait_for_scan(), {
+            new_trait <- current_trait_for_scan()
+            prev_trait <- last_trait_for_scan_rv()
+            if (is.null(prev_trait) || !identical(prev_trait, new_trait)) {
+                last_trait_for_scan_rv(new_trait)
                 message("scanServer: New trait selected, clearing additive data cache and diff peaks.")
                 additive_scan_data_rv(NULL)
                 diff_peak_1_rv(NULL)
                 diff_peak_2_rv(NULL)
-            },
-            ignoreNULL = FALSE,
-            ignoreInit = TRUE
-        )
+            } else {
+                message("scanServer: Trait unchanged; skipping cache clear.")
+            }
+        }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
 
         # REVISED ADDITIVE DATA HANDLING:
@@ -395,6 +448,10 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
                             if (!is.null(result_list) && !is.null(result_list$scan_data) && nrow(result_list$scan_data) > 0) {
                                 scan_data <- result_list$scan_data
+                                # Stash RAW additive scan in the local raw cache for diff alignment by marker
+                                add_raw_key <- paste0(additive_dataset_name, "||", trait_val)
+                                local_scan_cache[[add_raw_key]] <- scan_data
+
                                 processed_data <- QTL_plot_visualizer(scan_data, trait_val, 7.5, import_reactives()$markers)
                                 additive_scan_data_rv(processed_data)
                                 message("scanServer: Additive data cache populated by background loader.")
@@ -682,57 +739,159 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
         # NEW: Reactive for difference plot data to be used by plot and click handler
         diff_plot_data_reactive <- shiny::reactive({
-            if (is.null(interaction_type_reactive)) {
-                return(NULL)
-            }
+            if (is.null(interaction_type_reactive)) return(NULL)
             interaction_type <- interaction_type_reactive()
-            if (is.null(interaction_type) || interaction_type == "none") {
-                return(NULL)
-            }
+            if (is.null(interaction_type) || interaction_type == "none") return(NULL)
 
-            interactive_data <- scan_table_chr()
-            additive_data <- additive_scan_data_rv()
+            # Use RAW scan data for subtraction to avoid any processing mix-ups
+            trait_val <- current_trait_for_scan()
+            dataset_group_val <- selected_dataset_group() # interactive dataset name
 
-            if (is.null(interactive_data) || is.null(additive_data) ||
-                nrow(interactive_data) == 0 || nrow(additive_data) == 0) {
-                return(NULL)
-            }
+            # Derive additive dataset name from the current interactive one
+            base_name <- gsub(",\\s*interactive\\s*\\([^)]*\\)", "", dataset_group_val)
+            additive_dataset_name <- paste0(trimws(base_name), ", additive")
 
+            # Include chr in diff cache key so switching chr doesn't retrigger upstream loads
             main_par_list <- main_par_inputs()
-            selected_chromosome <- main_par_list$selected_chr()
+            selected_chr_val <- tryCatch({ main_par_list$selected_chr() }, error = function(e) "All")
+            diff_cache_key <- paste0(dataset_group_val, "||", trait_val, "||", selected_chr_val, "||diff")
+            if (!is.null(local_diff_cache[[diff_cache_key]])) {
+                return(local_diff_cache[[diff_cache_key]])
+            }
 
-            additive_data_chr <- if (selected_chromosome == "All") {
-                additive_data
-            } else {
+            inter_raw_key <- paste0(dataset_group_val, "||", trait_val)
+            add_raw_key   <- paste0(additive_dataset_name, "||", trait_val)
+
+            # Prefer chr-scoped cache key but fall back to legacy
+            inter_chr_key <- paste0(dataset_group_val, "||", trait_val, "||", selected_chr_val)
+            interactive_raw <- local_scan_cache[[inter_chr_key]]
+            if (is.null(interactive_raw)) interactive_raw <- local_scan_cache[[inter_raw_key]]
+            additive_raw    <- local_scan_cache[[add_raw_key]]
+
+            if (is.null(interactive_raw) || is.null(additive_raw) ||
+                (is.data.frame(interactive_raw) && nrow(interactive_raw) == 0) ||
+                (is.data.frame(additive_raw) && nrow(additive_raw) == 0)) {
+                # If additive RAW is missing, load synchronously so diff is never unavailable
+                if (is.null(additive_raw) || nrow(additive_raw) == 0) {
+                    message("scanServer: Additive RAW not in cache; loading synchronously for diff …")
+                    file_dir_val <- import_reactives()$file_directory
+                    req(file_dir_val)
+                    tryCatch({
+                        result_list <- trait_scan(
+                            file_dir = file_dir_val,
+                            selected_dataset = additive_dataset_name,
+                            selected_trait = trait_val,
+                            cache_env = NULL
+                        )
+                        if (!is.null(result_list) && !is.null(result_list$scan_data) && nrow(result_list$scan_data) > 0) {
+                            additive_raw <- result_list$scan_data
+                            local_scan_cache[[add_raw_key]] <- additive_raw
+                            # Optionally populate processed additive for overlays or UI reuse
+                            processed_data <- QTL_plot_visualizer(additive_raw, trait_val, 7.5, import_reactives()$markers)
+                            if (!is.null(processed_data) && nrow(processed_data) > 0) {
+                                additive_scan_data_rv(processed_data)
+                            }
+                            message("scanServer: Synchronous additive RAW load complete for diff.")
+                        }
+                    }, error = function(e) {
+                        message("scanServer: Error during synchronous additive RAW load: ", e$message)
+                    })
+                }
+                # Re-check after potential synchronous load
+                if (is.null(interactive_raw) || is.null(additive_raw) ||
+                    (is.data.frame(interactive_raw) && nrow(interactive_raw) == 0) ||
+                    (is.data.frame(additive_raw) && nrow(additive_raw) == 0)) {
+                    message("scanServer: RAW data still missing for diff. inter_raw_rows=",
+                            ifelse(is.null(interactive_raw), 0, nrow(interactive_raw)),
+                            " add_raw_rows=", ifelse(is.null(additive_raw), 0, nrow(additive_raw)))
+                    return(NULL)
+                }
+            }
+
+            # Ensure required columns exist
+            if (!("marker" %in% colnames(interactive_raw) && "LOD" %in% colnames(interactive_raw))) return(NULL)
+            if (!("marker" %in% colnames(additive_raw) && "LOD" %in% colnames(additive_raw))) return(NULL)
+
+            # Align by marker on RAW
+            aligned_raw <- dplyr::inner_join(
+                dplyr::select(interactive_raw, marker, LOD),
+                dplyr::select(additive_raw, marker, LOD),
+                by = "marker",
+                suffix = c("_int", "_add")
+            )
+            if (nrow(aligned_raw) == 0) {
+                message("scanServer: diff alignment on RAW produced 0 rows; markers may not overlap")
+                return(NULL)
+            }
+
+            # Log small sample from RAW
+            raw_sample <- utils::head(aligned_raw, 5)
+            raw_sample$diff <- as.numeric(raw_sample$LOD_int) - as.numeric(raw_sample$LOD_add)
+            message(sprintf("scanServer: RAW aligned sample: %s",
+                            paste(apply(raw_sample, 1, function(r) paste(r, collapse="|")), collapse=",")))
+
+            suppressWarnings({
+                mean_int_raw <- mean(as.numeric(aligned_raw$LOD_int), na.rm = TRUE)
+                mean_add_raw <- mean(as.numeric(aligned_raw$LOD_add), na.rm = TRUE)
+                sd_diff_raw  <- stats::sd(as.numeric(aligned_raw$LOD_int) - as.numeric(aligned_raw$LOD_add), na.rm = TRUE)
+                message(sprintf("scanServer: RAW means: LOD_int=%.6f LOD_add=%.6f sd(diff)=%.6f", mean_int_raw, mean_add_raw, sd_diff_raw))
+            })
+
+            # Join markers to compute chr/position/BPcum just like QTL_plot_visualizer
+            markers_data <- import_reactives()$markers
+            if (is.null(markers_data) || nrow(markers_data) == 0) return(NULL)
+            markers_dt <- if (data.table::is.data.table(markers_data)) data.table::copy(markers_data) else data.table::as.data.table(markers_data)
+            if ("marker" %in% colnames(markers_dt) && !("markers" %in% colnames(markers_dt))) data.table::setnames(markers_dt, "marker", "markers")
+            markers_dt[, markers := as.character(markers)]
+            if (!all(c("markers","chr","bp_grcm39") %in% colnames(markers_dt))) return(NULL)
+            markers_dt <- markers_dt[, .(markers, chr_orig = chr, position = bp_grcm39/1e6)]
+
+            plot_dt <- aligned_raw
+            data.table::setDT(plot_dt)
+            plot_dt[, markers := as.character(marker)]
+            plot_dt <- dplyr::left_join(as.data.frame(plot_dt), as.data.frame(markers_dt), by = "markers")
+            if (!("chr_orig" %in% colnames(plot_dt))) return(NULL)
+            plot_dt$chr <- as.character(plot_dt$chr_orig)
+            plot_dt$chr[plot_dt$chr == "X"] <- "20"
+            plot_dt$chr[plot_dt$chr == "Y"] <- "21"
+            plot_dt$chr[plot_dt$chr == "M"] <- "22"
+            plot_dt$chr <- as.numeric(plot_dt$chr)
+            plot_dt <- plot_dt[!is.na(plot_dt$chr), , drop = FALSE]
+
+            # Compute BPcum
+            if (!all(c("position") %in% colnames(plot_dt))) return(NULL)
+            chr_info <- stats::aggregate(position ~ chr, data = plot_dt, FUN = max)
+            chr_info$tot <- cumsum(as.numeric(chr_info$position)) - as.numeric(chr_info$position)
+            plot_dt <- dplyr::left_join(plot_dt, chr_info[, c("chr","tot")], by = "chr")
+            plot_dt$BPcum <- plot_dt$position + plot_dt$tot
+
+            # Compute diff LOD
+            plot_dt$LOD <- as.numeric(plot_dt$LOD_int) - as.numeric(plot_dt$LOD_add)
+
+            # Filter by selected chromosome
+            selected_chromosome <- selected_chr_val
+            if (!is.null(selected_chromosome) && selected_chromosome != "All") {
                 sel_chr_num <- selected_chromosome
                 if (selected_chromosome == "X") sel_chr_num <- 20
                 if (selected_chromosome == "Y") sel_chr_num <- 21
                 if (selected_chromosome == "M") sel_chr_num <- 22
                 sel_chr_num <- as.numeric(sel_chr_num)
-                dplyr::filter(additive_data, chr == sel_chr_num)
+                plot_dt <- dplyr::filter(plot_dt, chr == sel_chr_num)
             }
 
-            if (nrow(interactive_data) != nrow(additive_data_chr)) {
-                aligned_data <- dplyr::inner_join(
-                    interactive_data,
-                    additive_data_chr,
-                    by = "markers",
-                    suffix = c("_int", "_add")
-                )
-                if (nrow(aligned_data) == 0) {
-                    return(NULL)
-                }
+            # Prepare output
+            out <- dplyr::select(plot_dt, markers, chr, position, BPcum, LOD)
+            out$LOD[is.na(out$LOD)] <- 0
 
-                diff_plot_data <- aligned_data %>%
-                    dplyr::mutate(LOD = LOD_int - LOD_add) %>%
-                    dplyr::select(markers, chr = chr_int, position = position_int, BPcum = BPcum_int, LOD)
-            } else {
-                diff_plot_data <- interactive_data
-                diff_plot_data$LOD <- interactive_data$LOD - additive_data_chr$LOD
+            # Debug summary
+            if (nrow(out) > 0) {
+                mean_abs <- mean(abs(out$LOD), na.rm = TRUE)
+                message(sprintf("scanServer: DIFF (RAW-based) rows=%d mean|LOD_diff|=%.6f", nrow(out), mean_abs))
             }
 
-            diff_plot_data$LOD[is.na(diff_plot_data$LOD)] <- 0
-            return(diff_plot_data)
+            # Cache and return
+            local_diff_cache[[diff_cache_key]] <- out
+            return(out)
         })
 
         # Reactive to create difference plot (interactive - additive)
