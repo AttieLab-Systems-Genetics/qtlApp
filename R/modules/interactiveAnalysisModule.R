@@ -135,65 +135,71 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
         output$interactive_analysis_section <- shiny::renderUI({
             dataset_group <- selected_dataset_reactive()
 
-            # Show interactive analysis controls for all HC_HF datasets (Genes, Lipids, Clinical Traits, Metabolites)
-            if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
-                # Preserve the current selection when re-rendering
-                current_selection <- interaction_type_rv()
+            if (is.null(dataset_group) || !grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
+                return(NULL)
+            }
 
-                # Determine what interaction types are available for this dataset
-                available_interactions <- c("None (Additive only)" = "none")
+            # Preserve current selection on re-render
+            current_selection <- interaction_type_rv()
 
-                # Check what interactions are actually available based on dataset type
-                if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions,
-                        "Sex interaction" = "sex",
-                        "Diet interaction" = "diet"
-                    )
-                } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions,
-                        "Sex interaction" = "sex",
-                        "Diet interaction" = "diet",
-                        "Sex x Diet interaction" = "sex_diet"
-                    )
-                    # No Sex-only interaction for Liver Lipids
-                } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions,
-                        "Sex interaction" = "sex",
-                        "Diet interaction" = "diet",
-                        "Sex x Diet interaction" = "sex_diet"
-                    )
-                } else if (grepl("HC_HF.*Plasma.*plasma_metabolite|HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions,
-                        "Sex interaction" = "sex",
-                        "Diet interaction" = "diet",
-                        "Sex x Diet interaction" = "sex_diet"
-                    )
-                }
+            # Determine available interactions by dataset type
+            available_interactions <- c("None (Additive only)" = "none")
+            if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
+            } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+            } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+            } else if (grepl("HC_HF.*Plasma.*plasma_metabolite|HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+            }
 
-                tagList(
-                    hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
-                    h5("🧬 Interactive Analysis", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
-                    shiny::selectInput(
-                        ns("interaction_type"),
-                        label = "Select interaction analysis:",
-                        choices = available_interactions,
-                        selected = if (current_selection %in% available_interactions) current_selection else "none",
-                        width = "100%"
-                    ),
-                    shiny::conditionalPanel(
-                        condition = paste0("input['", ns("interaction_type"), "'] != 'none'"),
-                        div(
-                            style = "margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #e74c3c;",
-                            p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
-                                style = "font-size: 12px; color: #6c757d; margin: 0;"
-                            )
+            # Compute a stable selected value: prefer current_selection if still valid
+            selected_value <- if (current_selection %in% available_interactions) current_selection else {
+                # If previous selection is no longer valid, prefer a stable non-none option if present
+                if ("sex" %in% available_interactions) "sex" else if ("diet" %in% available_interactions) "diet" else "none"
+            }
+
+            htmltools::tagList(
+                htmltools::hr(style = "border-top: 2px solid #e74c3c; margin: 15px 0;"),
+                htmltools::h5("🧬 Interactive Analysis", style = "color: #2c3e50; margin-bottom: 15px; font-weight: bold;"),
+                shiny::selectInput(
+                    ns("interaction_type"),
+                    label = "Select interaction analysis:",
+                    choices = available_interactions,
+                    selected = selected_value,
+                    width = "100%"
+                ),
+                shiny::conditionalPanel(
+                    condition = paste0("input['", ns("interaction_type"), "'] != 'none'"),
+                    htmltools::div(
+                        style = "margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #e74c3c;",
+                        htmltools::p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
+                            style = "font-size: 12px; color: #6c757d; margin: 0;"
                         )
                     )
                 )
-            } else {
-                NULL # Don't show for other datasets
-            }
+            )
         })
+
+        # Update choices on dataset change without forcing selection to 'none'
+        shiny::observeEvent(selected_dataset_reactive(), {
+            dataset_group <- selected_dataset_reactive()
+            if (is.null(dataset_group) || !grepl("^HC_HF", dataset_group, ignore.case = TRUE)) return()
+
+            available_interactions <- c("None (Additive only)" = "none")
+            if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
+            } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+            } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+            } else if (grepl("HC_HF.*Plasma.*plasma_metabolite|HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+            }
+
+            shiny::updateSelectInput(session, ns("interaction_type"), choices = available_interactions, selected = interaction_type_rv())
+        }, ignoreInit = TRUE)
 
         # Return module interface
         return(list(

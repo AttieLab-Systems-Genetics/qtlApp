@@ -29,7 +29,6 @@ scanApp <- function() {
   source("R/traitSearchModule.R")
   source("R/interactiveAnalysisModule.R")
   source("R/scanPlotModule.R")
-  source("R/alleleEffectsModule.R")
   source("R/manhattanPlotApp.R")
   source("R/cisTransPlotApp.R")
   source("R/profilePlotApp.R")

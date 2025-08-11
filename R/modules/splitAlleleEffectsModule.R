@@ -66,71 +66,6 @@ splitAlleleEffectsServer <- function(id,
     # Mount peak info module for left panel (primary)
     peakInfoServer(ns("peak_info"), selected_peak_reactive = selected_peak_reactive)
 
-    # Fallback peak info panel (used if primary renders nothing in some contexts)
-    output$peak_info_fallback <- shiny::renderUI({
-      peak_info <- selected_peak_reactive()
-      if (is.null(peak_info) || nrow(peak_info) == 0) {
-        return(htmltools::tags$div(
-          "No peak selected.",
-          style = "color: #7f8c8d; text-align: center; padding: 10px;"
-        ))
-      }
-
-      if (nrow(peak_info) > 1) peak_info <- peak_info[1, , drop = FALSE]
-
-      # Helper: safe getter
-      get_val <- function(colnames_try) {
-        for (cn in colnames_try) {
-          if (cn %in% colnames(peak_info)) {
-            v <- peak_info[[cn]][1]
-            if (!is.null(v) && !is.na(v)) return(v)
-          }
-        }
-        return(NA)
-      }
-
-      marker <- get_val(c("marker", "markers"))
-      trait <- get_val(c("trait", "phenotype"))
-      gene_symbol <- get_val(c("gene_symbol", "symbol", "gene"))
-      gene_id <- get_val(c("gene_id", "ensembl_id", "geneid"))
-      chr_raw <- get_val(c("qtl_chr", "chr", "qtl_chr_char"))
-      pos <- get_val(c("qtl_pos", "pos", "position"))
-      lod <- get_val(c("qtl_lod", "lod", "LOD"))
-      ci_lo <- get_val(c("qtl_ci_lo", "ci_lo"))
-      ci_hi <- get_val(c("qtl_ci_hi", "ci_hi"))
-
-      # Normalize chr label
-      chr_label <- tryCatch({
-        if (is.numeric(chr_raw)) {
-          if (exists("numeric_to_chr", mode = "function")) numeric_to_chr(chr_raw) else as.character(chr_raw)
-        } else as.character(chr_raw)
-      }, error = function(e) chr_raw)
-
-      allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-      strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
-      available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
-      allele_effects <- lapply(seq_along(available_alleles), function(i) {
-        col <- available_alleles[i]
-        val <- peak_info[[col]][1]
-        if (!is.null(val) && !is.na(val)) paste0(strain_names[i], ": ", round(as.numeric(val), 3))
-      })
-      allele_effects <- Filter(Negate(is.null), allele_effects)
-
-      htmltools::tagList(
-        if (!is.na(gene_symbol)) htmltools::tags$div(htmltools::tags$strong("Gene: "), if (!is.na(gene_id)) paste0(gene_symbol, " (", gene_id, ")") else gene_symbol) else if (!is.na(trait)) htmltools::tags$div(htmltools::tags$strong("Trait: "), trait),
-        if (!is.na(marker)) htmltools::tags$div(htmltools::tags$strong("Marker: "), marker),
-        if (!is.na(chr_label) && !is.na(pos)) htmltools::tags$div(htmltools::tags$strong("Position: "), paste0("Chr", chr_label, ":", round(as.numeric(pos), 2), " Mb")),
-        if (!is.na(lod)) htmltools::tags$div(htmltools::tags$strong("LOD Score: "), round(as.numeric(lod), 3)),
-        if (!is.na(ci_lo) && !is.na(ci_hi)) htmltools::tags$div(htmltools::tags$strong("95% CI: "), paste0(round(as.numeric(ci_lo), 2), " - ", round(as.numeric(ci_hi), 2), " Mb")),
-        if (length(allele_effects) > 0) htmltools::tags$div(
-          htmltools::tags$strong("Founder Effects:"),
-          htmltools::tags$div(
-            style = "margin-left: 10px; font-family: monospace; font-size: 11px;",
-            lapply(allele_effects, function(s) htmltools::tags$div(s))
-          )
-        )
-      )
-    })
 
     # Single additive allele effects plot
     output$allele_effects_plot_output <- shiny::renderPlot({
@@ -181,14 +116,10 @@ splitAlleleEffectsServer <- function(id,
           ),
           bslib::layout_columns(
             col_widths = c(5, 7),
-            htmltools::tags$div(
-              style = "background: #f8f9fa; padding: 10px; border-radius: 5px; height: 450px; overflow-y: auto;",
-                # Try primary peak info module, fallback if it renders nothing
-                peakInfoUI(ns("peak_info")),
-                htmltools::tags$div(id = ns("peak_info_fallback_container"), style = "margin-top: 8px;",
-                  shiny::uiOutput(ns("peak_info_fallback"))
-                )
-            ),
+              htmltools::tags$div(
+                style = "background: #f8f9fa; padding: 10px; border-radius: 5px; height: 450px; overflow-y: auto;",
+                peakInfoUI(ns("peak_info"))
+              ),
             shiny::plotOutput(ns("allele_effects_plot_output"), height = "450px", width = "450px") |>
               shinycssloaders::withSpinner(type = 8, color = "#3498db")
           )
