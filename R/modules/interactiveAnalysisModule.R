@@ -86,8 +86,8 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
             ignoreInit = TRUE # Prevent firing on initial binding
         )
 
-        # New reactive that handles the dataset name mapping for interactive analysis
-        mapped_dataset_for_interaction <- shiny::reactive({
+        # Base mapping reactive (no debounce)
+        mapped_dataset_base <- shiny::reactive({
             base_dataset <- selected_dataset_reactive()
             interaction_type <- interaction_type_rv()
 
@@ -113,7 +113,19 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
             }
 
             return(base_dataset)
-        }) %>% shiny::debounce(150)
+        })
+
+        # Debounced mapping for interactive types to avoid teetering
+        mapped_dataset_debounced <- mapped_dataset_base %>% shiny::debounce(150)
+
+        # Exported mapping: immediate when switching back to additive, debounced for interactive
+        mapped_dataset_for_interaction <- shiny::reactive({
+            if (identical(interaction_type_rv(), "none")) {
+                mapped_dataset_base()
+            } else {
+                mapped_dataset_debounced()
+            }
+        })
 
         # Detect if current dataset is additive or interactive based on dataset name and interaction type
         scan_type <- shiny::reactive({
