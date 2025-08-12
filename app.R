@@ -758,7 +758,7 @@ server <- function(input, output, session) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
-                } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
+                } else if (grepl("HC_HF.*Plasma.*Metabol|HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 }
 
@@ -849,22 +849,22 @@ server <- function(input, output, session) {
         }
 
         toggles <- list()
-        # Check for Diet interaction availability
-        if (any(grepl("Genes|Lipids|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
+        # Check for Diet interaction availability (Genes, Lipids, Clinical, Plasma Metabolites)
+        if (any(grepl("Genes|Lipid|Clinical|Metabol", dataset_group, ignore.case = TRUE))) {
             toggles <- c(toggles, list(
                 shiny::checkboxInput(ns_app_controller("overlay_diet"), "Overlay Diet", FALSE, width = "auto")
             ))
         }
 
-        # Check for Sex interaction availability
-        if (any(grepl("Genes|Lipids|Clinical|Metabolites", dataset_group, ignore.case = TRUE))) {
+        # Check for Sex interaction availability (Genes, Lipids, Clinical, Plasma Metabolites)
+        if (any(grepl("Genes|Lipid|Clinical|Metabol", dataset_group, ignore.case = TRUE))) {
             toggles <- c(toggles, list(
                 shiny::checkboxInput(ns_app_controller("overlay_sex"), "Overlay Sex", FALSE, width = "auto")
             ))
         }
 
         # Check for Sex x Diet interaction availability (Clinical, Lipids, Plasma Metabolites)
-        if (any(grepl("Clinical|Lipid|Metabolites", dataset_group, ignore.case = TRUE))) {
+        if (any(grepl("Clinical|Lipid|Metabol", dataset_group, ignore.case = TRUE))) {
             toggles <- c(toggles, list(
                 shiny::checkboxInput(ns_app_controller("overlay_sex_diet"), "Overlay Sex x Diet", FALSE, width = "auto")
             ))

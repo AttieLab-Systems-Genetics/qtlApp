@@ -181,7 +181,9 @@ correlationServer <- function(id, import_reactives, main_par) {
             # Expected/fallback files to show even if directory scan fails
             expected_files <- c(
                 file.path(correlations_dir, "clinical_traits_vs_clinical_traits_corr.csv"),
-                file.path(correlations_dir, "liver_genes_vs_clinical_traits_corr.csv")
+                file.path(correlations_dir, "liver_genes_vs_clinical_traits_corr.csv"),
+                file.path(correlations_dir, "liver_genes_vs_liver_lipids_corr.csv"),
+                file.path(correlations_dir, "liver_genes_vs_plasma_metabolites_corr.csv")
             )
 
             files <- character(0)
@@ -443,6 +445,7 @@ correlationServer <- function(id, import_reactives, main_par) {
             }
             out[, abs_correlation := abs(correlation_value)]
             out <- out[order(-abs_correlation, -correlation_value)]
+            out <- data.table::as.data.table(out)
             out
         }) %>% shiny::debounce(150)
 
@@ -467,6 +470,7 @@ correlationServer <- function(id, import_reactives, main_par) {
 
         output$correlation_table <- DT::renderDT({
             tbl <- filtered_table()
+            tbl <- data.table::as.data.table(tbl)
             # Include a hidden abs_correlation column for default ordering by magnitude
             dt <- DT::datatable(
                 tbl[, .(abs_correlation, trait, correlation_value, p_value)],
