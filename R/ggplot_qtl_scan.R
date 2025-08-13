@@ -38,29 +38,35 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
   if (!"type" %in% colnames(scan_table)) {
     scan_table$type <- "Additive"
   }
+  # Always render base series with additive aesthetics
+  scan_table$aesthetics_type <- "Additive"
 
   # Combine all data into one data frame for robust plotting
   plot_data <- scan_table
 
   if (!is.null(overlay_diet_data) && nrow(overlay_diet_data) > 0) {
     overlay_diet_data$type <- "Diet Interactive"
+    overlay_diet_data$aesthetics_type <- "Diet Interactive"
     plot_data <- rbind(plot_data, overlay_diet_data)
     message("ggplot_qtl_scan: Merged DIET overlay data.")
   }
 
   if (!is.null(overlay_sex_data) && nrow(overlay_sex_data) > 0) {
     overlay_sex_data$type <- "Sex Interactive"
+    overlay_sex_data$aesthetics_type <- "Sex Interactive"
     plot_data <- rbind(plot_data, overlay_sex_data)
     message("ggplot_qtl_scan: Merged SEX overlay data.")
   }
 
   if (!is.null(overlay_sex_diet_data) && nrow(overlay_sex_diet_data) > 0) {
     overlay_sex_diet_data$type <- "Sex x Diet Interactive"
+    overlay_sex_diet_data$aesthetics_type <- "Sex x Diet Interactive"
     plot_data <- rbind(plot_data, overlay_sex_diet_data)
     message("ggplot_qtl_scan: Merged SEXxDIET overlay data.")
   }
 
   plot_data$type <- factor(plot_data$type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive"))
+  plot_data$aesthetics_type <- factor(plot_data$aesthetics_type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive"))
 
   # Build formatted hover text: LOD and Position as Chr#:##.##Mb
   plot_data$chr_char <- chr_XYM(plot_data$chr)
@@ -85,9 +91,16 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
 
   axisdf$chr <- chr_XYM(axisdf$chr)
 
+  # Ensure y-axis includes the highest relevant threshold so lines are visible
+  present_types_for_limits <- unique(as.character(plot_data$type))
+  thresholds_present <- thresholds_by_type[names(thresholds_by_type) %in% present_types_for_limits]
+  y_max_data <- suppressWarnings(max(plot_data$LOD, na.rm = TRUE))
+  y_max_thr <- if (isTRUE(show_thresholds) && length(thresholds_present) > 0) suppressWarnings(max(as.numeric(thresholds_present), na.rm = TRUE)) else -Inf
+  y_axis_max <- max(y_max_data, y_max_thr)
+
   # --- Plot Construction ---
-  p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = .data[[xvar]], y = .data$LOD, color = .data$type, group = interaction(.data$type, .data$chr), text = .data$hover_text)) +
-    ggplot2::geom_line(aes(linewidth = .data$type, alpha = .data$type)) +
+  p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = .data[[xvar]], y = .data$LOD, color = .data$aesthetics_type, group = interaction(.data$aesthetics_type, .data$chr), text = .data$hover_text)) +
+    ggplot2::geom_line(aes(linewidth = .data$aesthetics_type, alpha = .data$aesthetics_type)) +
 
     # Manual scales for aesthetics
     ggplot2::scale_color_manual(values = color_map, name = "Scan Type") +
@@ -96,7 +109,7 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
 
     # Axis and theme setup
     ggplot2::scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = ggplot2::expansion(mult = c(0.01, 0.01))) +
-    ggplot2::ylim(0, max(plot_data$LOD, na.rm = TRUE) * 1.25) +
+    ggplot2::ylim(0, y_axis_max * 1.25) +
     create_modern_theme() +
     ggplot2::theme(
       legend.position = "bottom",
@@ -114,50 +127,67 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
     xmin <- suppressWarnings(min(plot_data[[xvar]], na.rm = TRUE))
     xmax <- suppressWarnings(max(plot_data[[xvar]], na.rm = TRUE))
 
-    # Always draw additive if present
-    if ("Additive" %in% present_types && !is.na(thresholds_by_type["Additive"])) {
-      p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Additive"], color = color_map["Additive"], linetype = "dashed", linewidth = 0.6)
-    }
+    overlays_present <- length(unique(plot_data$aesthetics_type)) > 1
 
-    # Handle Diet and Sex interactive thresholds
-    diet_present <- "Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Diet Interactive"]) && !is.null(color_map["Diet Interactive"]) && !is.infinite(xmin) && !is.infinite(xmax)
-    sex_present <- "Sex Interactive" %in% present_types && !is.na(thresholds_by_type["Sex Interactive"]) && !is.null(color_map["Sex Interactive"]) && !is.infinite(xmin) && !is.infinite(xmax)
-
-    same_threshold <- diet_present && sex_present && identical(as.numeric(thresholds_by_type["Diet Interactive"]), as.numeric(thresholds_by_type["Sex Interactive"]))
-
-    if (same_threshold) {
-      # Build alternating color segments along the full x-range
-      n_segments <- 120
-      xs <- seq(xmin, xmax, length.out = n_segments + 1)
-      seg_df <- data.frame(
-        x0 = xs[-length(xs)],
-        x1 = xs[-1],
-        idx = seq_len(n_segments)
-      )
-      # Diet draws odd segments, Sex draws even (or vice versa)
-      seg_diet <- seg_df[seg_df$idx %% 2 == 1, ]
-      seg_sex <- seg_df[seg_df$idx %% 2 == 0, ]
-      ythr <- as.numeric(thresholds_by_type["Diet Interactive"]) # same as Sex Interactive
-
-      if (nrow(seg_diet) > 0) {
-        p <- p + ggplot2::geom_segment(data = seg_diet, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Diet Interactive"], linewidth = 0.6)
+    if (overlays_present) {
+      # Colored thresholds by type when overlays are present
+      # Always draw additive if present
+      if ("Additive" %in% present_types && !is.na(thresholds_by_type["Additive"])) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Additive"], color = color_map["Additive"], linetype = "dashed", linewidth = 0.6)
       }
-      if (nrow(seg_sex) > 0) {
-        p <- p + ggplot2::geom_segment(data = seg_sex, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Sex Interactive"], linewidth = 0.6)
+
+      # Handle Diet and Sex interactive thresholds
+      diet_present <- "Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Diet Interactive"]) && !is.null(color_map["Diet Interactive"]) && !is.infinite(xmin) && !is.infinite(xmax)
+      sex_present <- "Sex Interactive" %in% present_types && !is.na(thresholds_by_type["Sex Interactive"]) && !is.null(color_map["Sex Interactive"]) && !is.infinite(xmin) && !is.infinite(xmax)
+
+      same_threshold <- diet_present && sex_present && identical(as.numeric(thresholds_by_type["Diet Interactive"]), as.numeric(thresholds_by_type["Sex Interactive"]))
+
+      if (same_threshold) {
+        # Build alternating color segments along the full x-range
+        n_segments <- 120
+        xs <- seq(xmin, xmax, length.out = n_segments + 1)
+        seg_df <- data.frame(
+          x0 = xs[-length(xs)],
+          x1 = xs[-1],
+          idx = seq_len(n_segments)
+        )
+        # Diet draws odd segments, Sex draws even (or vice versa)
+        seg_diet <- seg_df[seg_df$idx %% 2 == 1, ]
+        seg_sex <- seg_df[seg_df$idx %% 2 == 0, ]
+        ythr <- as.numeric(thresholds_by_type["Diet Interactive"]) # same as Sex Interactive
+
+        if (nrow(seg_diet) > 0) {
+          p <- p + ggplot2::geom_segment(data = seg_diet, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Diet Interactive"], linewidth = 0.6)
+        }
+        if (nrow(seg_sex) > 0) {
+          p <- p + ggplot2::geom_segment(data = seg_sex, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Sex Interactive"], linewidth = 0.6)
+        }
+      } else {
+        # Draw them separately if only one present or thresholds differ
+        if (diet_present) {
+          p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Diet Interactive"], color = color_map["Diet Interactive"], linetype = "dashed", linewidth = 0.6)
+        }
+        if (sex_present) {
+          p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex Interactive"], color = color_map["Sex Interactive"], linetype = "dashed", linewidth = 0.6)
+        }
+      }
+
+      # Sex x Diet interactive
+      if ("Sex x Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Sex x Diet Interactive"])) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex x Diet Interactive"], color = color_map["Sex x Diet Interactive"], linetype = "dashed", linewidth = 0.6)
       }
     } else {
-      # Draw them separately if only one present or thresholds differ
-      if (diet_present) {
-        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Diet Interactive"], color = color_map["Diet Interactive"], linetype = "dashed", linewidth = 0.6)
+      # Single-series plot: draw a neutral threshold based on the present type
+      neutral_col <- "grey20"
+      if ("Sex x Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Sex x Diet Interactive"])) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex x Diet Interactive"], color = neutral_col, linetype = "dashed", linewidth = 0.6)
+      } else if ("Sex Interactive" %in% present_types && !is.na(thresholds_by_type["Sex Interactive"])) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex Interactive"], color = neutral_col, linetype = "dashed", linewidth = 0.6)
+      } else if ("Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Diet Interactive"])) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Diet Interactive"], color = neutral_col, linetype = "dashed", linewidth = 0.6)
+      } else if ("Additive" %in% present_types && !is.na(thresholds_by_type["Additive"])) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Additive"], color = neutral_col, linetype = "dashed", linewidth = 0.6)
       }
-      if (sex_present) {
-        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex Interactive"], color = color_map["Sex Interactive"], linetype = "dashed", linewidth = 0.6)
-      }
-    }
-
-    # Sex x Diet interactive
-    if ("Sex x Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Sex x Diet Interactive"])) {
-      p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex x Diet Interactive"], color = color_map["Sex x Diet Interactive"], linetype = "dashed", linewidth = 0.6)
     }
   }
 
@@ -167,7 +197,7 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
   }
 
   # Conditionally hide legend if only one scan type is present (no overlays)
-  if (length(unique(plot_data$type)) <= 1) {
+  if (length(unique(plot_data$aesthetics_type)) <= 1) {
     p <- p + ggplot2::theme(legend.position = "none")
   }
 

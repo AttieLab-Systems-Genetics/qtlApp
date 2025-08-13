@@ -21,6 +21,8 @@ get_qtlxcovar_file_path_manhattan <- function(base_dataset, interaction_type) {
     file_suffix <- "qtlxsex_peaks.csv"
   } else if (interaction_type == "diet") {
     file_suffix <- "qtlxdiet_peaks.csv"
+  } else if (interaction_type == "sex_diet") {
+    file_suffix <- "sexbydiet_interactive_compiled.csv"
   } else {
     message("get_qtlxcovar_file_path_manhattan: Unknown interaction type:", interaction_type)
     return(NULL)
@@ -172,27 +174,28 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
         {
           message(paste("ManhattanPlot: Loading and caching peaks data from:", basename(file_path)))
           dt <- data.table::fread(file_path, showProgress = FALSE)
+
+          # Transform alternative schema (sex x diet compiled) to expected columns when needed
+          dt <- data.table::as.data.table(dt)
+          if (!("qtl_lod" %in% colnames(dt)) && ("lod" %in% colnames(dt))) dt[, qtl_lod := as.numeric(lod)]
+          if (!("qtl_pos" %in% colnames(dt)) && ("pos" %in% colnames(dt))) dt[, qtl_pos := as.numeric(pos)]
+          if (!("qtl_chr" %in% colnames(dt)) && ("chr" %in% colnames(dt))) dt[, qtl_chr := as.character(chr)]
+          if (!("phenotype" %in% colnames(dt)) && ("lodcolumn" %in% colnames(dt))) dt[, phenotype := lodcolumn]
+
+          # Validate required columns after transformation
           req_cols <- c("phenotype_class", "phenotype", "qtl_lod", "qtl_chr", "qtl_pos")
           missing_cols <- req_cols[!req_cols %in% colnames(dt)]
-          if (length(missing_cols) > 0) {
-            shiny::showNotification(paste("Missing required columns in peaks file (", basename(file_path), "):", paste(missing_cols, collapse = ", ")),
-              type = "error", duration = NULL
-            )
-            return(NULL)
-          }
 
-          # Convert to data.table and optimize column types upfront
-          dt <- data.table::as.data.table(dt)
-          if ("qtl_lod" %in% colnames(dt)) dt[, qtl_lod := as.numeric(qtl_lod)]
-          if ("qtl_pos" %in% colnames(dt)) dt[, qtl_pos := as.numeric(qtl_pos)]
-          if ("lod_diff" %in% colnames(dt)) dt[, lod_diff := as.numeric(lod_diff)]
-
-          # Cache the processed data
+          # Cache the processed data regardless; plot_data_prep will add phenotype_class if missing
           .GlobalEnv$manhattan_cache[[cache_key]] <- dt
 
           # Keep cache size manageable (max 5 datasets)
           if (length(.GlobalEnv$manhattan_cache) > 5) {
             .GlobalEnv$manhattan_cache <- .GlobalEnv$manhattan_cache[-(1:2)]
+          }
+
+          if (length(missing_cols) > 0) {
+            message(paste("ManhattanPlot: Peaks file missing columns that will be inferred later:", paste(missing_cols, collapse = ", ")))
           }
 
           return(dt)
@@ -219,6 +222,12 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
         return(data.table::data.table())
       }
 
+      # Ensure required columns exist (handle compiled sex-by-diet schema)
+      if (!("qtl_lod" %in% colnames(peaks_dt)) && ("lod" %in% colnames(peaks_dt))) peaks_dt[, qtl_lod := as.numeric(lod)]
+      if (!("qtl_pos" %in% colnames(peaks_dt)) && ("pos" %in% colnames(peaks_dt))) peaks_dt[, qtl_pos := as.numeric(pos)]
+      if (!("qtl_chr" %in% colnames(peaks_dt)) && ("chr" %in% colnames(peaks_dt))) peaks_dt[, qtl_chr := as.character(chr)]
+      if (!("phenotype" %in% colnames(peaks_dt)) && ("lodcolumn" %in% colnames(peaks_dt))) peaks_dt[, phenotype := lodcolumn]
+
       # Check if this is qtlxcovar data (already determined during loading)
       is_qtlxcovar_data <- "lod_diff" %in% colnames(peaks_dt)
 
@@ -237,6 +246,11 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
         "Plasma Metabolites" = c("plasma_13C_metabolite", "plasma_2H_metabolite"),
         NULL
       )
+
+      # If phenotype_class is missing, add it based on dataset category so filtering works
+      if (!("phenotype_class" %in% colnames(peaks_dt)) && !is.null(target_phenotype_class_values)) {
+        peaks_dt[, phenotype_class := if (length(target_phenotype_class_values) > 1) target_phenotype_class_values[[1]] else target_phenotype_class_values]
+      }
 
       if (is.null(target_phenotype_class_values)) {
         shiny::showNotification(paste("ManhattanPlot: Unsupported category:", current_dataset_category), type = "warning")
