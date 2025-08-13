@@ -42,6 +42,7 @@ source("R/traitProcessingModule.R")
 source("R/scanPlotModule.R") # Source our new module
 source("R/profilePlotApp.R") # Source the new profile plot module
 source("R/mainUI.R") # Source our new UI module
+source("R/peaksTableModule.R")
 
 # Set maximum file upload size
 options(shiny.maxRequestSize = 20000 * 1024^2) # 20 GB
@@ -700,6 +701,21 @@ server <- function(input, output, session) {
         overlay_sex_diet_toggle = reactive(input[[ns_app_controller("overlay_sex_diet")]])
     )
 
+    # Initialize allele effects module, now driven by the scan plot's selected peak
+    # (monolithic version constructs plots directly below)
+
+    # Initialize peaks table module beneath the scan plot (monolithic flow)
+    peaksTableServer(
+        id = ns_app_controller("peaks_table_module"),
+        trait_reactive = trait_for_lod_scan_rv,
+        dataset_group_reactive = mapped_dataset_for_interaction,
+        interaction_type_reactive = current_interaction_type_rv,
+        import_reactives = import_reactives,
+        set_selected_peak_fn = scan_module_outputs$selected_peak,
+        clear_diff_peak_1_fn = scan_module_outputs$diff_peak_1,
+        clear_diff_peak_2_fn = scan_module_outputs$diff_peak_2
+    )
+
     # Removed clicked point details table. Clicking a peak now only updates allele effects.
 
     # UI for LOD Scan plot - refactored for clarity and dynamic content
@@ -784,6 +800,11 @@ server <- function(input, output, session) {
             tagList(
                 interaction_analysis_ui,
                 scanOutput(ns_app_controller("scan_plot_module")),
+                div(
+                    style = "margin-top: 15px;",
+                    div("Available Peaks", style = "font-weight: bold; margin-bottom: 8px;"),
+                    peaksTableUI(ns_app_controller("peaks_table_module"))
+                ),
                 shiny::uiOutput(ns_app_controller("allele_effects_section"))
             )
         } else {
@@ -854,13 +875,23 @@ server <- function(input, output, session) {
         diff_peak_1 <- scan_module_outputs$diff_peak_1()
         diff_peak_2 <- scan_module_outputs$diff_peak_2()
 
-        # View 1: Additive Peak - show only allele effects plot when a peak is selected
+        # View 1: Additive Peak - show panel and plot when a peak is selected
         if (!is.null(additive_peak)) {
             message(paste("scanApp: Rendering SINGLE allele effects for peak:", additive_peak$marker))
             return(tagList(
                 hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
-                shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "450px", width = "600px") %>%
-                    shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                div(
+                    style = "display: flex; gap: 10px; align-items: flex-start;",
+                    div(
+                        style = "flex: 1 1 40%; min-width: 260px; background: #f8f9fa; padding: 10px; border-radius: 5px;",
+                        shiny::uiOutput(ns_app_controller("peak_info_display"))
+                    ),
+                    div(
+                        style = "flex: 1 1 60%;",
+                        shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "450px", width = "600px") %>%
+                            shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                    )
+                )
             ))
         }
 
@@ -904,7 +935,56 @@ server <- function(input, output, session) {
         return(NULL)
     })
 
-    # Removed peak_info_display; no info table is shown, only allele effects plot on click.
+    # Info panel content for monolithic flow
+    output[[ns_app_controller("peak_info_display")]] <- shiny::renderUI({
+        peak_info <- scan_module_outputs$selected_peak()
+        if (is.null(peak_info) || nrow(peak_info) == 0) {
+            return(NULL)
+        }
+        display_trait <- if ("gene_symbol" %in% colnames(peak_info) && !is.null(peak_info$gene_symbol) && nzchar(as.character(peak_info$gene_symbol))) {
+            as.character(peak_info$gene_symbol)
+        } else if ("phenotype" %in% colnames(peak_info) && !is.null(peak_info$phenotype) && nzchar(as.character(peak_info$phenotype))) {
+            as.character(peak_info$phenotype)
+        } else {
+            as.character(peak_info$trait)
+        }
+        info_elements <- list(
+            tags$div(tags$strong("Trait:"), display_trait),
+            tags$div(tags$strong("Marker:"), peak_info$marker),
+            tags$div(tags$strong("Position:"), paste0(peak_info$qtl_chr, ":", round(peak_info$qtl_pos, 2), " Mb")),
+            tags$div(tags$strong("LOD:"), round(peak_info$qtl_lod, 2))
+        )
+        if ("cis" %in% colnames(peak_info)) {
+            cis_label <- ifelse(isTRUE(peak_info$cis), "Cis", "Trans")
+            status_color <- ifelse(isTRUE(peak_info$cis), "#27ae60", "#c0392b")
+            info_elements <- c(info_elements, list(
+                tags$div(tags$strong("Status:"), tags$span(cis_label, style = paste("color: white; background-color:", status_color, "; padding: 2px 6px; border-radius: 4px; font-size: 11px;")))
+            ))
+        }
+        if ("qtl_ci_lo" %in% colnames(peak_info) && "qtl_ci_hi" %in% colnames(peak_info)) {
+            info_elements <- c(info_elements, list(
+                tags$div(tags$strong("CI:"), paste0("[", round(peak_info$qtl_ci_lo, 2), " - ", round(peak_info$qtl_ci_hi, 2), "] Mb"))
+            ))
+        }
+        allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+        strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
+        available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
+        if (length(available_alleles) > 0) {
+            allele_list <- lapply(seq_along(available_alleles), function(i) {
+                col <- available_alleles[i]
+                value <- peak_info[[col]]
+                if (!is.na(value)) paste0(strain_names[i], ": ", round(value, 3))
+            })
+            allele_list <- Filter(Negate(is.null), allele_list)
+            if (length(allele_list) > 0) {
+                info_elements <- c(info_elements, list(
+                    tags$div(tags$strong("Founder Effects:")),
+                    tags$div(style = "font-family: monospace; font-size: 11px; margin-left: 10px;", lapply(allele_list, tags$div))
+                ))
+            }
+        }
+        do.call(tagList, info_elements)
+    })
 
     # Render the allele effects plot
     output[[ns_app_controller("allele_effects_plot_output")]] <- shiny::renderPlot({

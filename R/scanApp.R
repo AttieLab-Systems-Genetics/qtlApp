@@ -294,6 +294,18 @@ scanApp <- function() {
       selected_peak_reactive = scan_plot_outputs$selected_peak
     )
 
+    # Initialize peaks table module beneath the scan plot
+    peaksTableServer(
+      id = "peaks_table_module",
+      trait_reactive = trait_search$trait_for_lod_scan,
+      dataset_group_reactive = interactive_analysis$mapped_dataset,
+      interaction_type_reactive = interactive_analysis$interaction_type,
+      import_reactives = import_reactives(),
+      set_selected_peak_fn = scan_plot_outputs$selected_peak,
+      clear_diff_peak_1_fn = scan_plot_outputs$diff_peak_1,
+      clear_diff_peak_2_fn = scan_plot_outputs$diff_peak_2
+    )
+
     # Dynamic title for the main LOD scan card
     output$main_plot_title <- shiny::renderUI({
       trait <- trait_search$trait_for_lod_scan()
@@ -362,6 +374,12 @@ scanApp <- function() {
 
           # LOD scan plot module
           scanPlotUI("scan_plot_module"),
+          # Peaks table module UI
+          div(
+            style = "margin-top: 15px;",
+            div("Available Peaks", style = "font-weight: bold; margin-bottom: 8px;"),
+            peaksTableUI("peaks_table_module")
+          ),
           # Allele effects module
           alleleEffectsUI("allele_effects")
         )
