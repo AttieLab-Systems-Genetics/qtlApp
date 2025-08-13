@@ -22,6 +22,12 @@ get_qtlxcovar_file_path_manhattan <- function(base_dataset, interaction_type) {
   } else if (interaction_type == "diet") {
     file_suffix <- "qtlxdiet_peaks.csv"
   } else if (interaction_type == "sex_diet") {
+    # Prefer lod_diff sex-by-diet qtlxcovar file if present, else fallback to compiled interactive
+    preferred <- file.path(qtlxcovar_dir, paste0(file_prefix, "_qtlxsexbydiet_peaks.csv"))
+    if (file.exists(preferred)) {
+      message(paste("get_qtlxcovar_file_path_manhattan: Using preferred sex-by-diet qtlxcovar:", preferred))
+      return(preferred)
+    }
     file_suffix <- "sexbydiet_interactive_compiled.csv"
   } else {
     message("get_qtlxcovar_file_path_manhattan: Unknown interaction type:", interaction_type)
@@ -228,8 +234,9 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       if (!("qtl_chr" %in% colnames(peaks_dt)) && ("chr" %in% colnames(peaks_dt))) peaks_dt[, qtl_chr := as.character(chr)]
       if (!("phenotype" %in% colnames(peaks_dt)) && ("lodcolumn" %in% colnames(peaks_dt))) peaks_dt[, phenotype := lodcolumn]
 
-      # Check if this is qtlxcovar data (already determined during loading)
+      # Check if this is qtlxcovar data (lod_diff present) and mark difference mode
       is_qtlxcovar_data <- "lod_diff" %in% colnames(peaks_dt)
+      difference_mode <- is_qtlxcovar_data && interaction_type != "none"
 
       # Fast dataset category lookup (memoize this lookup)
       current_dataset_info <- file_index[group == selected_group_name]
@@ -264,12 +271,53 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
         return(data.table::data.table())
       }
 
-      # Streamlined LOD column setup (columns already numeric from caching)
-      if (is_qtlxcovar_data && interaction_type != "none") {
-        peaks_dt <- peaks_dt[!is.na(lod_diff)]
-        peaks_dt[, `:=`(plot_lod = abs(lod_diff), plot_lod_signed = lod_diff)]
+      # Compute columns for plotting
+      if ((is_qtlxcovar_data && interaction_type != "none") || (identical(interaction_type, "sex_diet") && !is_qtlxcovar_data)) {
+        if (is_qtlxcovar_data) {
+          # Use provided difference
+          peaks_dt <- peaks_dt[!is.na(lod_diff)]
+          peaks_dt[, `:=`(plot_lod = abs(lod_diff), plot_lod_signed = lod_diff)]
+          difference_mode <- TRUE
+        } else {
+          # Compute difference: interactive (sex_diet compiled) - additive
+          additive_peaks <- tryCatch(
+            {
+              peak_finder(
+                file_dir = import_reactives()$file_directory,
+                selected_dataset = selected_group_name,
+                selected_trait = NULL,
+                trait_type = NULL,
+                cache_env = NULL,
+                use_cache = TRUE
+              )
+            },
+            error = function(e) NULL
+          )
+
+          if (!is.null(additive_peaks) && nrow(additive_peaks) > 0) {
+            additive_peaks <- data.table::as.data.table(additive_peaks)
+            # Keep only needed columns and ensure numeric
+            if ("qtl_lod" %in% colnames(additive_peaks)) additive_peaks[, qtl_lod := as.numeric(qtl_lod)]
+            add_keep <- additive_peaks[, .(phenotype, marker, qtl_lod_add = qtl_lod)]
+            # Prepare interactive subset
+            peaks_sub <- peaks_dt[, .(phenotype, marker, qtl_chr, qtl_pos, phenotype_class, qtl_lod_int = as.numeric(qtl_lod))]
+            merged <- merge(peaks_sub, add_keep, by = c("phenotype", "marker"), all.x = TRUE)
+            merged <- merged[!is.na(qtl_lod_int) & !is.na(qtl_lod_add)]
+            if (nrow(merged) == 0) {
+              return(data.table::data.table())
+            }
+            merged[, plot_lod_signed := qtl_lod_int - qtl_lod_add]
+            merged[, plot_lod := abs(plot_lod_signed)]
+            # Reconstruct peaks_dt with necessary columns
+            peaks_dt <- merged
+            difference_mode <- TRUE
+          } else {
+            return(data.table::data.table())
+          }
+        }
         lod_col_name <- "plot_lod"
       } else {
+        # Additive or non-difference interactive
         peaks_dt <- peaks_dt[!is.na(qtl_lod)]
         peaks_dt[, `:=`(plot_lod = qtl_lod, plot_lod_signed = qtl_lod)]
         lod_col_name <- "plot_lod"
@@ -294,7 +342,7 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       data.table::setkey(peaks_dt, chr_factor, qtl_pos)
 
       # Add metadata for plot creation
-      attr(peaks_dt, "is_qtlxcovar_data") <- is_qtlxcovar_data
+      attr(peaks_dt, "is_qtlxcovar_data") <- difference_mode
       attr(peaks_dt, "interaction_type") <- interaction_type
 
       return(peaks_dt)
