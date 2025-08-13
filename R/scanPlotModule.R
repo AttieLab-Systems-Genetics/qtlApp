@@ -706,8 +706,10 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         overlay_sex_data = sex_overlay,
                         overlay_sex_diet_data = sex_diet_overlay
                     )
+                    # Threshold lines are now handled inside ggplot_qtl_scan by type/color
                     if (!is.null(p) && !is.null(static_threshold)) {
-                        p <- p + ggplot2::geom_hline(yintercept = static_threshold, linetype = "dashed", color = "grey20")
+                        # Keep for compatibility when show_thresholds is FALSE (not used here)
+                        p <- p
                     }
                     p
                 },
@@ -792,7 +794,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     selected_chromosome <- main_par_list$selected_chr()
 
                     # Create plot
-                    diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chromosome)
+                    diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chromosome, show_thresholds = FALSE)
 
                     if (!is.null(diff_plot)) {
                         diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", interaction_label, "- Additive"))

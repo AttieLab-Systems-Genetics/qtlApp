@@ -12,7 +12,14 @@
 #' @export
 ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
                             overlay_diet_data = NULL, overlay_sex_data = NULL,
-                            overlay_sex_diet_data = NULL) {
+                            overlay_sex_diet_data = NULL,
+                            show_thresholds = TRUE,
+                            thresholds_by_type = c(
+                              "Additive" = 7.5,
+                              "Diet Interactive" = 10.5,
+                              "Sex Interactive" = 10.5,
+                              "Sex x Diet Interactive" = 15.7
+                            )) {
   if (!exists("create_modern_theme", mode = "function")) {
     source("R/plot_enhancements.R")
   }
@@ -99,8 +106,61 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
       y = "LOD Score"
     )
 
-  # Add LOD threshold line only for the additive scan
-  if (!is.null(LOD_thr) && is.numeric(LOD_thr) && LOD_thr > 0) {
+  # Add series-specific threshold lines if requested
+  if (isTRUE(show_thresholds) && length(thresholds_by_type) > 0) {
+    present_types <- levels(plot_data$type)[levels(plot_data$type) %in% unique(as.character(plot_data$type))]
+    xmin <- suppressWarnings(min(plot_data[[xvar]], na.rm = TRUE))
+    xmax <- suppressWarnings(max(plot_data[[xvar]], na.rm = TRUE))
+
+    # Always draw additive if present
+    if ("Additive" %in% present_types && !is.na(thresholds_by_type["Additive"])) {
+      p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Additive"], color = color_map["Additive"], linetype = "dashed", linewidth = 0.6)
+    }
+
+    # Handle Diet and Sex interactive thresholds
+    diet_present <- "Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Diet Interactive"]) && !is.null(color_map["Diet Interactive"]) && !is.infinite(xmin) && !is.infinite(xmax)
+    sex_present <- "Sex Interactive" %in% present_types && !is.na(thresholds_by_type["Sex Interactive"]) && !is.null(color_map["Sex Interactive"]) && !is.infinite(xmin) && !is.infinite(xmax)
+
+    same_threshold <- diet_present && sex_present && identical(as.numeric(thresholds_by_type["Diet Interactive"]), as.numeric(thresholds_by_type["Sex Interactive"]))
+
+    if (same_threshold) {
+      # Build alternating color segments along the full x-range
+      n_segments <- 120
+      xs <- seq(xmin, xmax, length.out = n_segments + 1)
+      seg_df <- data.frame(
+        x0 = xs[-length(xs)],
+        x1 = xs[-1],
+        idx = seq_len(n_segments)
+      )
+      # Diet draws odd segments, Sex draws even (or vice versa)
+      seg_diet <- seg_df[seg_df$idx %% 2 == 1, ]
+      seg_sex <- seg_df[seg_df$idx %% 2 == 0, ]
+      ythr <- as.numeric(thresholds_by_type["Diet Interactive"]) # same as Sex Interactive
+
+      if (nrow(seg_diet) > 0) {
+        p <- p + ggplot2::geom_segment(data = seg_diet, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Diet Interactive"], linewidth = 0.6)
+      }
+      if (nrow(seg_sex) > 0) {
+        p <- p + ggplot2::geom_segment(data = seg_sex, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Sex Interactive"], linewidth = 0.6)
+      }
+    } else {
+      # Draw them separately if only one present or thresholds differ
+      if (diet_present) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Diet Interactive"], color = color_map["Diet Interactive"], linetype = "dashed", linewidth = 0.6)
+      }
+      if (sex_present) {
+        p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex Interactive"], color = color_map["Sex Interactive"], linetype = "dashed", linewidth = 0.6)
+      }
+    }
+
+    # Sex x Diet interactive
+    if ("Sex x Diet Interactive" %in% present_types && !is.na(thresholds_by_type["Sex x Diet Interactive"])) {
+      p <- p + ggplot2::geom_hline(yintercept = thresholds_by_type["Sex x Diet Interactive"], color = color_map["Sex x Diet Interactive"], linetype = "dashed", linewidth = 0.6)
+    }
+  }
+
+  # Add LOD threshold line only for the additive scan (kept for backward compatibility when show_thresholds is FALSE)
+  if (isFALSE(show_thresholds) && !is.null(LOD_thr) && is.numeric(LOD_thr) && LOD_thr > 0) {
     p <- p + ggplot2::geom_hline(yintercept = LOD_thr, color = "#e74c3c", linetype = "dashed", linewidth = 0.8)
   }
 
