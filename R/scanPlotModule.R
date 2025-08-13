@@ -881,7 +881,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             # Streamlined plotly creation
             plt <- plotly::ggplotly(plot_gg,
                 source = ns("qtl_scan_plotly"),
-                tooltip = c("x", "y")
+                tooltip = c("text")
             ) %>%
                 plotly::layout(
                     dragmode = "zoom",
@@ -1012,7 +1012,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             # Streamlined difference plot creation
             plotly::ggplotly(diff_plot_gg,
                 source = ns("difference_plotly"),
-                tooltip = c("x", "y", "chr")
+                tooltip = c("text")
             ) %>%
                 plotly::layout(
                     dragmode = "zoom",

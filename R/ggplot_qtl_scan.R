@@ -53,6 +53,13 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
 
   plot_data$type <- factor(plot_data$type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive"))
 
+  # Build formatted hover text: LOD and Position as Chr#:##.##Mb
+  plot_data$chr_char <- chr_XYM(plot_data$chr)
+  plot_data$hover_text <- paste0(
+    "LOD: ", round(plot_data$LOD, 2),
+    "<br>Chr", plot_data$chr_char, ":", round(plot_data$position, 1), "Mb"
+  )
+
   # --- Color and Theme Setup ---
   # Define colors for each type of scan
   color_map <- c(
@@ -70,12 +77,12 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
   axisdf$chr <- chr_XYM(axisdf$chr)
 
   # --- Plot Construction ---
-  p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = .data[[xvar]], y = .data$LOD, color = .data$type, group = interaction(.data$type, .data$chr))) +
+  p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = .data[[xvar]], y = .data$LOD, color = .data$type, group = interaction(.data$type, .data$chr), text = .data$hover_text)) +
     ggplot2::geom_line(aes(linewidth = .data$type, alpha = .data$type)) +
 
     # Manual scales for aesthetics
     ggplot2::scale_color_manual(values = color_map, name = "Scan Type") +
-    ggplot2::scale_linewidth_manual(values = c("Additive" = 0.7, "Diet Interactive" = 1.2, "Sex Interactive" = 1.2, "Sex x Diet Interactive" = 1.2), guide = "none") +
+    ggplot2::scale_linewidth_manual(values = c("Additive" = 0.7, "Diet Interactive" = 0.7, "Sex Interactive" = 0.7, "Sex x Diet Interactive" = 0.7), guide = "none") +
     ggplot2::scale_alpha_manual(values = c("Additive" = 0.8, "Diet Interactive" = 0.85, "Sex Interactive" = 0.85, "Sex x Diet Interactive" = 0.85), guide = "none") +
 
     # Axis and theme setup

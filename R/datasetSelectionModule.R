@@ -108,6 +108,10 @@ datasetSelectionServer <- function(id, import_reactives) {
                     # Look for HC_HF Liver Isoforms dataset
                     hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
                         !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+                } else if (selected_cat == "Liver Splice Junctions") {
+                    # Look for HC_HF Liver Splice Junctions dataset (additive version)
+                    hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Splice.*Junc", specific_datasets_choices, ignore.case = TRUE) &
+                        !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
                 }
 
                 if (!is.null(hc_hf_dataset) && length(hc_hf_dataset) > 0) {
@@ -150,7 +154,7 @@ datasetSelectionServer <- function(id, import_reactives) {
             }
 
             # Show information panel for categories that have HC_HF auto-selection
-            if (selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
+            if (selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms", "Liver Splice Junctions")) {
                 # Determine the dataset name and interaction info based on category
                 dataset_info <- switch(selected_cat,
                     "Liver Genes" = list(
@@ -171,6 +175,10 @@ datasetSelectionServer <- function(id, import_reactives) {
                     ),
                     "Liver Isoforms" = list(
                         name = "HC_HF Liver Isoforms",
+                        interaction_note = "No interactive analysis available for this dataset."
+                    ),
+                    "Liver Splice Junctions" = list(
+                        name = "HC_HF Liver Splice Junctions (Additive)",
                         interaction_note = "No interactive analysis available for this dataset."
                     )
                 )
@@ -205,6 +213,10 @@ datasetSelectionServer <- function(id, import_reactives) {
 
             # Auto-select HC_HF datasets for categories that have them
             if (!is.null(selected_cat) && selected_cat %in% c("Liver Genes", "Liver Lipids", "Clinical Traits", "Plasma Metabolites", "Liver Isoforms")) {
+                if (!is.null(selected_cat) && selected_cat == "Liver Splice Junctions") {
+                    # handled below by general logic if not in the list; extend list to include splice junctions
+                }
+
                 shiny::req(file_index_dt())
                 datasets_in_category <- file_index_dt()[dataset_category == selected_cat, ]
                 specific_datasets_choices <- unique(datasets_in_category$group)
@@ -226,6 +238,9 @@ datasetSelectionServer <- function(id, import_reactives) {
                         !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
                 } else if (selected_cat == "Liver Isoforms") {
                     hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Isoform", specific_datasets_choices, ignore.case = TRUE) &
+                        !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
+                } else if (selected_cat == "Liver Splice Junctions") {
+                    hc_hf_dataset <- specific_datasets_choices[grepl("^HC_HF.*Liver.*Splice.*Junc", specific_datasets_choices, ignore.case = TRUE) &
                         !grepl("interactive", specific_datasets_choices, ignore.case = TRUE)]
                 }
 

@@ -148,6 +148,9 @@ process_fst_file <- function(fst_path, gene_id_to_symbol_map, transcript_id_to_s
             } else if (file_type == "plasma_metabolites") {
                 message("Plasma 2H Metabolites trait file, Phenotype column will be used as is for ", basename(fst_path))
                 new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
+            } else if (file_type == "splice_juncs") {
+                message("Liver Splice Junctions trait file, Phenotype column will be used as is for ", basename(fst_path))
+                new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
             } else {
                 warning("Unknown file type: ", file_type, " for file: ", basename(fst_path))
                 return(NULL)
@@ -187,11 +190,13 @@ main <- function() {
     }
 
     file_processing_configs <- list(
-        list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_all_mice_sex_interactive_data\\.fst$")
+        # list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_all_mice_sex_interactive_data\\.fst$")
         # list(type = "genes", pattern = "chromosome[0-9XYM]+_DO_NOT_USE_data\.fst$"), # Example for gene files, adjust pattern
         # list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\.fst$") # Adjust pattern as needed
         # list(type = "clinical", pattern = "chromosome[0-9XYM]+_clinical_traits_all_mice_sexbydiet_interactive_data\\.fst$")
         # list(type = "plasma_metabolites", pattern = "chromosome[0-9XYM]+_plasma_metabolites_all_mice_sexbydiet_interactive_data\\.fst$")
+
+        list(type = "splice_juncs", pattern = "chromosome[0-9XYM]+_liver_splice_juncs_all_mice_additive_data\\.fst$")
     )
 
     all_processed_paths <- character(0)

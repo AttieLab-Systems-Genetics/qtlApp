@@ -385,6 +385,9 @@ get_trait_type <- function(import_data, selected_dataset = NULL) {
   if (grepl("plasma.*metabolite", trait_type_raw, ignore.case = TRUE)) {
     return("plasma_metabolite")
   }
+  if (grepl("splice", trait_type_raw, ignore.case = TRUE)) {
+    return("splice_junctions")
+  }
 
   # Return original (lowercased) if no specific pattern matched
   return(trait_type_raw)
@@ -424,8 +427,9 @@ get_trait_list <- function(import_data, trait_type) {
 #' @return String containing the appropriate column name for trait IDs
 get_trait_id <- function(trait_type) {
   switch(trait_type,
-    genes    = "gene.id", # Gene-based studies use gene.id
+    genes = "gene.id", # Gene-based studies use gene.id
     isoforms = "transcript_id", # Isoform studies use transcript_id
+    splice_junctions = "junction_id", # Splice junctions use junction_id (expected)
     "data_name"
   ) # Default for other types (clinical, lipids, etc.)
 }
