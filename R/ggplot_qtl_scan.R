@@ -34,8 +34,10 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
   xvar <- if (selected_chr == "All") "BPcum" else "position"
 
   # --- Data Preparation ---
-  # Label the base data
-  scan_table$type <- "Additive"
+  # Label the base data (respect pre-labeled type if present)
+  if (!"type" %in% colnames(scan_table)) {
+    scan_table$type <- "Additive"
+  }
 
   # Combine all data into one data frame for robust plotting
   plot_data <- scan_table

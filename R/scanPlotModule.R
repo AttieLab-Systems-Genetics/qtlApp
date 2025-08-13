@@ -689,6 +689,24 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             selected_chr <- main_par_list$selected_chr()
             static_threshold <- static_lod_threshold_line() # Get the static threshold
 
+            # Label base series type for correct threshold lines
+            if (!"type" %in% colnames(scan_data)) {
+                interaction_type_local <- if (!is.null(interaction_type_reactive)) interaction_type_reactive() else "none"
+                if (!is.null(interaction_type_local) && interaction_type_local != "none") {
+                    scan_data$type <- if (identical(interaction_type_local, "sex")) {
+                        "Sex Interactive"
+                    } else if (identical(interaction_type_local, "diet")) {
+                        "Diet Interactive"
+                    } else if (identical(interaction_type_local, "sex_diet")) {
+                        "Sex x Diet Interactive"
+                    } else {
+                        "Additive"
+                    }
+                } else {
+                    scan_data$type <- "Additive"
+                }
+            }
+
             # Get overlay data if toggles are active
             diet_overlay <- if (isTRUE(overlay_diet_toggle())) overlay_diet_scan_data() else NULL
             sex_overlay <- if (isTRUE(overlay_sex_toggle())) overlay_sex_scan_data() else NULL
