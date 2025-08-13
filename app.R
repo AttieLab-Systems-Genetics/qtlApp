@@ -700,46 +700,7 @@ server <- function(input, output, session) {
         overlay_sex_diet_toggle = reactive(input[[ns_app_controller("overlay_sex_diet")]])
     )
 
-    # Render the LOD scan click details table
-    output[[ns_app_controller("lod_scan_click_table")]] <- DT::renderDT({
-        # Check if we have scan module outputs and clicked point details
-        if (!is.null(scan_module_outputs) && !is.null(scan_module_outputs$clicked_point_details)) {
-            clicked_details <- scan_module_outputs$clicked_point_details()
-
-            if (!is.null(clicked_details) && nrow(clicked_details) > 0) {
-                # Format the clicked point data for display
-                display_data <- data.frame(
-                    Chromosome = if ("chr" %in% colnames(clicked_details)) clicked_details$chr else "N/A",
-                    Marker = if ("markers" %in% colnames(clicked_details)) clicked_details$markers else "N/A",
-                    Position = if ("position" %in% colnames(clicked_details)) paste0(clicked_details$position, " Mb") else "N/A",
-                    LOD = if ("LOD" %in% colnames(clicked_details)) clicked_details$LOD else "N/A"
-                )
-
-                message(paste("scanApp: Displaying clicked point details for marker:", display_data$Marker))
-
-                return(DT::datatable(
-                    display_data,
-                    options = list(
-                        dom = "t",
-                        paging = FALSE,
-                        searching = FALSE,
-                        columnDefs = list(list(targets = "_all", className = "dt-center"))
-                    ),
-                    rownames = FALSE,
-                    selection = "none",
-                    class = "compact hover"
-                ))
-            }
-        }
-
-        # Default message when no point is clicked
-        return(DT::datatable(
-            data.frame(Info = "Click on a point in the LOD scan plot to see details"),
-            options = list(dom = "t", paging = FALSE, searching = FALSE),
-            rownames = FALSE,
-            selection = "none"
-        ))
-    })
+    # Removed clicked point details table. Clicking a peak now only updates allele effects.
 
     # UI for LOD Scan plot - refactored for clarity and dynamic content
     output[[ns_app_controller("lod_scan_plot_ui_placeholder")]] <- shiny::renderUI({
@@ -823,10 +784,6 @@ server <- function(input, output, session) {
             tagList(
                 interaction_analysis_ui,
                 scanOutput(ns_app_controller("scan_plot_module")),
-                div(
-                    style = "margin-top: 15px;",
-                    DT::DTOutput(ns_app_controller("lod_scan_click_table"))
-                ),
                 shiny::uiOutput(ns_app_controller("allele_effects_section"))
             )
         } else {
@@ -897,35 +854,22 @@ server <- function(input, output, session) {
         diff_peak_1 <- scan_module_outputs$diff_peak_1()
         diff_peak_2 <- scan_module_outputs$diff_peak_2()
 
-        # View 1: Additive Peak Details
+        # View 1: Additive Peak - show only allele effects plot when a peak is selected
         if (!is.null(additive_peak)) {
             message(paste("scanApp: Rendering SINGLE allele effects for peak:", additive_peak$marker))
             return(tagList(
                 hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
-                div(
-                    style = "margin-bottom: 15px;",
-                    h5("Strain Effects", style = "color: #2c3e50; font-weight: bold;"),
-                    p("Showing strain effects for the selected peak.", style = "font-size: 12px;")
-                ),
-                bslib::layout_columns(
-                    col_widths = c(5, 7),
-                    div(
-                        style = "background: #f8f9fa; padding: 10px; border-radius: 5px; height: 450px; overflow-y: auto;",
-                        shiny::uiOutput(ns_app_controller("peak_info_display"))
-                    ),
-                    shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "450px", width = "450px") %>%
-                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
-                )
+                shiny::plotOutput(ns_app_controller("allele_effects_plot_output"), height = "450px", width = "600px") %>%
+                    shinycssloaders::withSpinner(type = 8, color = "#3498db")
             ))
         }
 
-        # View 2: Comparative Difference Peak Details
+        # View 2: Comparative Difference Peak Details - unchanged (still plots only)
         if (!is.null(diff_peak_1) || !is.null(diff_peak_2)) {
             message("scanApp: Rendering SIDE-BY-SIDE allele effects for difference plot click.")
 
             ui_elements <- list()
 
-            # Card for the first peak, if it exists
             if (!is.null(diff_peak_1)) {
                 ui_elements <- c(ui_elements, list(
                     bslib::card(
@@ -938,7 +882,6 @@ server <- function(input, output, session) {
                 ))
             }
 
-            # Card for the second peak, if it exists
             if (!is.null(diff_peak_2)) {
                 ui_elements <- c(ui_elements, list(
                     bslib::card(
@@ -951,115 +894,17 @@ server <- function(input, output, session) {
                 ))
             }
 
-            # Message if one of the peaks was not found
-            info_message <- NULL
-            if (is.null(diff_peak_1) || is.null(diff_peak_2)) {
-                info_message <- p("Note: A corresponding peak was found in only one of the comparison datasets within the search window.", style = "font-style: italic; font-size: 12px; color: #7f8c8d; margin-top: 0;")
-            }
-
-            return(tagList(
-                hr(style = "margin: 20px 0; border-top: 2px solid #e74c3c;"),
-                h5("Comparative Strain Effects", style = "color: #2c3e50; font-weight: bold; margin-bottom: 15px;"),
-                p("Showing strain effects for the peak found in each respective dataset based on your click on the difference plot.", style = "font-size: 12px; margin-bottom: 2px;"),
-                info_message,
-                do.call(bslib::layout_columns, c(list(col_widths = 6), ui_elements))
+            return(bslib::layout_columns(
+                col_widths = c(6, 6),
+                !!!ui_elements
             ))
         }
 
-        # Default: Nothing to show
-        message("scanApp: No allele effects to display.")
+        # No peak selected -> show nothing
         return(NULL)
     })
 
-    # Dynamic peak info display
-    output[[ns_app_controller("peak_info_display")]] <- shiny::renderUI({
-        # This now correctly uses the output from the scanServer module
-        peak_info <- scan_module_outputs$selected_peak()
-
-        if (is.null(peak_info) || nrow(peak_info) == 0) {
-            return(tags$div("No peak selected.", style = "color: #7f8c8d; text-align: center; padding-top: 20px;"))
-        }
-
-        # Build summary info
-        info_elements <- list()
-
-        # Basic info
-        info_elements <- c(info_elements, list(
-            tags$strong("Marker: "), peak_info$marker, tags$br(),
-            tags$strong("Position: "), paste0("Chr", peak_info$qtl_chr, ":", round(peak_info$qtl_pos, 2), " Mb"), tags$br(),
-            tags$strong("LOD Score: "), round(peak_info$qtl_lod, 3), tags$br()
-        ))
-
-        # Cis/Trans status
-        if ("cis" %in% colnames(peak_info)) {
-            cis_status <- if (is.logical(peak_info$cis)) {
-                ifelse(peak_info$cis, "Cis", "Trans")
-            } else if (is.character(peak_info$cis)) {
-                ifelse(toupper(peak_info$cis) %in% c("TRUE", "1", "YES"), "Cis", "Trans")
-            } else {
-                "Unknown"
-            }
-
-            cis_color <- if (cis_status == "Cis") "#27ae60" else "#e74c3c"
-            info_elements <- c(info_elements, list(
-                tags$strong("Type: "),
-                tags$span(cis_status, style = paste0("color: ", cis_color, "; font-weight: bold;")),
-                tags$br()
-            ))
-        }
-
-        # Confidence interval
-        if ("qtl_ci_lo" %in% colnames(peak_info) && "qtl_ci_hi" %in% colnames(peak_info)) {
-            if (!is.na(peak_info$qtl_ci_lo) && !is.na(peak_info$qtl_ci_hi)) {
-                info_elements <- c(info_elements, list(
-                    tags$strong("95% CI: "),
-                    paste0(round(peak_info$qtl_ci_lo, 2), " - ", round(peak_info$qtl_ci_hi, 2), " Mb"),
-                    tags$br()
-                ))
-            }
-        }
-
-        # Add founder allele effects with actual values
-        allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-        strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
-        available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
-
-        if (length(available_alleles) > 0) {
-            # Get non-NA allele effects with their values
-            allele_effects <- list()
-            for (i in seq_along(available_alleles)) {
-                col <- available_alleles[i]
-                value <- peak_info[[col]]
-                if (!is.na(value) && !is.null(value)) {
-                    strain <- strain_names[i]
-                    allele_effects[[length(allele_effects) + 1]] <- paste0(strain, ": ", round(value, 3))
-                }
-            }
-
-            if (length(allele_effects) > 0) {
-                # Create a more detailed display of founder effects
-                info_elements <- c(info_elements, list(
-                    tags$strong("Founder Effects:"), tags$br(),
-                    # Display effects in a more readable format
-                    tags$div(
-                        style = "margin-left: 10px; font-family: monospace; font-size: 11px;",
-                        lapply(allele_effects, function(effect) {
-                            tags$div(effect, style = "margin: 2px 0;")
-                        })
-                    )
-                ))
-            } else {
-                # Fallback to old display if no valid effects found
-                info_elements <- c(info_elements, list(
-                    tags$strong("Founder Effects: "),
-                    paste0(length(available_alleles), " available (", paste(available_alleles, collapse = ", "), ")"),
-                    tags$br()
-                ))
-            }
-        }
-
-        do.call(tagList, info_elements)
-    })
+    # Removed peak_info_display; no info table is shown, only allele effects plot on click.
 
     # Render the allele effects plot
     output[[ns_app_controller("allele_effects_plot_output")]] <- shiny::renderPlot({

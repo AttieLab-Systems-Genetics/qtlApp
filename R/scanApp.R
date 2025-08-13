@@ -362,11 +362,6 @@ scanApp <- function() {
 
           # LOD scan plot module
           scanPlotUI("scan_plot_module"),
-          # Clicked point details table
-          div(
-            style = "margin-top: 15px;",
-            DT::DTOutput("lod_scan_click_table")
-          ),
           # Allele effects module
           alleleEffectsUI("allele_effects")
         )
@@ -380,46 +375,7 @@ scanApp <- function() {
       }
     })
 
-    # Render the LOD scan click details table
-    output$lod_scan_click_table <- DT::renderDT({
-      # Check if we have scan module outputs and clicked point details
-      if (!is.null(scan_plot_outputs) && !is.null(scan_plot_outputs$clicked_point_details)) {
-        clicked_details <- scan_plot_outputs$clicked_point_details()
-
-        if (!is.null(clicked_details) && nrow(clicked_details) > 0) {
-          # Format the clicked point data for display
-          display_data <- data.frame(
-            Chromosome = if ("chr" %in% colnames(clicked_details)) clicked_details$chr else "N/A",
-            Marker = if ("markers" %in% colnames(clicked_details)) clicked_details$markers else "N/A",
-            Position = if ("position" %in% colnames(clicked_details)) paste0(clicked_details$position, " Mb") else "N/A",
-            LOD = if ("LOD" %in% colnames(clicked_details)) clicked_details$LOD else "N/A"
-          )
-
-          message(paste("scanApp: Displaying clicked point details for marker:", display_data$Marker))
-
-          return(DT::datatable(
-            display_data,
-            options = list(
-              dom = "t",
-              paging = FALSE,
-              searching = FALSE,
-              columnDefs = list(list(targets = "_all", className = "dt-center"))
-            ),
-            rownames = FALSE,
-            selection = "none",
-            class = "compact hover"
-          ))
-        }
-      }
-
-      # Default message when no point is clicked
-      return(DT::datatable(
-        data.frame(Info = "Click on a point in the LOD scan plot to see details"),
-        options = list(dom = "t", paging = FALSE, searching = FALSE),
-        rownames = FALSE,
-        selection = "none"
-      ))
-    })
+    # Removed clicked point details table. Clicking a peak now only updates allele effects.
 
     # CHROMOSOME ZOOM FUNCTIONALITY
     observeEvent(input$selected_chr,

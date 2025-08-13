@@ -97,7 +97,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         plot_width_rv <- shiny::reactiveVal(1200)
         plot_height_rv <- shiny::reactiveVal(600)
         use_alternating_colors_rv <- shiny::reactiveVal(TRUE)
-        clicked_plotly_point_details_lod_scan_rv <- shiny::reactiveVal(NULL)
         selected_peak_rv <- shiny::reactiveVal(NULL) # For single additive plot
         diff_peak_1_rv <- shiny::reactiveVal(NULL) # For side-by-side allele plot 1
         diff_peak_2_rv <- shiny::reactiveVal(NULL) # For side-by-side allele plot 2
@@ -351,24 +350,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 )
 
                 if (!is.null(all_peaks) && nrow(all_peaks) > 0) {
-                    # Find the highest peak and set it as the selected one
-                    highest_peak <- all_peaks[which.max(all_peaks$qtl_lod), ]
-                    selected_peak_rv(highest_peak)
-                    message(paste("scanServer: Default peak set to highest LOD peak:", highest_peak$marker))
-
-                    # Also set the click details to show the highest peak info by default
-                    default_click_details <- data.frame(
-                        markers = highest_peak$marker,
-                        chr = highest_peak$qtl_chr,
-                        position = round(highest_peak$qtl_pos, 3),
-                        LOD = round(highest_peak$qtl_lod, 3)
-                    )
-                    clicked_plotly_point_details_lod_scan_rv(default_click_details)
-                    message(paste("scanServer: Default click details set for highest peak:", highest_peak$marker))
+                    # Do not preselect a peak by default; wait for explicit user click
+                    selected_peak_rv(NULL)
                 } else {
-                    selected_peak_rv(NULL) # Clear selection if no peaks are found
-                    clicked_plotly_point_details_lod_scan_rv(NULL) # Clear click details too
-                    message("scanServer: No peaks found for this trait, clearing selected peak and click details.")
+                    selected_peak_rv(NULL)
+                    message("scanServer: No peaks found for this trait, clearing selected peak.")
                 }
             },
             ignoreNULL = TRUE,
@@ -1009,7 +995,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 
             # Clear the single peak selection to avoid confusion
             selected_peak_rv(NULL)
-            clicked_plotly_point_details_lod_scan_rv(NULL)
         })
 
         # Render function for the difference plot
@@ -1128,18 +1113,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         }
                     }
 
-                    # Create click details for display with raw column names (as expected by app.R)
-                    click_details <- data.frame(
-                        markers = if ("markers" %in% colnames(nearest_point)) nearest_point$markers else "Unknown",
-                        chr = if ("chr" %in% colnames(nearest_point)) chr_XYM(nearest_point$chr) else "Unknown",
-                        position = if ("position" %in% colnames(nearest_point)) round(nearest_point$position, 3) else "Unknown",
-                        LOD = if ("LOD" %in% colnames(nearest_point)) round(nearest_point$LOD, 3) else "Unknown"
-                    )
-
-                    clicked_plotly_point_details_lod_scan_rv(click_details)
+                    # No click details table; selection updates only drive allele effects
                 } else {
                     message("scanServer: Required columns not found in scan data for click detection")
-                    clicked_plotly_point_details_lod_scan_rv(data.frame(Info = "Click data not available"))
                 }
             } else {
                 message("scanServer: No click event data received")
@@ -1147,61 +1123,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         })
 
         output$plot_click_dt <- DT::renderDT({
-            details <- clicked_plotly_point_details_lod_scan_rv()
-            if (is.null(details) || nrow(details) == 0) {
-                return(DT::datatable(data.frame(Info = "Click on the plot to see point details."),
-                    options = list(dom = "t"), rownames = FALSE
-                ))
-            }
-
-            # Transpose the data for better display
-            if (ncol(details) > 1) {
-                # Create a two-column table with Property and Value
-                transposed_details <- data.frame(
-                    Property = names(details),
-                    Value = as.character(unlist(details[1, ])),
-                    stringsAsFactors = FALSE
-                )
-
-                # Clean up column names for better display
-                transposed_details$Property <- gsub("_", " ", transposed_details$Property)
-                transposed_details$Property <- gsub("Founder ", "Founder ", transposed_details$Property)
-                transposed_details$Property <- ifelse(transposed_details$Property == "markers", "Marker",
-                    ifelse(transposed_details$Property == "chr", "Chromosome",
-                        ifelse(transposed_details$Property == "position", "Position (Mb)",
-                            ifelse(transposed_details$Property == "CisOrTrans", "Cis/Trans",
-                                ifelse(transposed_details$Property == "CI Range", "Confidence Interval",
-                                    transposed_details$Property
-                                )
-                            )
-                        )
-                    )
-                )
-
-                return(DT::datatable(
-                    transposed_details,
-                    options = list(
-                        dom = "t",
-                        paging = FALSE,
-                        searching = FALSE,
-                        columnDefs = list(
-                            list(targets = 0, className = "dt-left", width = "40%"),
-                            list(targets = 1, className = "dt-left", width = "60%")
-                        )
-                    ),
-                    rownames = FALSE,
-                    selection = "none",
-                    colnames = c("Property", "Value"),
-                    class = "compact hover"
-                ) %>%
-                    DT::formatStyle(
-                        "Property",
-                        fontWeight = "bold",
-                        backgroundColor = "#f8f9fa"
-                    ))
-            } else {
-                return(DT::datatable(details, options = list(dom = "t", paging = FALSE), rownames = FALSE, selection = "none"))
-            }
+            return(NULL)
         })
 
         output$download_qtl_plot_png <- shiny::downloadHandler(
@@ -1257,7 +1179,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             filename = file_name_reactive,
             tables = shiny::reactiveValues(scan = scan_table_chr),
             plots = shiny::reactiveValues(scan = current_scan_plot_gg),
-            clicked_point_details = clicked_plotly_point_details_lod_scan_rv,
             selected_peak = selected_peak_rv,
             diff_peak_1 = diff_peak_1_rv,
             diff_peak_2 = diff_peak_2_rv
@@ -1269,7 +1190,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
 #' @export
 scanUI <- function(id) {
     ns <- shiny::NS(id)
-    DT::DTOutput(ns("plot_click_dt"))
+    # No click details UI; scan plot renders elsewhere
 }
 
 #' @rdname scanServer
