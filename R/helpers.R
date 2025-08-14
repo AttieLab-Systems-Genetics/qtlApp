@@ -491,6 +491,64 @@ resolve_trait_for_scan <- function(import_data, selected_dataset, display_trait)
   return(display_trait)
 }
 
+#' Resolve trait aliases for peaks filtering
+#'
+#' Returns a character vector containing all acceptable identifiers for a
+#' selected trait when filtering peaks. For splice junctions, includes both
+#' `data_name` (e.g., junc10857) and `junction_id` (e.g., Sox17_junc1) so the
+#' filter matches regardless of peaks file column naming.
+#'
+#' @param import_data List with `annotation_list`
+#' @param selected_dataset Dataset group string
+#' @param display_trait UI-selected display string
+#' @return Character vector of aliases to match in peaks
+resolve_trait_aliases_for_peaks <- function(import_data, selected_dataset, display_trait) {
+  if (is.null(display_trait) || !nzchar(display_trait)) {
+    return(character(0))
+  }
+  trait_type <- tryCatch(get_trait_type(import_data, selected_dataset), error = function(e) NULL)
+  if (!identical(trait_type, "splice_junctions")) {
+    return(display_trait)
+  }
+  trait_list_df <- tryCatch(get_trait_list(import_data, trait_type), error = function(e) NULL)
+  if (is.null(trait_list_df)) {
+    return(display_trait)
+  }
+  aliases <- character(0)
+  if ("junction_id" %in% colnames(trait_list_df)) {
+    idx <- which(trait_list_df$junction_id == display_trait)
+    if (length(idx) >= 1 && "data_name" %in% colnames(trait_list_df)) {
+      aliases <- c(aliases, trait_list_df$data_name[idx])
+    }
+    aliases <- c(aliases, display_trait)
+  }
+  if ("data_name" %in% colnames(trait_list_df)) {
+    idx2 <- which(trait_list_df$data_name == display_trait)
+    if (length(idx2) >= 1 && "junction_id" %in% colnames(trait_list_df)) {
+      aliases <- c(aliases, trait_list_df$junction_id[idx2])
+    }
+    aliases <- c(aliases, display_trait)
+  }
+  derive_numeric_aliases <- function(x) {
+    out <- character(0)
+    m1 <- regmatches(x, regexpr("^junc[0-9]+$", x, ignore.case = TRUE))
+    if (length(m1) == 1 && nchar(m1) > 0) {
+      num <- sub("^junc", "", tolower(m1))
+      out <- c(out, paste0("junc", num), paste0("liver_junc", num))
+    }
+    m2 <- regmatches(x, regexpr("_junc[0-9]+$", x, ignore.case = TRUE))
+    if (length(m2) == 1 && nchar(m2) > 0) {
+      num <- sub("^_junc", "", tolower(m2))
+      out <- c(out, paste0("junc", num), paste0("liver_junc", num))
+    }
+    unique(out)
+  }
+  more <- unique(unlist(lapply(unique(aliases), derive_numeric_aliases)))
+  aliases <- unique(c(aliases, more))
+  aliases <- aliases[!is.na(aliases) & nzchar(aliases)]
+  unique(aliases)
+}
+
 #' Diagnostic function to troubleshoot gene symbol issues
 #'
 #' This function helps diagnose why certain genes might not be found in datasets.

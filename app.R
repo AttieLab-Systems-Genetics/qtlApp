@@ -302,7 +302,7 @@ server <- function(input, output, session) {
                 peaks <- peak_finder(
                     file_dir = import_reactives()$file_directory,
                     selected_dataset = dataset_val,
-                    selected_trait = trait_val,
+                    selected_trait = resolve_trait_aliases_for_peaks(import_reactives(), dataset_val, trait_val),
                     trait_type = trait_type_val,
                     cache_env = peaks_cache,
                     use_cache = TRUE

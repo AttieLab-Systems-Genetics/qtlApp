@@ -137,7 +137,7 @@ peaksTableServer <- function(
                 all_peaks <- peak_finder(
                     file_dir = ir$file_directory,
                     selected_dataset = dataset_group,
-                    selected_trait = trait,
+                    selected_trait = resolve_trait_aliases_for_peaks(ir, dataset_group, trait),
                     trait_type = trait_type_val,
                     cache_env = new.env(parent = emptyenv()),
                     use_cache = TRUE

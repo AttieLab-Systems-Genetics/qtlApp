@@ -112,7 +112,7 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
           qtl_pos = c("qtl_pos", "pos", "position", "qtl_pos_mb", "qtlPos", "mb", "peak_pos"),
           qtl_lod = c("qtl_lod", "lod", "lod_score", "peak_lod", "qtl_lod_max"),
           marker = c("marker", "markers", "snp", "id", "marker_name"),
-          phenotype = c("phenotype", "trait", "gene_symbol", "gene", "pheno", "lodcolumn"),
+          phenotype = c("phenotype", "trait", "gene_symbol", "gene", "pheno", "lodcolumn", "data_name", "junction_id"),
           qtl_ci_lo = c("qtl_ci_lo", "ci_lo"),
           qtl_ci_hi = c("qtl_ci_hi", "ci_hi"),
           cis = c("cis", "cis_trans", "is_cis")
@@ -168,10 +168,14 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
 
         # Columns to keep: mapped rename_vec plus optional A-H and any present optional fields
         optional_keep <- intersect(c("A", "B", "C", "D", "E", "F", "G", "H"), current_colnames)
+        # Keep raw junction_id/data_name as well if present (helps with splice_junctions matching)
+        optional_keep <- unique(c(optional_keep, intersect(c("junction_id", "data_name"), current_colnames)))
         select_cols <- unique(c(unname(rename_vec), optional_keep))
 
         all_peaks_for_dataset <- dplyr::select(as.data.frame(all_peaks_for_dataset_raw), dplyr::all_of(select_cols)) %>%
           dplyr::rename(!!!rename_vec)
+
+        # (no debug output)
 
         # Create 'trait' alias for downstream code if only 'phenotype' exists
         if (("phenotype" %in% colnames(all_peaks_for_dataset)) && !("trait" %in% colnames(all_peaks_for_dataset))) {
@@ -213,18 +217,30 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
     return(data.frame())
   }
 
-  if (!is.null(selected_trait) && selected_trait != "") {
-    filter_col <- NULL
-    if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
-      filter_col <- "gene_symbol"
-    } else {
-      filter_col <- "phenotype"
-    }
+  if (!is.null(selected_trait) && length(selected_trait) > 0 && any(nzchar(selected_trait))) {
+    # Determine primary filter column
+    filter_col <- if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) "gene_symbol" else "phenotype"
     if (!(filter_col %in% colnames(all_peaks_for_dataset))) {
       warning("peak_finder: Column '", filter_col, "' needed for filtering type '", trait_type, "' not found after renaming. Returning all peaks.")
       return(all_peaks_for_dataset)
     }
-    filtered_peaks <- dplyr::filter(all_peaks_for_dataset, .data[[filter_col]] == selected_trait)
+    # Allow vector of aliases
+    aliases <- as.character(selected_trait)
+    aliases_lower <- tolower(aliases)
+    build_match <- function(col_name) {
+      if (is.null(col_name) || !(col_name %in% colnames(all_peaks_for_dataset))) {
+        return(rep(FALSE, nrow(all_peaks_for_dataset)))
+      }
+      vals <- tolower(as.character(all_peaks_for_dataset[[col_name]]))
+      vals %in% aliases_lower
+    }
+    # Base match on primary column, plus alternate identifier columns for splice junctions
+    matched_idx <- build_match(filter_col)
+    if (!is.null(trait_type) && trait_type == "splice_junctions") {
+      matched_idx <- matched_idx | build_match("junction_id") | build_match("data_name")
+    }
+    filtered_peaks <- all_peaks_for_dataset[matched_idx, , drop = FALSE]
+    # (no debug output)
 
     if (nrow(filtered_peaks) == 0 && trait_type %in% c("genes", "isoforms")) {
       warning("peak_finder: No peaks found for gene symbol '", selected_trait, "'. Check if this symbol exists in the 'gene_symbol' column of the CSV: ", basename(peaks_file_path_for_warning))

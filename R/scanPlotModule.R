@@ -343,7 +343,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 all_peaks <- peak_finder(
                     file_dir = import_reactives()$file_directory,
                     selected_dataset = dataset_group_val,
-                    selected_trait = resolve_trait_for_scan(import_reactives(), dataset_group_val, trait_val),
+                    selected_trait = resolve_trait_aliases_for_peaks(import_reactives(), dataset_group_val, trait_val),
                     trait_type = trait_type_val,
                     cache_env = local_peaks_cache,
                     use_cache = TRUE
@@ -1089,7 +1089,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         all_peaks <- peak_finder(
                             file_dir = import_reactives()$file_directory,
                             selected_dataset = current_dataset,
-                            selected_trait = resolve_trait_for_scan(import_reactives(), current_dataset, current_trait),
+                            selected_trait = resolve_trait_aliases_for_peaks(import_reactives(), current_dataset, current_trait),
                             trait_type = trait_type_val,
                             cache_env = local_peaks_cache,
                             use_cache = TRUE
