@@ -143,24 +143,52 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
       same_threshold <- diet_present && sex_present && identical(as.numeric(thresholds_by_type["Diet Interactive"]), as.numeric(thresholds_by_type["Sex Interactive"]))
 
       if (same_threshold) {
-        # Build alternating color segments along the full x-range
-        n_segments <- 120
-        xs <- seq(xmin, xmax, length.out = n_segments + 1)
-        seg_df <- data.frame(
-          x0 = xs[-length(xs)],
-          x1 = xs[-1],
-          idx = seq_len(n_segments)
-        )
-        # Diet draws odd segments, Sex draws even (or vice versa)
-        seg_diet <- seg_df[seg_df$idx %% 2 == 1, ]
-        seg_sex <- seg_df[seg_df$idx %% 2 == 0, ]
-        ythr <- as.numeric(thresholds_by_type["Diet Interactive"]) # same as Sex Interactive
+        # Draw dashed threshold where each dash is split half-and-half by color,
+        # with a white gap between dashes so it reads visually as a dashed line.
+        if (is.finite(xmin) && is.finite(xmax) && xmin < xmax) {
+          ythr <- as.numeric(thresholds_by_type["Diet Interactive"]) # same as Sex Interactive
 
-        if (nrow(seg_diet) > 0) {
-          p <- p + ggplot2::geom_segment(data = seg_diet, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Diet Interactive"], linewidth = 0.6)
-        }
-        if (nrow(seg_sex) > 0) {
-          p <- p + ggplot2::geom_segment(data = seg_sex, ggplot2::aes(x = x0, xend = x1, y = ythr, yend = ythr), inherit.aes = FALSE, color = color_map["Sex Interactive"], linewidth = 0.6)
+          # Define dash pattern in data space
+          n_dashes <- 80
+          period <- (xmax - xmin) / n_dashes # dash + gap length
+          dash_len <- period * 0.6 # visible dash portion
+          gap_len <- period - dash_len # white gap portion
+
+          # Build starts for each dash
+          starts <- seq(xmin, xmax, by = period)
+
+          # Left half of dash = Diet color; Right half = Sex color
+          seg1 <- data.frame(
+            x0 = starts,
+            x1 = pmin(starts + dash_len / 2, xmax),
+            y0 = ythr,
+            y1 = ythr
+          )
+          seg2 <- data.frame(
+            x0 = pmin(starts + dash_len / 2, xmax),
+            x1 = pmin(starts + dash_len, xmax),
+            y0 = ythr,
+            y1 = ythr
+          )
+
+          if (nrow(seg1) > 0) {
+            p <- p + ggplot2::geom_segment(
+              data = seg1,
+              ggplot2::aes(x = x0, xend = x1, y = y0, yend = y1),
+              inherit.aes = FALSE,
+              color = color_map["Diet Interactive"],
+              linewidth = 0.6
+            )
+          }
+          if (nrow(seg2) > 0) {
+            p <- p + ggplot2::geom_segment(
+              data = seg2,
+              ggplot2::aes(x = x0, xend = x1, y = y0, yend = y1),
+              inherit.aes = FALSE,
+              color = color_map["Sex Interactive"],
+              linewidth = 0.6
+            )
+          }
         }
       } else {
         # Draw them separately if only one present or thresholds differ
