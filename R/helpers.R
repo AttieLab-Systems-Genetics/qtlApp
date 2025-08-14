@@ -453,6 +453,44 @@ get_phenotype_class_from_category <- function(dataset_category) {
   return(NULL)
 }
 
+#' Resolve display trait to underlying scan key
+#'
+#' Internal utility that converts a display trait selected in the UI to the
+#' corresponding key used in scan/peaks files. For splice junctions, the UI
+#' shows `junction_id` values but the FST row index and peaks typically use
+#' `data_name` (e.g., junc1, junc2, ...). This function maps `junction_id`
+#' to `data_name` when applicable.
+#'
+#' @param import_data List containing `file_directory` and `annotation_list`
+#' @param selected_dataset String identifying the dataset group
+#' @param display_trait String as selected in the UI (e.g., junction_id)
+#' @return String to use for scan/peaks lookups (possibly unchanged)
+resolve_trait_for_scan <- function(import_data, selected_dataset, display_trait) {
+  if (is.null(display_trait) || !nzchar(display_trait)) {
+    return(display_trait)
+  }
+  trait_type <- tryCatch(get_trait_type(import_data, selected_dataset), error = function(e) NULL)
+  if (is.null(trait_type)) {
+    return(display_trait)
+  }
+  if (identical(trait_type, "splice_junctions")) {
+    trait_list_df <- tryCatch(get_trait_list(import_data, trait_type), error = function(e) NULL)
+    if (!is.null(trait_list_df) &&
+      ("junction_id" %in% colnames(trait_list_df)) &&
+      ("data_name" %in% colnames(trait_list_df))) {
+      # Exact match on junction_id; fallback to original if not found
+      match_idx <- which(trait_list_df$junction_id == display_trait)
+      if (length(match_idx) >= 1) {
+        dn <- trait_list_df$data_name[match_idx[1]]
+        if (!is.null(dn) && nzchar(dn)) {
+          return(dn)
+        }
+      }
+    }
+  }
+  return(display_trait)
+}
+
 #' Diagnostic function to troubleshoot gene symbol issues
 #'
 #' This function helps diagnose why certain genes might not be found in datasets.
