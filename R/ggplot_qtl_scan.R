@@ -38,8 +38,8 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
   if (!"type" %in% colnames(scan_table)) {
     scan_table$type <- "Additive"
   }
-  # Always render base series with additive aesthetics
-  scan_table$aesthetics_type <- "Additive"
+  # Render base series using its own type aesthetics so default color matches scan type
+  scan_table$aesthetics_type <- scan_table$type
 
   # Combine all data into one data frame for robust plotting
   plot_data <- scan_table
@@ -65,8 +65,8 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
     message("ggplot_qtl_scan: Merged SEXxDIET overlay data.")
   }
 
-  plot_data$type <- factor(plot_data$type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive"))
-  plot_data$aesthetics_type <- factor(plot_data$aesthetics_type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive"))
+  plot_data$type <- factor(plot_data$type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive", "Difference"))
+  plot_data$aesthetics_type <- factor(plot_data$aesthetics_type, levels = c("Additive", "Diet Interactive", "Sex Interactive", "Sex x Diet Interactive", "Difference"))
 
   # Build formatted hover text: LOD and Position as Chr#:##.##Mb
   plot_data$chr_char <- chr_XYM(plot_data$chr)
@@ -81,7 +81,8 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
     "Additive" = "#3498db", # Blue
     "Diet Interactive" = "#2c3e50", # Dark Blue
     "Sex Interactive" = "#e74c3c", # Light Red
-    "Sex x Diet Interactive" = "#f6ae2d" # Dark burnt yellow
+    "Sex x Diet Interactive" = "#f6ae2d", # Dark burnt yellow
+    "Difference" = "#663279" # Deep purple for subtraction plots
   )
 
   axisdf <- scan_table %>%
@@ -104,8 +105,8 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
 
     # Manual scales for aesthetics
     ggplot2::scale_color_manual(values = color_map, name = "Scan Type") +
-    ggplot2::scale_linewidth_manual(values = c("Additive" = 0.7, "Diet Interactive" = 0.7, "Sex Interactive" = 0.7, "Sex x Diet Interactive" = 0.7), guide = "none") +
-    ggplot2::scale_alpha_manual(values = c("Additive" = 0.8, "Diet Interactive" = 0.85, "Sex Interactive" = 0.85, "Sex x Diet Interactive" = 0.85), guide = "none") +
+    ggplot2::scale_linewidth_manual(values = c("Additive" = 0.7, "Diet Interactive" = 0.7, "Sex Interactive" = 0.7, "Sex x Diet Interactive" = 0.7, "Difference" = 0.7), guide = "none") +
+    ggplot2::scale_alpha_manual(values = c("Additive" = 0.8, "Diet Interactive" = 0.85, "Sex Interactive" = 0.85, "Sex x Diet Interactive" = 0.85, "Difference" = 0.85), guide = "none") +
 
     # Axis and theme setup
     ggplot2::scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = ggplot2::expansion(mult = c(0.01, 0.01))) +

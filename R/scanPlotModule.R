@@ -797,6 +797,9 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     main_par_list <- main_par_inputs()
                     selected_chromosome <- main_par_list$selected_chr()
 
+                    # Tag as Difference type for consistent coloring
+                    diff_plot_data$type <- "Difference"
+
                     # Create plot
                     diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chromosome, show_thresholds = FALSE)
 
