@@ -149,8 +149,11 @@ peaksTableServer <- function(
                 peaks_table_full_rv(all_peaks)
                 display <- all_peaks
                 display$Source <- "Additive"
-                display <- display[, c("Source", "marker", "qtl_chr", "qtl_pos", "qtl_lod", intersect(colnames(display), c("qtl_pval"))), drop = FALSE]
-                colnames(display) <- sub("^qtl_", "", colnames(display))
+                display <- display[, c("Source", "marker", "qtl_chr", "qtl_pos", "qtl_lod", intersect(colnames(display), c("qtl_pval", "pval"))), drop = FALSE]
+                # Explicitly rename core columns only; keep qtl_pval as-is
+                names(display)[names(display) == "qtl_chr"] <- "chr"
+                names(display)[names(display) == "qtl_pos"] <- "pos"
+                names(display)[names(display) == "qtl_lod"] <- "lod"
                 return(display)
             }
 
@@ -220,7 +223,10 @@ peaksTableServer <- function(
                     lod_diff_candidates
                 )
                 display <- display[, unique(selected_cols), drop = FALSE]
-                colnames(display) <- sub("^qtl_", "", colnames(display))
+                # Explicitly rename core columns only; keep qtl_pval as-is
+                names(display)[names(display) == "qtl_chr"] <- "chr"
+                names(display)[names(display) == "qtl_pos"] <- "pos"
+                names(display)[names(display) == "qtl_lod"] <- "lod"
                 if ("gene_symbol" %in% colnames(display)) {
                     colnames(display)[match("gene_symbol", colnames(display))] <- "trait"
                 } else if ("phenotype" %in% colnames(display)) {
@@ -241,6 +247,14 @@ peaksTableServer <- function(
 
             # Build prettier, structured view
             has_lod_diff <- "lod_diff" %in% colnames(tbl)
+
+            # Normalize p-value column names across sources
+            if (!("qtl_pval" %in% colnames(tbl)) && ("pval" %in% colnames(tbl))) {
+                tbl$qtl_pval <- tbl$pval
+            }
+            if (!("pval_diff" %in% colnames(tbl)) && ("diff_pval" %in% colnames(tbl))) {
+                tbl$pval_diff <- tbl$diff_pval
+            }
 
             # Create single formatted position column and drop separate chr/pos
             if (all(c("chr", "pos") %in% colnames(tbl))) {
@@ -270,7 +284,7 @@ peaksTableServer <- function(
                 position = "Position",
                 lod = lod_title,
                 lod_diff = "LOD Diff",
-                qtl_pval = "Pval QTL",
+                qtl_pval = "QtL Pval",
                 pval_diff = "Diff Pval",
                 marker = "Marker"
             )
