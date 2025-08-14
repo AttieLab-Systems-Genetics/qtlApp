@@ -190,9 +190,23 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
 
             # Create a combined grouping variable if more than one is selected (x axis)
             if (length(grouping_vars) > 1) {
-                plot_data_clean[, Combined_Group := do.call(paste, c(.SD, sep = " x ")), .SDcols = grouping_vars]
+                # Special handling whenever both Generation and Litter are present (alone or with others)
+                if (all(c("Generation", "Litter") %in% grouping_vars)) {
+                    plot_data_clean[, GL_combined := paste0(Generation, "_", Litter)]
+                    remaining <- setdiff(grouping_vars, c("Generation", "Litter"))
+                    cols <- c("GL_combined", remaining)
+                    if (length(cols) > 1) {
+                        plot_data_clean[, Combined_Group := do.call(paste, c(.SD, sep = " x ")), .SDcols = cols]
+                    } else {
+                        plot_data_clean[, Combined_Group := GL_combined]
+                    }
+                    title_parts <- c("Generation and Litter", remaining)
+                    xaxis_title <- paste(title_parts, collapse = " x ")
+                } else {
+                    plot_data_clean[, Combined_Group := do.call(paste, c(.SD, sep = " x ")), .SDcols = grouping_vars]
+                    xaxis_title <- paste(grouping_vars, collapse = " x ")
+                }
                 grouping_col_name <- "Combined_Group"
-                xaxis_title <- paste(grouping_vars, collapse = " x ")
             } else {
                 grouping_col_name <- grouping_vars
                 xaxis_title <- grouping_vars
@@ -235,6 +249,14 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             plot_data_clean[, x_jitter := jitter(x_index, amount = 0.2)]
             tick_vals <- sort(unique(plot_data_clean$x_index))
             tick_text <- levels(plot_data_clean[[grouping_col_name]])
+            # Dynamic x-axis label formatting to prevent clutter
+            has_gen_lit <- all(c("Generation", "Litter") %in% grouping_vars)
+            has_sex <- "Sex" %in% grouping_vars
+            has_diet <- "Diet" %in% grouping_vars
+            is_heavy_combo <- has_gen_lit && has_sex && has_diet
+            tick_count <- length(tick_text)
+            tick_angle <- if (is_heavy_combo || tick_count > 10) -45 else 0
+            tick_font_size <- if (is_heavy_combo || tick_count > 14) 8 else if (tick_count > 8) 10 else 12
 
             # Build uncolored boxplots (one per x group)
             p <- plotly::plot_ly()
@@ -341,7 +363,10 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                     title = paste("<b>", xaxis_title, "</b>"),
                     tickmode = "array",
                     tickvals = tick_vals,
-                    ticktext = tick_text
+                    ticktext = tick_text,
+                    tickangle = tick_angle,
+                    tickfont = list(size = tick_font_size),
+                    automargin = TRUE
                 ),
                 yaxis = list(title = "<b>Phenotype Value</b>")
             )
