@@ -1136,6 +1136,59 @@ server <- function(input, output, session) {
             ))
         }
 
+        # View 2: Selected peaks comparison (side-by-side) when diff peaks are set
+        if (!is.null(diff_peak_1) || !is.null(diff_peak_2)) {
+            comp_cards <- list()
+            if (!is.null(diff_peak_1)) {
+                comp_cards <- c(comp_cards, list(
+                    bslib::card(
+                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_1"))),
+                        bslib::card_body(
+                            div(
+                                style = "display: flex; gap: 10px; align-items: flex-start;",
+                                div(
+                                    style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
+                                    shiny::uiOutput(ns_app_controller("diff_info_1"))
+                                ),
+                                div(
+                                    style = "flex: 1 1 60%;",
+                                    shiny::plotOutput(ns_app_controller("diff_allele_plot_1"), height = "360px") %>%
+                                        shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
+                                )
+                            )
+                        )
+                    )
+                ))
+            }
+            if (!is.null(diff_peak_2)) {
+                comp_cards <- c(comp_cards, list(
+                    bslib::card(
+                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_2"))),
+                        bslib::card_body(
+                            div(
+                                style = "display: flex; gap: 10px; align-items: flex-start;",
+                                div(
+                                    style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
+                                    shiny::uiOutput(ns_app_controller("diff_info_2"))
+                                ),
+                                div(
+                                    style = "flex: 1 1 60%;",
+                                    shiny::plotOutput(ns_app_controller("diff_allele_plot_2"), height = "360px") %>%
+                                        shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
+                                )
+                            )
+                        )
+                    )
+                ))
+            }
+
+            ui_elements <- c(ui_elements, list(
+                hr(style = "margin: 20px 0; border-top: 2px solid #e74c3c;"),
+                div(style = "margin-bottom: 8px; font-weight: bold;", "Selected peaks (comparison)"),
+                bslib::layout_columns(col_widths = c(6, 6), !!!comp_cards)
+            ))
+        }
+
 
         # View 3: Default split-by allele plots (Female/Male or HC/HF) when available
         interaction_type <- current_interaction_type_rv()
@@ -1288,7 +1341,42 @@ server <- function(input, output, session) {
         }
     })
 
-    # Removed difference allele plot renderers (diff_plot_title_1/2, diff_allele_plot_1/2)
+    # Difference allele plot renderers (side-by-side comparison)
+    output[[ns_app_controller("diff_plot_title_1")]] <- renderText({
+      data <- diff_allele_data_1()
+      req(data)
+      if ("plot_label" %in% names(data)) unique(data$plot_label) else "Selected Peak 1"
+    })
+
+    output[[ns_app_controller("diff_plot_title_2")]] <- renderText({
+      data <- diff_allele_data_2()
+      req(data)
+      if ("plot_label" %in% names(data)) unique(data$plot_label) else "Selected Peak 2"
+    })
+
+    output[[ns_app_controller("diff_allele_plot_1")]] <- shiny::renderPlot({
+      data <- diff_allele_data_1()
+      req(data)
+      ggplot_alleles(data)
+    })
+
+    output[[ns_app_controller("diff_allele_plot_2")]] <- shiny::renderPlot({
+      data <- diff_allele_data_2()
+      req(data)
+      ggplot_alleles(data)
+    })
+
+    output[[ns_app_controller("diff_info_1")]] <- shiny::renderUI({
+      peak <- scan_module_outputs$diff_peak_1()
+      if (is.null(peak)) return(NULL)
+      build_peak_info_panel(peak)
+    })
+
+    output[[ns_app_controller("diff_info_2")]] <- shiny::renderUI({
+      peak <- scan_module_outputs$diff_peak_2()
+      if (is.null(peak)) return(NULL)
+      build_peak_info_panel(peak)
+    })
 
     # --- Split-by default allele plots (Female/Male or HC/HF) ---
     output[[ns_app_controller("split_by_plot_title_1")]] <- renderText({

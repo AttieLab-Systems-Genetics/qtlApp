@@ -22,6 +22,7 @@ peaksTableUI <- function(id) {
     ns <- shiny::NS(id)
     table_id <- ns("peaks_table")
     shiny::tagList(
+        shiny::uiOutput(ns("compare_toggle_ui")),
         shiny::tags$style(shiny::HTML(paste0(
             "div#", table_id, " table.dataTable > thead > tr > th {",
             " background-color: #d6e3f3 !important;",
@@ -373,7 +374,7 @@ peaksTableServer <- function(
                         list(className = "dt-left", targets = which(colnames(tbl_view) %in% c("marker")) - 1L)
                     )
                 ),
-                selection = "single",
+                selection = if (isTRUE(input$compare_mode)) "multiple" else "single",
                 rownames = FALSE,
                 escape = FALSE
             )
@@ -391,22 +392,30 @@ peaksTableServer <- function(
             dt
         })
 
-        shiny::observeEvent(input$peaks_table_rows_selected,
-            {
-                sel <- input$peaks_table_rows_selected
-                if (is.null(sel) || length(sel) == 0) {
-                    return(NULL)
-                }
-                full <- peaks_table_full_rv()
-                disp <- peaks_table_display()
-                if (is.null(full) || is.null(disp)) {
-                    return(NULL)
-                }
+        # Conditionally render compare toggle only when there are >1 peaks
+        output$compare_toggle_ui <- shiny::renderUI({
+            tbl <- peaks_table_display()
+            if (is.null(tbl) || nrow(tbl) <= 1) {
+                return(NULL)
+            }
+            shiny::div(
+                style = "display: flex; align-items: center; justify-content: flex-end; margin-bottom: 6px; gap: 8px;",
+                shiny::checkboxInput(ns("compare_mode"), label = "Compare peaks (side-by-side)", value = FALSE, width = "100%")
+            )
+        })
 
-                selected_row <- disp[sel, , drop = FALSE]
+        shiny::observeEvent(input$peaks_table_rows_selected, {
+            sel <- input$peaks_table_rows_selected
+            full <- peaks_table_full_rv()
+            disp <- peaks_table_display()
+            if (is.null(sel) || length(sel) == 0 || is.null(full) || is.null(disp)) {
+                return(NULL)
+            }
+
+            # Helper to map one display row index to the corresponding full row
+            map_one <- function(sel_idx) {
+                selected_row <- disp[sel_idx, , drop = FALSE]
                 marker_val <- if ("marker" %in% colnames(selected_row)) selected_row$marker else NA
-
-                # Try to locate the corresponding full row (prefer marker match)
                 idx <- integer(0)
                 if (!is.na(marker_val) && "marker" %in% colnames(full)) {
                     idx <- which(full$marker == marker_val)
@@ -418,23 +427,37 @@ peaksTableServer <- function(
                     if (!is.null(chr_col) && !is.null(pos_col) && !is.null(lod_col)) {
                         idx <- which(
                             as.character(full[[chr_col]]) == as.character(selected_row$chr) &
-                                abs(full[[pos_col]] - as.numeric(selected_row$pos)) < 1e-6 &
-                                abs(full[[lod_col]] - as.numeric(selected_row$lod)) < 1e-6
+                              abs(full[[pos_col]] - as.numeric(selected_row$pos)) < 1e-6 &
+                              abs(full[[lod_col]] - as.numeric(selected_row$lod)) < 1e-6
                         )
                     }
                 }
-                if (length(idx) == 0) {
-                    return(NULL)
-                }
+                if (length(idx) == 0) return(NULL)
+                as.data.frame(full[idx[1], , drop = FALSE])
+            }
 
-                peak_row <- as.data.frame(full[idx[1], , drop = FALSE])
+            if (isTRUE(input$compare_mode)) {
+                # Compare mode: allow up to 2 selections and populate diff slots
+                sel <- sel[seq_len(min(2L, length(sel)))]
+                peak_rows <- lapply(sel, map_one)
+                peak_rows <- Filter(Negate(is.null), peak_rows)
 
-                # Clear any difference selections and set the additive/selected peak
+                # Clear additive selection in compare mode
+                if (!is.null(set_selected_peak_fn)) set_selected_peak_fn(NULL)
+
+                if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+
+                if (length(peak_rows) >= 1 && !is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(peak_rows[[1]])
+                if (length(peak_rows) >= 2 && !is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(peak_rows[[2]])
+            } else {
+                # Single-select mode: behave as before
+                peak_row <- map_one(sel[1])
+                if (is.null(peak_row)) return(NULL)
                 if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
                 if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
                 set_selected_peak_fn(peak_row)
-            },
-            ignoreInit = TRUE
-        )
+            }
+        }, ignoreInit = TRUE)
     })
 }
