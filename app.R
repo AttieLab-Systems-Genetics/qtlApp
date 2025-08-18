@@ -425,6 +425,193 @@ server <- function(input, output, session) {
         return(reshaped)
     })
 
+    # Helper: map dataset group + interaction to split-by filepaths and labels
+    get_split_by_filepaths <- function(dataset_group, interaction_type) {
+        base_path <- "/data/dev/miniViewer_3.0/"
+        if (is.null(dataset_group) || is.null(interaction_type)) {
+            return(NULL)
+        }
+
+        base_name <- gsub(",[[:space:]]*(interactive|additive).*$", "", dataset_group, ignore.case = TRUE)
+        base_name <- trimws(base_name)
+
+        dataset_component <- NULL
+        if (grepl("Liver Genes", base_name, ignore.case = TRUE)) {
+            dataset_component <- "liver_genes"
+        } else if (grepl("Liver Lipids", base_name, ignore.case = TRUE)) {
+            dataset_component <- "liver_lipids"
+        } else if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
+            dataset_component <- "clinical_traits"
+        } else if (grepl("Plasma Metabolites", base_name, ignore.case = TRUE)) {
+            dataset_component <- "plasma_metabolites"
+        } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
+            dataset_component <- "liver_isoforms"
+        } else {
+            return(NULL)
+        }
+
+        if (interaction_type == "sex") {
+            return(list(
+                file1 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_female_mice_additive.csv")),
+                file2 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_male_mice_additive.csv")),
+                labels = c("Female", "Male")
+            ))
+        } else if (interaction_type == "diet") {
+            return(list(
+                file1 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HC_mice_additive.csv")),
+                file2 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HF_mice_additive.csv")),
+                labels = c("HC Diet", "HF Diet")
+            ))
+        }
+        return(NULL)
+    }
+
+    # Compute default split-by peak rows (top LOD per split) for current trait
+    split_by_default_peak_rows <- shiny::reactive({
+        trait <- trait_for_lod_scan_rv()
+        dataset_group <- mapped_dataset_for_interaction()
+        interaction_type <- current_interaction_type_rv()
+
+        if (is.null(trait) || !nzchar(trait) || is.null(dataset_group) || is.null(interaction_type)) {
+            return(NULL)
+        }
+        if (!(interaction_type %in% c("sex", "diet"))) {
+            return(NULL)
+        }
+
+        paths <- get_split_by_filepaths(dataset_group, interaction_type)
+        if (is.null(paths)) {
+            return(NULL)
+        }
+
+        results <- list()
+        # Helper to read, filter by trait, and take top LOD row
+        load_top_row <- function(fp) {
+            if (!file.exists(fp)) {
+                return(NULL)
+            }
+            df <- tryCatch(
+                {
+                    data.table::fread(fp)
+                },
+                error = function(e) NULL
+            )
+            if (is.null(df) || nrow(df) == 0) {
+                return(NULL)
+            }
+            trait_col <- if ("gene_symbol" %in% colnames(df)) "gene_symbol" else if ("phenotype" %in% colnames(df)) "phenotype" else NULL
+            if (is.null(trait_col)) {
+                return(NULL)
+            }
+            dt <- data.table::as.data.table(df)[tolower(get(trait_col)) == tolower(trait)]
+            if (nrow(dt) == 0) {
+                return(NULL)
+            }
+            # Determine LOD column
+            lod_col <- if ("qtl_lod" %in% colnames(dt)) "qtl_lod" else if ("lod" %in% colnames(dt)) "lod" else NULL
+            if (!is.null(lod_col)) {
+                dt <- dt[order(-get(lod_col))]
+            }
+            as.data.frame(dt[1, , drop = FALSE])
+        }
+
+        r1 <- load_top_row(paths$file1)
+        r2 <- load_top_row(paths$file2)
+
+        if (!is.null(r1)) results[[length(results) + 1]] <- list(label = paths$labels[1], row = r1)
+        if (!is.null(r2)) results[[length(results) + 1]] <- list(label = paths$labels[2], row = r2)
+
+        if (length(results) == 0) {
+            return(NULL)
+        }
+        results
+    })
+
+    # Prepare allele-effect data for split-by defaults
+    split_by_allele_data_1 <- shiny::reactive({
+        pieces <- split_by_default_peak_rows()
+        if (is.null(pieces) || length(pieces) < 1) {
+            return(NULL)
+        }
+        pk <- pieces[[1]]$row
+        if (is.null(pk) || nrow(pk) == 0 || is.null(pk$marker)) {
+            return(NULL)
+        }
+        reshaped <- pivot_peaks(pk, pk$marker)
+        if (is.null(reshaped)) {
+            return(NULL)
+        }
+        reshaped$trait <- if ("gene_symbol" %in% colnames(pk)) pk$gene_symbol else if ("phenotype" %in% colnames(pk)) pk$phenotype else NA
+        reshaped$plot_label <- pieces[[1]]$label
+        reshaped
+    })
+
+    split_by_allele_data_2 <- shiny::reactive({
+        pieces <- split_by_default_peak_rows()
+        if (is.null(pieces) || length(pieces) < 2) {
+            return(NULL)
+        }
+        pk <- pieces[[2]]$row
+        if (is.null(pk) || nrow(pk) == 0 || is.null(pk$marker)) {
+            return(NULL)
+        }
+        reshaped <- pivot_peaks(pk, pk$marker)
+        if (is.null(reshaped)) {
+            return(NULL)
+        }
+        reshaped$trait <- if ("gene_symbol" %in% colnames(pk)) pk$gene_symbol else if ("phenotype" %in% colnames(pk)) pk$phenotype else NA
+        reshaped$plot_label <- pieces[[2]]$label
+        reshaped
+    })
+
+    # Helper to build a small info panel from a peak row
+    build_peak_info_panel <- function(peak_row) {
+        if (is.null(peak_row) || nrow(peak_row) == 0) {
+            return(NULL)
+        }
+        display_trait <- if ("gene_symbol" %in% colnames(peak_row) && !is.null(peak_row$gene_symbol) && nzchar(as.character(peak_row$gene_symbol))) {
+            as.character(peak_row$gene_symbol)
+        } else if ("phenotype" %in% colnames(peak_row) && !is.null(peak_row$phenotype) && nzchar(as.character(peak_row$phenotype))) {
+            as.character(peak_row$phenotype)
+        } else if ("trait" %in% colnames(peak_row)) {
+            as.character(peak_row$trait)
+        } else {
+            NA
+        }
+        chr_col <- if ("qtl_chr" %in% colnames(peak_row)) "qtl_chr" else if ("chr" %in% colnames(peak_row)) "chr" else NULL
+        pos_col <- if ("qtl_pos" %in% colnames(peak_row)) "qtl_pos" else if ("pos" %in% colnames(peak_row)) "pos" else NULL
+        lod_col <- if ("qtl_lod" %in% colnames(peak_row)) "qtl_lod" else if ("lod" %in% colnames(peak_row)) "lod" else NULL
+        position_txt <- if (!is.null(chr_col) && !is.null(pos_col)) paste0(peak_row[[chr_col]][1], ":", round(as.numeric(peak_row[[pos_col]][1]), 2), " Mb") else NA
+        lod_txt <- if (!is.null(lod_col)) round(as.numeric(peak_row[[lod_col]][1]), 2) else NA
+
+        info_elements <- list(
+            tags$div(tags$strong("Trait:"), display_trait),
+            tags$div(tags$strong("Marker:"), if ("marker" %in% colnames(peak_row)) as.character(peak_row$marker) else NA),
+            tags$div(tags$strong("Position:"), position_txt),
+            tags$div(tags$strong("LOD:"), lod_txt)
+        )
+
+        # Founder effects if present (A-H)
+        allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+        strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
+        available_alleles <- allele_cols[allele_cols %in% colnames(peak_row)]
+        if (length(available_alleles) > 0) {
+            allele_list <- lapply(seq_along(available_alleles), function(i) {
+                col <- available_alleles[i]
+                value <- peak_row[[col]]
+                if (!is.na(value)) paste0(strain_names[i], ": ", round(value, 3))
+            })
+            allele_list <- Filter(Negate(is.null), allele_list)
+            if (length(allele_list) > 0) {
+                info_elements <- c(info_elements, list(
+                    tags$div(tags$strong("Founder Effects:")),
+                    tags$div(style = "font-family: monospace; font-size: 11px; margin-left: 10px;", lapply(allele_list, tags$div))
+                ))
+            }
+        }
+        do.call(tagList, info_elements)
+    }
+
     selected_dataset_category_reactive <- shiny::reactive({
         shiny::req(main_selected_dataset_group(), file_index_dt())
         info <- file_index_dt()[group == main_selected_dataset_group()]
@@ -875,10 +1062,12 @@ server <- function(input, output, session) {
         diff_peak_1 <- scan_module_outputs$diff_peak_1()
         diff_peak_2 <- scan_module_outputs$diff_peak_2()
 
+        ui_elements <- list()
+
         # View 1: Additive Peak - show panel and plot when a peak is selected
         if (!is.null(additive_peak)) {
             message(paste("scanApp: Rendering SINGLE allele effects for peak:", additive_peak$marker))
-            return(tagList(
+            ui_elements <- c(ui_elements, list(
                 hr(style = "margin: 20px 0; border-top: 2px solid #3498db;"),
                 div(
                     style = "display: flex; gap: 10px; align-items: flex-start;",
@@ -895,14 +1084,14 @@ server <- function(input, output, session) {
             ))
         }
 
-        # View 2: Comparative Difference Peak Details - unchanged (still plots only)
-        if (!is.null(diff_peak_1) || !is.null(diff_peak_2)) {
+        # View 2: Comparative Difference Peak Details
+        if (is.null(additive_peak) && (!is.null(diff_peak_1) || !is.null(diff_peak_2))) {
             message("scanApp: Rendering SIDE-BY-SIDE allele effects for difference plot click.")
 
-            ui_elements <- list()
+            diff_ui <- list()
 
             if (!is.null(diff_peak_1)) {
-                ui_elements <- c(ui_elements, list(
+                diff_ui <- c(diff_ui, list(
                     bslib::card(
                         bslib::card_header(textOutput(ns_app_controller("diff_plot_title_1"))),
                         bslib::card_body(
@@ -914,7 +1103,7 @@ server <- function(input, output, session) {
             }
 
             if (!is.null(diff_peak_2)) {
-                ui_elements <- c(ui_elements, list(
+                diff_ui <- c(diff_ui, list(
                     bslib::card(
                         bslib::card_header(textOutput(ns_app_controller("diff_plot_title_2"))),
                         bslib::card_body(
@@ -925,14 +1114,81 @@ server <- function(input, output, session) {
                 ))
             }
 
-            return(bslib::layout_columns(
-                col_widths = c(6, 6),
-                !!!ui_elements
+            ui_elements <- c(ui_elements, list(
+                bslib::layout_columns(
+                    col_widths = c(6, 6),
+                    !!!diff_ui
+                )
             ))
         }
 
-        # No peak selected -> show nothing
-        return(NULL)
+        # View 3: Default split-by allele plots (Female/Male or HC/HF) when available
+        pieces <- split_by_default_peak_rows()
+        if (!is.null(pieces) && length(pieces) > 0) {
+            message("scanApp: Rendering default split-by allele effects section.")
+            split_ui <- list()
+
+            if (length(pieces) >= 1) {
+                split_ui <- c(split_ui, list(
+                    bslib::card(
+                        bslib::card_header(textOutput(ns_app_controller("split_by_plot_title_1"))),
+                        bslib::card_body(
+                            div(
+                                style = "display: flex; gap: 10px; align-items: flex-start;",
+                                div(
+                                    style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
+                                    shiny::uiOutput(ns_app_controller("split_by_info_1"))
+                                ),
+                                div(
+                                    style = "flex: 1 1 60%;",
+                                    shiny::plotOutput(ns_app_controller("split_by_allele_plot_1"), height = "360px") %>%
+                                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                                )
+                            )
+                        )
+                    )
+                ))
+            }
+
+            if (length(pieces) >= 2) {
+                split_ui <- c(split_ui, list(
+                    bslib::card(
+                        bslib::card_header(textOutput(ns_app_controller("split_by_plot_title_2"))),
+                        bslib::card_body(
+                            div(
+                                style = "display: flex; gap: 10px; align-items: flex-start;",
+                                div(
+                                    style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
+                                    shiny::uiOutput(ns_app_controller("split_by_info_2"))
+                                ),
+                                div(
+                                    style = "flex: 1 1 60%;",
+                                    shiny::plotOutput(ns_app_controller("split_by_allele_plot_2"), height = "360px") %>%
+                                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                                )
+                            )
+                        )
+                    )
+                ))
+            }
+
+            ui_elements <- c(ui_elements, list(
+                hr(style = "margin: 20px 0; border-top: 2px solid #bdc3c7;"),
+                div(
+                    style = "margin-bottom: 8px; font-weight: bold;",
+                    "Split-by allele effects"
+                ),
+                bslib::layout_columns(
+                    col_widths = c(6, 6),
+                    !!!split_ui
+                )
+            ))
+        }
+
+        if (length(ui_elements) == 0) {
+            return(NULL)
+        }
+        do.call(tagList, ui_elements)
     })
 
     # Info panel content for monolithic flow
@@ -1029,6 +1285,47 @@ server <- function(input, output, session) {
         data <- diff_allele_data_2()
         req(data)
         ggplot_alleles(data)
+    })
+
+    # --- Split-by default allele plots (Female/Male or HC/HF) ---
+    output[[ns_app_controller("split_by_plot_title_1")]] <- renderText({
+        data <- split_by_allele_data_1()
+        req(data)
+        unique(data$plot_label)
+    })
+
+    output[[ns_app_controller("split_by_plot_title_2")]] <- renderText({
+        data <- split_by_allele_data_2()
+        req(data)
+        unique(data$plot_label)
+    })
+
+    output[[ns_app_controller("split_by_allele_plot_1")]] <- shiny::renderPlot({
+        data <- split_by_allele_data_1()
+        req(data)
+        ggplot_alleles(data)
+    })
+
+    output[[ns_app_controller("split_by_allele_plot_2")]] <- shiny::renderPlot({
+        data <- split_by_allele_data_2()
+        req(data)
+        ggplot_alleles(data)
+    })
+
+    output[[ns_app_controller("split_by_info_1")]] <- shiny::renderUI({
+        pieces <- split_by_default_peak_rows()
+        if (is.null(pieces) || length(pieces) < 1) {
+            return(NULL)
+        }
+        build_peak_info_panel(pieces[[1]]$row)
+    })
+
+    output[[ns_app_controller("split_by_info_2")]] <- shiny::renderUI({
+        pieces <- split_by_default_peak_rows()
+        if (is.null(pieces) || length(pieces) < 2) {
+            return(NULL)
+        }
+        build_peak_info_panel(pieces[[2]]$row)
     })
 
     # --- FIXED Trait Search Logic ---
