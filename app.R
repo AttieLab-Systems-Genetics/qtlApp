@@ -995,8 +995,8 @@ server <- function(input, output, session) {
                         condition = paste0("input['", ns_app_controller("interaction_type_selector"), "'] != 'none'"),
                         div(
                             style = "margin-bottom: 15px; padding: 10px; background-color: #e8f4fd; border-radius: 5px; border-left: 4px solid #3498db;",
-                            p("ℹ️ Interactive analysis will show stacked plots: Interactive LOD scan (top) and Difference plot (Interactive - Additive, bottom).",
-                                style = "font-size: 12px; color: #2c3e50; margin: 0;"
+                            p("LOD thresholds for interactive analyses are set using permutation testing (p = 0.1)",
+                                style = "font-size: 17px; color: #2c3e50; margin: 0; font-weight: bold;"
                             )
                         )
                     )
