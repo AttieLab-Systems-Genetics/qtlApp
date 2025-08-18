@@ -1104,43 +1104,6 @@ server <- function(input, output, session) {
             ))
         }
 
-        # View 2: Comparative Difference Peak Details
-        if (is.null(additive_peak) && (!is.null(diff_peak_1) || !is.null(diff_peak_2))) {
-            message("scanApp: Rendering SIDE-BY-SIDE allele effects for difference plot click.")
-
-            diff_ui <- list()
-
-            if (!is.null(diff_peak_1)) {
-                diff_ui <- c(diff_ui, list(
-                    bslib::card(
-                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_1"))),
-                        bslib::card_body(
-                            shiny::plotOutput(ns_app_controller("diff_allele_plot_1"), height = "400px") %>%
-                                shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
-                        )
-                    )
-                ))
-            }
-
-            if (!is.null(diff_peak_2)) {
-                diff_ui <- c(diff_ui, list(
-                    bslib::card(
-                        bslib::card_header(textOutput(ns_app_controller("diff_plot_title_2"))),
-                        bslib::card_body(
-                            shiny::plotOutput(ns_app_controller("diff_allele_plot_2"), height = "400px") %>%
-                                shinycssloaders::withSpinner(type = 8, color = "#e74c3c")
-                        )
-                    )
-                ))
-            }
-
-            ui_elements <- c(ui_elements, list(
-                bslib::layout_columns(
-                    col_widths = c(6, 6),
-                    !!!diff_ui
-                )
-            ))
-        }
 
         # View 3: Default split-by allele plots (Female/Male or HC/HF) when available
         pieces <- split_by_default_peak_rows()
@@ -1282,30 +1245,7 @@ server <- function(input, output, session) {
         }
     })
 
-    # NEW: Render logic for side-by-side plots
-    output[[ns_app_controller("diff_plot_title_1")]] <- renderText({
-        data <- diff_allele_data_1()
-        req(data)
-        unique(data$plot_label)
-    })
-
-    output[[ns_app_controller("diff_allele_plot_1")]] <- shiny::renderPlot({
-        data <- diff_allele_data_1()
-        req(data)
-        ggplot_alleles(data)
-    })
-
-    output[[ns_app_controller("diff_plot_title_2")]] <- renderText({
-        data <- diff_allele_data_2()
-        req(data)
-        unique(data$plot_label)
-    })
-
-    output[[ns_app_controller("diff_allele_plot_2")]] <- shiny::renderPlot({
-        data <- diff_allele_data_2()
-        req(data)
-        ggplot_alleles(data)
-    })
+    # Removed difference allele plot renderers (diff_plot_title_1/2, diff_allele_plot_1/2)
 
     # --- Split-by default allele plots (Female/Male or HC/HF) ---
     output[[ns_app_controller("split_by_plot_title_1")]] <- renderText({
