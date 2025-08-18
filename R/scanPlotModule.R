@@ -40,8 +40,12 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
     shiny::moduleServer(id, function(input, output, session) {
         ns <- session$ns
 
-        # Create local cache for peaks data
+        # Create local caches
         local_peaks_cache <- new.env(parent = emptyenv())
+        local_scan_cache <- new.env(parent = emptyenv())
+
+        # Preserve scan cache across additive/interactive switches to avoid re-reading
+        # Optionally, we could clear on trait change if memory becomes a concern
 
         # Helper function to map HC_HF dataset names to their interactive versions
         # Only maps to datasets that actually exist in the file system
@@ -219,7 +223,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         file_dir = file_dir_val,
                         selected_dataset = dataset_group_val,
                         selected_trait = resolve_trait_for_scan(import_reactives(), dataset_group_val, trait_val),
-                        cache_env = NULL
+                        cache_env = local_scan_cache
                     )
                 },
                 error = function(e) {
@@ -470,7 +474,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         file_dir = file_dir_val,
                         selected_dataset = interactive_dataset_name,
                         selected_trait = resolve_trait_for_scan(import_reactives(), interactive_dataset_name, trait_val),
-                        cache_env = NULL
+                        cache_env = local_scan_cache
                     )
 
                     if (is.null(result_list) || is.null(result_list$scan_data) || nrow(result_list$scan_data) == 0) {
@@ -541,7 +545,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         file_dir = file_dir_val,
                         selected_dataset = interactive_dataset_name,
                         selected_trait = resolve_trait_for_scan(import_reactives(), interactive_dataset_name, trait_val),
-                        cache_env = NULL
+                        cache_env = local_scan_cache
                     )
 
                     if (is.null(result_list) || is.null(result_list$scan_data) || nrow(result_list$scan_data) == 0) {

@@ -350,7 +350,7 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
     output$manhattan_plot_output <- plotly::renderPlotly({
       df_to_plot <- plot_data_prep()
       if (is.null(df_to_plot) || nrow(df_to_plot) == 0) {
-        shiny::validate(shiny::need(FALSE, "Threshold too high or low — no peaks to display at this LOD."))
+        shiny::validate(shiny::need(FALSE, "Threshold too high — no peaks to display at this LOD."))
       }
 
       # Get metadata from plot data
