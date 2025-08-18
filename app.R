@@ -119,6 +119,8 @@ server <- function(input, output, session) {
     current_interaction_type_rv <- shiny::reactiveVal("none")
     # Track last applied interaction type to avoid reactive loops
     last_interaction_type_rv <- shiny::reactiveVal("none")
+    # Track when the LOD slider is initialized/touched to prevent glitchy resets
+    lod_slider_initialized_rv <- shiny::reactiveVal(FALSE)
 
     # NEW: Reactive to determine if stacked plots should be shown
     show_stacked_plots <- shiny::reactive({
@@ -153,20 +155,33 @@ server <- function(input, output, session) {
         )
     })
 
+    # Mark slider initialized when it first emits a value
+    shiny::observeEvent(input[[ns_app_controller("LOD_thr")]], {
+        if (!isTRUE(lod_slider_initialized_rv()) && !is.null(input[[ns_app_controller("LOD_thr")]])) {
+            lod_slider_initialized_rv(TRUE)
+        }
+    }, ignoreInit = FALSE)
+
     # When sidebar interaction type changes, reset LOD slider value to recommended minimum
-    shiny::observeEvent(sidebar_interaction_type_rv(),
-        {
-            it <- sidebar_interaction_type_rv()
-            scan_min <- switch(it,
-                "sex" = 4.1,
-                "diet" = 4.1,
-                "sex_diet" = 9.5,
-                7.5
-            )
+    shiny::observeEvent(sidebar_interaction_type_rv(), {
+        it <- sidebar_interaction_type_rv()
+        scan_min <- switch(it,
+            "sex" = 4.1,
+            "diet" = 4.1,
+            "sex_diet" = 9.5,
+            7.5
+        )
+        current_val <- input[[ns_app_controller("LOD_thr")]]
+        # During first-time initialization, set to recommended min once
+        if (!isTRUE(lod_slider_initialized_rv())) {
             shiny::updateSliderInput(session, ns_app_controller("LOD_thr"), value = scan_min)
-        },
-        ignoreInit = TRUE
-    )
+            return()
+        }
+        # Only bump up if below new minimum; never force lower on user
+        if (!is.null(current_val) && current_val < scan_min) {
+            shiny::updateSliderInput(session, ns_app_controller("LOD_thr"), value = scan_min)
+        }
+    }, ignoreInit = TRUE)
 
     # Our own LOD threshold reactive (no longer from mainParServer)
     lod_threshold_rv <- shiny::reactive({
