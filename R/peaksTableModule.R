@@ -93,6 +93,17 @@ peaksTableUI <- function(id) {
             "}",
             "div#", table_id, " table.dataTable.hover tbody tr.selected:hover {",
             " background-color: #c4d9ff !important;",
+            "}",
+            "div#", ns("compare_toggle_container"), " {",
+            " display: flex; align-items: center; justify-content: flex-end;",
+            " gap: 10px; margin-bottom: 6px;",
+            " background: #f8fbff; border: 1px solid #d7e3f1; border-radius: 8px;",
+            " padding: 6px 10px;",
+            "}",
+            "div#", ns("compare_toggle_container"), " .form-group { margin: 0; }",
+            "div#", ns("compare_toggle_container"), " .checkbox label {",
+            " display: inline-flex; align-items: center; gap: 8px;",
+            " font-weight: 600; color: #1f2d3d; font-size: 12px; margin: 0;",
             "}"
         ))),
         DT::DTOutput(ns("peaks_table"))
@@ -399,8 +410,8 @@ peaksTableServer <- function(
                 return(NULL)
             }
             shiny::div(
-                style = "display: flex; align-items: center; justify-content: flex-end; margin-bottom: 6px; gap: 8px;",
-                shiny::checkboxInput(ns("compare_mode"), label = "Compare peaks (side-by-side)", value = FALSE, width = "100%")
+                id = ns("compare_toggle_container"),
+                shiny::checkboxInput(ns("compare_mode"), label = "Compare peaks (side-by-side)", value = FALSE)
             )
         })
 
