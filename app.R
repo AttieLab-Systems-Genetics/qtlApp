@@ -151,6 +151,21 @@ server <- function(input, output, session) {
         )
     })
 
+    # When sidebar interaction type changes, reset LOD slider value to recommended minimum
+    shiny::observeEvent(sidebar_interaction_type_rv(),
+        {
+            it <- sidebar_interaction_type_rv()
+            scan_min <- switch(it,
+                "sex" = 4.1,
+                "diet" = 4.1,
+                "sex_diet" = 9.5,
+                7.5
+            )
+            shiny::updateSliderInput(session, ns_app_controller("LOD_thr"), value = scan_min)
+        },
+        ignoreInit = TRUE
+    )
+
     # Our own LOD threshold reactive (no longer from mainParServer)
     lod_threshold_rv <- shiny::reactive({
         current_scan_type <- scan_type()
@@ -162,6 +177,12 @@ server <- function(input, output, session) {
         }
         input[[ns_app_controller("LOD_thr")]] %||% default_threshold
     }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
+
+    # Decoupled LOD threshold for overview plots (Manhattan/Cis-Trans)
+    # This avoids reloading sidebar plots when the main interaction type changes
+    overview_lod_threshold_rv <- shiny::reactive({
+        input[[ns_app_controller("LOD_thr")]] %||% 7.5
+    }) %>% shiny::debounce(300)
 
     # Reactive for selected chromosome (for zooming into specific chromosomes)
     selected_chromosome_rv <- shiny::reactive({
@@ -676,16 +697,27 @@ server <- function(input, output, session) {
         )
     })
 
+    # Overview main_par for sidebar plots (decoupled from main interaction-type threshold changes)
+    overview_main_par <- shiny::reactive({
+        list(
+            selected_dataset = main_selected_dataset_group,
+            LOD_thr = overview_lod_threshold_rv,
+            selected_chr = selected_chromosome_rv,
+            which_trait = shiny::reactive(trait_for_lod_scan_rv()),
+            dataset_category = selected_dataset_category_reactive
+        )
+    })
+
     # Instantiate plot modules and capture their outputs
     manhattan_plot_outputs <- manhattanPlotServer(ns_app_controller("manhattan_plot_module"),
         import_reactives = import_reactives,
-        main_par = active_main_par,
+        main_par = overview_main_par,
         sidebar_interaction_type = sidebar_interaction_type_rv
     )
 
     cistrans_plot_outputs <- cisTransPlotServer(ns_app_controller("cistrans_plot_module"),
         import_reactives = import_reactives,
-        main_par = active_main_par,
+        main_par = overview_main_par,
         peaks_cache = peaks_cache,
         sidebar_interaction_type = sidebar_interaction_type_rv
     )
