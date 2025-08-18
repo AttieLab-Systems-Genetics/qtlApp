@@ -349,7 +349,9 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
 
     output$manhattan_plot_output <- plotly::renderPlotly({
       df_to_plot <- plot_data_prep()
-      shiny::req(df_to_plot, nrow(df_to_plot) > 0)
+      if (is.null(df_to_plot) || nrow(df_to_plot) == 0) {
+        shiny::validate(shiny::need(FALSE, "Threshold too high or low — no peaks to display at this LOD."))
+      }
 
       # Get metadata from plot data
       is_qtlxcovar_data <- attr(df_to_plot, "is_qtlxcovar_data") %||% FALSE

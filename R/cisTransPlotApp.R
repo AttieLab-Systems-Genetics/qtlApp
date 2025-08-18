@@ -188,7 +188,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
     output$cis_trans_plot_output <- plotly::renderPlotly({
       plot_data_list <- plot_data()
       if (is.null(plot_data_list) || nrow(plot_data_list$plot_data) == 0) {
-        return(plot_null("No significant peaks found above the LOD threshold."))
+        return(plot_null("Threshold too high or low — no peaks to display at this LOD."))
       }
 
       plot_data_dt <- plot_data_list$plot_data
