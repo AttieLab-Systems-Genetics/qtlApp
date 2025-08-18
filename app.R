@@ -442,7 +442,7 @@ server <- function(input, output, session) {
             dataset_component <- "liver_lipids"
         } else if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
             dataset_component <- "clinical_traits"
-        } else if (grepl("Plasma Metabolites", base_name, ignore.case = TRUE)) {
+        } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
             dataset_component <- "plasma_metabolites"
         } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
             dataset_component <- "liver_isoforms"
@@ -499,7 +499,7 @@ server <- function(input, output, session) {
             if (is.null(df) || nrow(df) == 0) {
                 return(NULL)
             }
-            trait_col <- if ("gene_symbol" %in% colnames(df)) "gene_symbol" else if ("phenotype" %in% colnames(df)) "phenotype" else NULL
+            trait_col <- if ("gene_symbol" %in% colnames(df)) "gene_symbol" else if ("phenotype" %in% colnames(df)) "phenotype" else if ("metabolite" %in% colnames(df)) "metabolite" else if ("metabolite_name" %in% colnames(df)) "metabolite_name" else NULL
             if (is.null(trait_col)) {
                 return(NULL)
             }
@@ -1106,67 +1106,78 @@ server <- function(input, output, session) {
 
 
         # View 3: Default split-by allele plots (Female/Male or HC/HF) when available
-        pieces <- split_by_default_peak_rows()
-        if (!is.null(pieces) && length(pieces) > 0) {
-            message("scanApp: Rendering default split-by allele effects section.")
+        interaction_type <- current_interaction_type_rv()
+        if (!is.null(interaction_type) && interaction_type %in% c("sex", "diet")) {
+            pieces <- split_by_default_peak_rows()
             split_ui <- list()
+            if (!is.null(pieces) && length(pieces) > 0) {
+                message("scanApp: Rendering default split-by allele effects section.")
 
-            if (length(pieces) >= 1) {
-                split_ui <- c(split_ui, list(
-                    bslib::card(
-                        bslib::card_header(textOutput(ns_app_controller("split_by_plot_title_1"))),
-                        bslib::card_body(
-                            div(
-                                style = "display: flex; gap: 10px; align-items: flex-start;",
+                if (length(pieces) >= 1) {
+                    split_ui <- c(split_ui, list(
+                        bslib::card(
+                            bslib::card_header(textOutput(ns_app_controller("split_by_plot_title_1"))),
+                            bslib::card_body(
                                 div(
-                                    style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
-                                    shiny::uiOutput(ns_app_controller("split_by_info_1"))
-                                ),
-                                div(
-                                    style = "flex: 1 1 60%;",
-                                    shiny::plotOutput(ns_app_controller("split_by_allele_plot_1"), height = "360px") %>%
-                                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                                    style = "display: flex; gap: 10px; align-items: flex-start;",
+                                    div(
+                                        style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
+                                        shiny::uiOutput(ns_app_controller("split_by_info_1"))
+                                    ),
+                                    div(
+                                        style = "flex: 1 1 60%;",
+                                        shiny::plotOutput(ns_app_controller("split_by_allele_plot_1"), height = "360px") %>%
+                                            shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                                    )
                                 )
                             )
                         )
-                    )
-                ))
-            }
+                    ))
+                }
 
-            if (length(pieces) >= 2) {
-                split_ui <- c(split_ui, list(
-                    bslib::card(
-                        bslib::card_header(textOutput(ns_app_controller("split_by_plot_title_2"))),
-                        bslib::card_body(
-                            div(
-                                style = "display: flex; gap: 10px; align-items: flex-start;",
+                if (length(pieces) >= 2) {
+                    split_ui <- c(split_ui, list(
+                        bslib::card(
+                            bslib::card_header(textOutput(ns_app_controller("split_by_plot_title_2"))),
+                            bslib::card_body(
                                 div(
-                                    style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
-                                    shiny::uiOutput(ns_app_controller("split_by_info_2"))
-                                ),
-                                div(
-                                    style = "flex: 1 1 60%;",
-                                    shiny::plotOutput(ns_app_controller("split_by_allele_plot_2"), height = "360px") %>%
-                                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                                    style = "display: flex; gap: 10px; align-items: flex-start;",
+                                    div(
+                                        style = "flex: 1 1 40%; min-width: 220px; background: #f8f9fa; padding: 8px; border-radius: 5px;",
+                                        shiny::uiOutput(ns_app_controller("split_by_info_2"))
+                                    ),
+                                    div(
+                                        style = "flex: 1 1 60%;",
+                                        shiny::plotOutput(ns_app_controller("split_by_allele_plot_2"), height = "360px") %>%
+                                            shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                                    )
                                 )
                             )
                         )
-                    )
-                ))
+                    ))
+                }
             }
 
+            # Always render the Split-by section with content or a small blurb if none
             ui_elements <- c(ui_elements, list(
                 hr(style = "margin: 20px 0; border-top: 2px solid #bdc3c7;"),
                 div(
                     style = "margin-bottom: 8px; font-weight: bold;",
                     "Split-by allele effects"
                 ),
-                bslib::layout_columns(
-                    col_widths = c(6, 6),
-                    !!!split_ui
-                )
+                if (length(split_ui) > 0) {
+                    bslib::layout_columns(
+                        col_widths = c(6, 6),
+                        !!!split_ui
+                    )
+                } else {
+                    div(
+                        style = "color: #6c757d; font-size: 14px; margin: 6px 0 0 0;",
+                        "No significant split-by allele effects found for this selection."
+                    )
+                }
             ))
-        }
+        } # end interactive-only split-by block
 
         if (length(ui_elements) == 0) {
             return(NULL)

@@ -62,7 +62,7 @@ peaksTableServer <- function(
                 dataset_component <- "liver_lipids"
             } else if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
                 dataset_component <- "clinical_traits"
-            } else if (grepl("Plasma Metabolites", base_name, ignore.case = TRUE)) {
+            } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
                 dataset_component <- "plasma_metabolites"
             } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
                 dataset_component <- "liver_isoforms"
@@ -101,7 +101,7 @@ peaksTableServer <- function(
                 dataset_component <- "liver_lipids"
             } else if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
                 dataset_component <- "clinical_traits"
-            } else if (grepl("Plasma Metabolites", base_name, ignore.case = TRUE)) {
+            } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
                 dataset_component <- "plasma_metabolites"
             } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
                 dataset_component <- "liver_isoforms"
@@ -167,7 +167,7 @@ peaksTableServer <- function(
                 qtlx_file <- get_qtlx_summary_filepath(dataset_group, interaction_type)
                 if (!is.null(qtlx_file) && file.exists(qtlx_file)) {
                     dfs <- data.table::fread(qtlx_file)
-                    trait_col_s <- if ("gene_symbol" %in% colnames(dfs)) "gene_symbol" else if ("phenotype" %in% colnames(dfs)) "phenotype" else NULL
+                    trait_col_s <- if ("gene_symbol" %in% colnames(dfs)) "gene_symbol" else if ("phenotype" %in% colnames(dfs)) "phenotype" else if ("metabolite" %in% colnames(dfs)) "metabolite" else if ("metabolite_name" %in% colnames(dfs)) "metabolite_name" else NULL
                     if (!is.null(trait_col_s)) {
                         dts <- data.table::as.data.table(dfs)[get(trait_col_s) == trait]
                         if (nrow(dts) > 0) {
