@@ -591,6 +591,26 @@ server <- function(input, output, session) {
             tags$div(tags$strong("LOD:"), lod_txt)
         )
 
+        # Add cis/trans badge when available in split-by rows
+        if ("cis" %in% colnames(peak_row)) {
+            cis_val <- isTRUE(peak_row$cis[1])
+            cis_label <- ifelse(cis_val, "Cis", "Trans")
+            status_color <- ifelse(cis_val, "#27ae60", "#c0392b")
+            info_elements <- c(info_elements, list(
+                tags$div(tags$strong("Status:"), tags$span(cis_label, style = paste("color: white; background-color:", status_color, "; padding: 2px 6px; border-radius: 4px; font-size: 11px;")))
+            ))
+        }
+
+        # Add QTL p-value if present (qtl_pval preferred; fallback to pval)
+        pval_col <- if ("qtl_pval" %in% colnames(peak_row)) "qtl_pval" else if ("pval" %in% colnames(peak_row)) "pval" else NULL
+        if (!is.null(pval_col)) {
+            pval_val <- suppressWarnings(as.numeric(peak_row[[pval_col]][1]))
+            pval_txt <- if (!is.na(pval_val)) format(signif(pval_val, 3), scientific = TRUE) else as.character(peak_row[[pval_col]][1])
+            info_elements <- c(info_elements, list(
+                tags$div(tags$strong("QTL p-value:"), pval_txt)
+            ))
+        }
+
         # Founder effects if present (A-H)
         allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
         strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")

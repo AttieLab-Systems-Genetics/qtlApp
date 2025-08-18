@@ -161,32 +161,7 @@ peaksTableServer <- function(
             if (interaction_type %in% c("sex", "diet", "sex_diet")) {
                 pieces <- list()
 
-                # Split-by (when available)
-                paths <- get_interactive_peak_filepaths(dataset_group, interaction_type)
-                if (!is.null(paths)) {
-                    if (file.exists(paths$file1)) {
-                        df1 <- data.table::fread(paths$file1)
-                        trait_col1 <- if ("gene_symbol" %in% colnames(df1)) "gene_symbol" else if ("phenotype" %in% colnames(df1)) "phenotype" else NULL
-                        if (!is.null(trait_col1)) {
-                            dt1 <- data.table::as.data.table(df1)[get(trait_col1) == trait]
-                            if (nrow(dt1) > 0) {
-                                dt1[, Source := paths$labels[1]]
-                                pieces[[length(pieces) + 1]] <- dt1
-                            }
-                        }
-                    }
-                    if (file.exists(paths$file2)) {
-                        df2 <- data.table::fread(paths$file2)
-                        trait_col2 <- if ("gene_symbol" %in% colnames(df2)) "gene_symbol" else if ("phenotype" %in% colnames(df2)) "phenotype" else NULL
-                        if (!is.null(trait_col2)) {
-                            dt2 <- data.table::as.data.table(df2)[get(trait_col2) == trait]
-                            if (nrow(dt2) > 0) {
-                                dt2[, Source := paths$labels[2]]
-                                pieces[[length(pieces) + 1]] <- dt2
-                            }
-                        }
-                    }
-                }
+                # Split-by rows removed from peaks table; defaults rendered separately
 
                 # QTLx summary
                 qtlx_file <- get_qtlx_summary_filepath(dataset_group, interaction_type)
