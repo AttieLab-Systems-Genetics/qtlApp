@@ -260,7 +260,6 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       }
 
       if (is.null(target_phenotype_class_values)) {
-        shiny::showNotification(paste("ManhattanPlot: Unsupported category:", current_dataset_category), type = "warning")
         return(data.table::data.table())
       }
 

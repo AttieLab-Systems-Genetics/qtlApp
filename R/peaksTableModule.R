@@ -20,7 +20,82 @@
 #' @export
 peaksTableUI <- function(id) {
     ns <- shiny::NS(id)
-    DT::DTOutput(ns("peaks_table"))
+    table_id <- ns("peaks_table")
+    shiny::tagList(
+        shiny::tags$style(shiny::HTML(paste0(
+            "div#", table_id, " table.dataTable > thead > tr > th {",
+            " background-color: #d6e3f3 !important;",
+            " color: #1f2d3d !important;",
+            " font-weight: 700 !important;",
+            " border-bottom: 2px solid #7fa3c7 !important;",
+            " padding: 8px 10px !important;",
+            " border-right: 1px solid #d9e1e7;",
+            "}",
+            "div#", table_id, " table.dataTable {",
+            " border: 1px solid #b0bec5;",
+            " border-radius: 6px;",
+            " box-shadow: 0 1px 3px rgba(0,0,0,0.06);",
+            "}",
+            "div#", table_id, " table.dataTable tbody td {",
+            " border-top: 1px solid #e3e7ea;",
+            " padding: 8px 10px !important;",
+            " border-right: 1px solid #e3e7ea;",
+            "}",
+            "div#", table_id, " table.dataTable tbody td:first-child, div#", table_id, " table.dataTable thead th:first-child { border-left: 1px solid #b0bec5; }",
+            "div#", table_id, " table.dataTable tbody td:last-child, div#", table_id, " table.dataTable thead th:last-child { border-right: 1px solid #b0bec5; }",
+            "div#", table_id, " table.dataTable.stripe tbody tr:nth-child(odd) {",
+            " background-color: #f8fafc;",
+            "}",
+            "div#", table_id, " table.dataTable.hover tbody tr:hover {",
+            " background-color: #f1f5f9;",
+            "}",
+            "div#", table_id, " .dataTables_scrollHead {",
+            " border-bottom: 2px solid #cfd8dc;",
+            "}",
+            "div#", table_id, " .dataTables_wrapper {",
+            " border: 1px solid #b0bec5;",
+            " border-radius: 8px;",
+            " padding: 4px;",
+            "}",
+            "div#", table_id, " table.dataTable.no-footer {",
+            " border-bottom: 2px solid #9eb2c0 !important;",
+            "}",
+            "div#", table_id, " .fixedHeader-floating {",
+            " background: #ffffff;",
+            " border: 1px solid #b0bec5;",
+            " box-shadow: 0 2px 6px rgba(0,0,0,0.08);",
+            "}",
+            "div#", table_id, " .fixedHeader-floating th {",
+            " background-color: #d6e3f3 !important;",
+            " color: #1f2d3d !important;",
+            " font-weight: 700 !important;",
+            " border-bottom: 2px solid #7fa3c7 !important;",
+            "}",
+            "div#", table_id, " .dataTables_wrapper .dataTables_paginate .paginate_button {",
+            " border: 1px solid #cfd8dc;",
+            " background: #ffffff;",
+            " color: #2c3e50 !important;",
+            "}",
+            "div#", table_id, " .dataTables_wrapper .dataTables_paginate .paginate_button.current {",
+            " background: #d6e3f3 !important;",
+            " border-color: #7fa3c7 !important;",
+            "}",
+            "div#", table_id, " table.dataTable tbody tr.dt-row-odd-strong {",
+            " background-color: #f4f7fb;",
+            "}",
+            "div#", table_id, " table.dataTable tbody tr.selected, div#", table_id, " table.dataTable tbody tr.selected td {",
+            " background-color: #cfe0ff !important;",
+            " color: #1f2d3d !important;",
+            "}",
+            "div#", table_id, " table.dataTable tbody tr.selected a {",
+            " color: #1f2d3d !important;",
+            "}",
+            "div#", table_id, " table.dataTable.hover tbody tr.selected:hover {",
+            " background-color: #c4d9ff !important;",
+            "}"
+        ))),
+        DT::DTOutput(ns("peaks_table"))
+    )
 }
 
 #' @rdname peaksTableUI
@@ -241,7 +316,7 @@ peaksTableServer <- function(
                 tbl$position <- paste0(tbl$chr, ":", formatted_pos)
             }
 
-            # Columns to show (no trait; use combined position)
+            # Columns to show (include Source, but no grouping header)
             base_cols <- c("Source", "position", "lod", if (has_lod_diff) "lod_diff", "qtl_pval", "pval_diff", "marker")
             cols_present <- intersect(base_cols, colnames(tbl))
             tbl_view <- tbl[, cols_present, drop = FALSE]
@@ -269,9 +344,9 @@ peaksTableServer <- function(
             numeric_cols <- intersect(c("lod", "lod_diff"), colnames(tbl_view))
             pval_cols <- intersect(c("qtl_pval", "pval_diff"), colnames(tbl_view))
 
-            # RowGroup by Source when present
-            extensions <- c("RowGroup", "FixedHeader")
-            row_group <- if ("Source" %in% colnames(tbl_view)) list(dataSrc = which(colnames(tbl_view) == "Source") - 1L) else NULL
+            # Disable RowGroup (the group header row was redundant with a Source column)
+            extensions <- c("FixedHeader")
+            row_group <- NULL
 
             # Default order: by LOD desc when present
             lod_idx <- which(colnames(tbl_view) == "lod") - 1L
@@ -280,12 +355,16 @@ peaksTableServer <- function(
             dt <- DT::datatable(
                 tbl_view,
                 colnames = shown_titles,
+                class = "display cell-border row-border stripe hover compact table table-striped table-hover table-bordered table-sm",
+                extensions = extensions,
                 options = list(
                     pageLength = 8,
                     lengthChange = FALSE,
                     searching = FALSE,
                     ordering = TRUE,
                     dom = "tip",
+                    autoWidth = TRUE,
+                    stripeClasses = c("dt-row-odd-strong", "dt-row-even"),
                     rowGroup = row_group,
                     fixedHeader = TRUE,
                     order = order_opt,
