@@ -117,6 +117,8 @@ server <- function(input, output, session) {
 
     # Store the current interaction type to preserve across UI re-renders
     current_interaction_type_rv <- shiny::reactiveVal("none")
+    # Track last applied interaction type to avoid reactive loops
+    last_interaction_type_rv <- shiny::reactiveVal("none")
 
     # NEW: Reactive to determine if stacked plots should be shown
     show_stacked_plots <- shiny::reactive({
@@ -281,7 +283,7 @@ server <- function(input, output, session) {
         }
 
         return(base_dataset)
-    })
+    }) %>% shiny::debounce(150)
 
     # Detect if current dataset is additive or interactive based on dataset name and interaction type
     scan_type <- shiny::reactive({
@@ -873,20 +875,22 @@ server <- function(input, output, session) {
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
     # NEW: Observer to decouple interaction type selection from downstream reactivity
-    shiny::observeEvent(input[[ns_app_controller("interaction_type_selector")]],
-        {
+    shiny::observeEvent(input[[ns_app_controller("interaction_type_selector")]], {
             req(input[[ns_app_controller("interaction_type_selector")]])
-            current_interaction_type_rv(input[[ns_app_controller("interaction_type_selector")]])
-            message(paste("Interaction type updated to:", input[[ns_app_controller("interaction_type_selector")]]))
+            new_value <- input[[ns_app_controller("interaction_type_selector")]]
+            # Guard against loops: only update when value truly changes
+            if (identical(new_value, last_interaction_type_rv())) {
+                return(NULL)
+            }
+            current_interaction_type_rv(new_value)
+            last_interaction_type_rv(new_value)
+            message(paste("Interaction type updated to:", new_value))
 
             # Reset chromosome view to "All" when interaction type changes
             # This prevents being stuck on a chromosome view from a previous scan type
             shiny::updateSelectInput(session, ns_app_controller("selected_chr"), selected = "All")
             message("Reset chromosome view to 'All' due to interaction type change.")
-        },
-        ignoreNULL = TRUE,
-        ignoreInit = TRUE
-    )
+        }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
     # Observer to update sidebar interaction type when input changes (independent of main UI)
     shiny::observeEvent(input[[ns_app_controller("sidebar_interaction_type")]],
