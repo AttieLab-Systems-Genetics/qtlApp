@@ -301,6 +301,98 @@ peaksTableServer <- function(
             return(NULL)
         }) |> shiny::debounce(150)
 
+        # Helper: always select highest LOD row if table has rows and no user selection
+        auto_select_best_if_none_selected <- function() {
+            disp <- peaks_table_display()
+            if (is.null(disp) || nrow(disp) == 0) {
+                # Do not clear selection here; table may be in transition.
+                return(invisible(NULL))
+            }
+            # Choose the display row with highest LOD
+            lod_values <- suppressWarnings(as.numeric(disp$lod))
+            idx_best <- 1L
+            if (!all(is.na(lod_values))) {
+                idx_best <- which.max(lod_values)
+                if (length(idx_best) == 0 || is.na(idx_best) || idx_best < 1) idx_best <- 1L
+            }
+            full <- peaks_table_full_rv()
+            map_one <- function(sel_idx) {
+                if (is.null(full) || is.null(disp)) {
+                    return(NULL)
+                }
+                selected_row <- disp[sel_idx, , drop = FALSE]
+                marker_val <- if ("marker" %in% colnames(selected_row)) selected_row$marker else NA
+                idx <- integer(0)
+                if (!is.na(marker_val) && "marker" %in% colnames(full)) {
+                    idx <- which(full$marker == marker_val)
+                }
+                if (length(idx) == 0) {
+                    chr_col <- if ("qtl_chr" %in% colnames(full)) "qtl_chr" else if ("chr" %in% colnames(full)) "chr" else NULL
+                    pos_col <- if ("qtl_pos" %in% colnames(full)) "qtl_pos" else if ("pos" %in% colnames(full)) "pos" else NULL
+                    lod_col <- if ("qtl_lod" %in% colnames(full)) "qtl_lod" else if ("lod" %in% colnames(full)) "lod" else NULL
+                    if (!is.null(chr_col) && !is.null(pos_col) && !is.null(lod_col)) {
+                        idx <- which(
+                            as.character(full[[chr_col]]) == as.character(selected_row$chr) &
+                                abs(as.numeric(full[[pos_col]]) - as.numeric(selected_row$pos)) < 1e-6 &
+                                abs(as.numeric(full[[lod_col]]) - as.numeric(selected_row$lod)) < 1e-6
+                        )
+                    }
+                }
+                if (length(idx) == 0) {
+                    return(NULL)
+                }
+                as.data.frame(full[idx[1], , drop = FALSE])
+            }
+            # If there is a current user selection and it maps to a valid row, respect it
+            if (!is.null(input$peaks_table_rows_selected) && length(input$peaks_table_rows_selected) > 0) {
+                sel_idx <- input$peaks_table_rows_selected[1]
+                mapped <- map_one(sel_idx)
+                if (!is.null(mapped) && !is.null(set_selected_peak_fn)) {
+                    set_selected_peak_fn(mapped)
+                    return(invisible(NULL))
+                }
+            }
+
+            best_row <- map_one(idx_best)
+            if (!is.null(best_row) && !is.null(set_selected_peak_fn)) {
+                if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                set_selected_peak_fn(best_row)
+                # Visually select the row in the table for clarity
+                proxy <- DT::dataTableProxy("peaks_table", session = session)
+                try(
+                    {
+                        DT::selectRows(proxy, idx_best)
+                    },
+                    silent = TRUE
+                )
+            }
+            invisible(NULL)
+        }
+
+        # Enforce default selection whenever the table data changes (after UI flush)
+        shiny::observeEvent(peaks_table_display(),
+            {
+                auto_select_best_if_none_selected()
+            },
+            ignoreInit = FALSE
+        )
+
+        # Also enforce after DT render and redraw events
+        shiny::observeEvent(input$peaks_table_ready,
+            {
+                auto_select_best_if_none_selected()
+            },
+            ignoreInit = TRUE
+        )
+
+        shiny::observeEvent(input$peaks_table_draw,
+            {
+                auto_select_best_if_none_selected()
+            },
+            ignoreInit = TRUE
+        )
+
         output$peaks_table <- DT::renderDT({
             tbl <- peaks_table_display()
             if (is.null(tbl) || nrow(tbl) == 0) {
@@ -383,7 +475,9 @@ peaksTableServer <- function(
                     columnDefs = list(
                         list(className = "dt-center", targets = which(colnames(tbl_view) %in% c("position", "lod", "lod_diff", "qtl_pval", "pval_diff")) - 1L),
                         list(className = "dt-left", targets = which(colnames(tbl_view) %in% c("marker")) - 1L)
-                    )
+                    ),
+                    initComplete = DT::JS(sprintf("function(){ Shiny.setInputValue('%s', Date.now()); }", ns("peaks_table_ready"))),
+                    drawCallback = DT::JS(sprintf("function(){ Shiny.setInputValue('%s', Date.now()); }", ns("peaks_table_draw")))
                 ),
                 selection = if (isTRUE(input$compare_mode)) "multiple" else "single",
                 rownames = FALSE,
@@ -415,60 +509,67 @@ peaksTableServer <- function(
             )
         })
 
-        shiny::observeEvent(input$peaks_table_rows_selected, {
-            sel <- input$peaks_table_rows_selected
-            full <- peaks_table_full_rv()
-            disp <- peaks_table_display()
-            if (is.null(sel) || length(sel) == 0 || is.null(full) || is.null(disp)) {
-                return(NULL)
-            }
-
-            # Helper to map one display row index to the corresponding full row
-            map_one <- function(sel_idx) {
-                selected_row <- disp[sel_idx, , drop = FALSE]
-                marker_val <- if ("marker" %in% colnames(selected_row)) selected_row$marker else NA
-                idx <- integer(0)
-                if (!is.na(marker_val) && "marker" %in% colnames(full)) {
-                    idx <- which(full$marker == marker_val)
+        shiny::observeEvent(input$peaks_table_rows_selected,
+            {
+                sel <- input$peaks_table_rows_selected
+                full <- peaks_table_full_rv()
+                disp <- peaks_table_display()
+                if (is.null(sel) || length(sel) == 0 || is.null(full) || is.null(disp)) {
+                    return(NULL)
                 }
-                if (length(idx) == 0) {
-                    chr_col <- if ("qtl_chr" %in% colnames(full)) "qtl_chr" else if ("chr" %in% colnames(full)) "chr" else NULL
-                    pos_col <- if ("qtl_pos" %in% colnames(full)) "qtl_pos" else if ("pos" %in% colnames(full)) "pos" else NULL
-                    lod_col <- if ("qtl_lod" %in% colnames(full)) "qtl_lod" else if ("lod" %in% colnames(full)) "lod" else NULL
-                    if (!is.null(chr_col) && !is.null(pos_col) && !is.null(lod_col)) {
-                        idx <- which(
-                            as.character(full[[chr_col]]) == as.character(selected_row$chr) &
-                              abs(full[[pos_col]] - as.numeric(selected_row$pos)) < 1e-6 &
-                              abs(full[[lod_col]] - as.numeric(selected_row$lod)) < 1e-6
-                        )
+
+                # Helper to map one display row index to the corresponding full row
+                map_one <- function(sel_idx) {
+                    selected_row <- disp[sel_idx, , drop = FALSE]
+                    marker_val <- if ("marker" %in% colnames(selected_row)) selected_row$marker else NA
+                    idx <- integer(0)
+                    if (!is.na(marker_val) && "marker" %in% colnames(full)) {
+                        idx <- which(full$marker == marker_val)
                     }
+                    if (length(idx) == 0) {
+                        chr_col <- if ("qtl_chr" %in% colnames(full)) "qtl_chr" else if ("chr" %in% colnames(full)) "chr" else NULL
+                        pos_col <- if ("qtl_pos" %in% colnames(full)) "qtl_pos" else if ("pos" %in% colnames(full)) "pos" else NULL
+                        lod_col <- if ("qtl_lod" %in% colnames(full)) "qtl_lod" else if ("lod" %in% colnames(full)) "lod" else NULL
+                        if (!is.null(chr_col) && !is.null(pos_col) && !is.null(lod_col)) {
+                            idx <- which(
+                                as.character(full[[chr_col]]) == as.character(selected_row$chr) &
+                                    abs(full[[pos_col]] - as.numeric(selected_row$pos)) < 1e-6 &
+                                    abs(full[[lod_col]] - as.numeric(selected_row$lod)) < 1e-6
+                            )
+                        }
+                    }
+                    if (length(idx) == 0) {
+                        return(NULL)
+                    }
+                    as.data.frame(full[idx[1], , drop = FALSE])
                 }
-                if (length(idx) == 0) return(NULL)
-                as.data.frame(full[idx[1], , drop = FALSE])
-            }
 
-            if (isTRUE(input$compare_mode)) {
-                # Compare mode: allow up to 2 selections and populate diff slots
-                sel <- sel[seq_len(min(2L, length(sel)))]
-                peak_rows <- lapply(sel, map_one)
-                peak_rows <- Filter(Negate(is.null), peak_rows)
+                if (isTRUE(input$compare_mode)) {
+                    # Compare mode: allow up to 2 selections and populate diff slots
+                    sel <- sel[seq_len(min(2L, length(sel)))]
+                    peak_rows <- lapply(sel, map_one)
+                    peak_rows <- Filter(Negate(is.null), peak_rows)
 
-                # Clear additive selection in compare mode
-                if (!is.null(set_selected_peak_fn)) set_selected_peak_fn(NULL)
+                    # Clear additive selection in compare mode
+                    if (!is.null(set_selected_peak_fn)) set_selected_peak_fn(NULL)
 
-                if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
-                if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                    if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                    if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
 
-                if (length(peak_rows) >= 1 && !is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(peak_rows[[1]])
-                if (length(peak_rows) >= 2 && !is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(peak_rows[[2]])
-            } else {
-                # Single-select mode: behave as before
-                peak_row <- map_one(sel[1])
-                if (is.null(peak_row)) return(NULL)
-                if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
-                if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
-                set_selected_peak_fn(peak_row)
-            }
-        }, ignoreInit = TRUE)
+                    if (length(peak_rows) >= 1 && !is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(peak_rows[[1]])
+                    if (length(peak_rows) >= 2 && !is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(peak_rows[[2]])
+                } else {
+                    # Single-select mode: behave as before
+                    peak_row <- map_one(sel[1])
+                    if (is.null(peak_row)) {
+                        return(NULL)
+                    }
+                    if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                    if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                    set_selected_peak_fn(peak_row)
+                }
+            },
+            ignoreInit = TRUE
+        )
     })
 }

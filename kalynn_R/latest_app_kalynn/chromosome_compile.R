@@ -10,13 +10,13 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/clinical_traits/clinical_traits_all_mice_sexbydiet_interactive/output"
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/clinical_traits/clinical_traits_female_mice_additive/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
 
 # Set data.table specific temp directory
 # options(datatable.tmpdir = my_temp_dir)
 
-# Extract the basename of the input directory for use in output filenames
+# Extract the basename of the input directory for use in output filenamess
 # This will extract "isoform_additive" from the path
 input_dirname <- basename(dirname(INPUT_DIR))
 
