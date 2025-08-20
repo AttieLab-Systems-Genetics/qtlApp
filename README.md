@@ -1,110 +1,86 @@
-# QTL App organization
+## qtlApp
 
-The purpose of this directory is to organize the QTL App in a modular fashion
-to facilitate readability and debugging.
-This is an ongoing project that is designed for QTL visualization and analysis at scale.
-It is organized as a package with multiple small shiny modules, each with its own app.
-The goal is to make this straightforward and easy enough for team members to develop
-their own modules as the tools evolve.
+### Summary
 
-To install:
+- **What it is**: Modular R/Shiny package for QTL (Quantitative Trait Loci) analysis and visualization.
+- **What it does**: Fast LOD scans, Manhattan and cis/trans plots, peak exploration with allele effects, interactive sex/diet analyses with on‑the‑fly difference plots, trait search, correlation and profile plots.
+- **How it’s built**: Small, focused Shiny modules; ggplot2/plotly visualizations; efficient data access (fst/data.table); clear reactive patterns with debouncing; consistent styling via `bslib`.
 
-```
-> library(devtools)
-> install_github("AttieLab-Systems-Genetics/qtlApp")
-```
+### Key Changes (Summer)
 
-See
-[DESCRIPTION](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/DESCRIPTION)
-for imported packages, which are automatically installed with above step if not present.
-The package uses
-[roxygen2](https://roxygen2.r-lib.org/)
-to build out dependencies and manual pages
-([man](https://github.com/AttieLab-Systems-Genetics/qtlApp/tree/main/man))
-via the command
+- **Plotting & UX**
+  - Responsive layout so pages fit across screen sizes; horizontal zoom and chromosome-aware zoom for scans and Manhattan/peaks.
+  - Smaller, carded plots; consistent titles; colored threshold lines; thinner overlays; white divider at thresholds.
+  - Allele effects plot switched to horizontal layout; peaks plot squared; overlay thickness tuned (additive thinner).
+  - Additive vs Interactive difference profile displayed and kept in sync with zoom state; LOD line colors harmonized with threshold/overlay; distinct color for subtraction.
+  - Axis/hover polish: added x‑axis for Manhattan/peaks; hover uses position (not `BPcum`); replaced `N/A` symbols with gene IDs; normalized specific x‑axis labels (e.g., `'_'` over `'x'` where applicable).
+  - Removed clicked-point side info in favor of cleaner plot interactions; color-by control simplified to single-choice and correctly updates point colors.
+- **Analysis Features**
+  - Sex/Diet interactive scans with on‑the‑fly subtraction from additive.
+  - Manhattan plot difference shown only for interactive analyses.
+  - Cis/trans plotting added; sex×diet Manhattan and cis plots added.
+  - Split-by LOD overlays (e.g., Female vs Male; HC vs HF) using additive scans.
+  - Dual LOD thresholds exposed and tuned (additive 7.5, interactive 10.5), with colored lines and overlays.
+  - Peaks tied to strain effects (default to highest peak; removed dropdown friction).
+  - Restored legacy peaks behavior and enriched hover with peak metadata.
+  - Added 4 Mb context when locating peaks; improved manipulability of peaks plot.
+  - Permutation-based p-value support (e.g., 0.1) integrated into thresholding displays.
+- **Data & Content**
+  - Loaded metabolites dataset (small) and ensured gene symbol fixes.
+  - Preserved selected gene/trait when switching datasets; ensured count of mice scanned is displayed (e.g., N/1157) and phenotype-aware.
+  - Added Profile Plot and Correlation sections.
+- **Performance, State & Quality**
+  - Debounced expensive reactives; guarded against double-firing; improved additive/interactive state sync.
+  - General directory cleanup and consistency work across modules and helpers.
 
-```
-> devtools::document()
-```
+### In Progress / TODO
 
-## Callable apps
+- **Export & Sharing**: Add PNG/PDF buttons; Download as CSV.
+- **SNP/Variants**: Mouse SNP Wizard backend (clone, strip query logic), integrate `founder_variants_all_csqs.sqlite`; ingest `annotated_peak_summaries/qtl_by_covar` (split by sex/diet); SNP association.
+- **Peaks & Windows**: Consolidate 4 Mb search window logic in code paths.
+- **Interactions & Clicks**: Fix click behavior on additive scan.
+- **Data Sources & Annotations**: Biomart integration.
+- **Usability Defaults**: Make split-by scans/peaks the default; show informative blurb when none found.
+- **Performance & Stability**: Address memory failure conditions.
+- **Correlation**: Add number of mice to correlation (requires re-run).
+- **Trait/ID Gaps**: Fix cases where `ENSMUSG` traits don’t show peaks.
+- **Domain additions**: Consider liver splice junctions.
 
-Once the package is installed, use
+### System Structure
 
-```
-> library(qtlApp)
-```
+- **Entry Points**
+  - `app.R`: Main Shiny app wiring, sourcing order, global options.
+  - `mainUI.R`: High-level UI composition and layout components.
+- **Core Modules (Server/UI)**
+  - `scanPlotModule.R`: LOD scans (additive, interactive, overlays, difference logic).
+  - `splitByLodOverlayModule.R`: Split-by additive overlays (Female vs Male; HC vs HF), follows main zoom.
+  - `alleleEffectsModule.R`: Founder allele effects visualization tied to selected peak.
+  - `peaksTableModule.R`: Peaks table with hover/click metadata; ties into scans and effects.
+  - `datasetSelectionModule.R`, `interactiveAnalysisModule.R`: Dataset and interaction type controls, state sync.
+  - `traitSearchModule.R`, `traitProcessingModule.R`: Large-scale trait search and preprocessing.
+  - `profilePlotApp.R`, `correlationApp.R`: Profile and correlation analysis sections.
+  - `manhattanPlotApp.R`, `cisTransPlotApp.R`: Genome-wide Manhattan and single-panel cis/trans.
+  - `downloadApp.R`: Download-related UI/actions (extend for CSV/PNG/PDF).
+- **Computation & Data Access**
+  - `trait_scan.R`: Per-trait scan retrieval; bridges to visualization.
+  - `peak_finder.R`, `peak_info.R`: Peak detection and metadata extraction.
+  - `fst_rows.R`, `data_handling.R`, `import_data.R`: Efficient I/O and dataset wiring.
+  - `QTL_plot_visualizer.R`: Normalizes scan data for plotting (chr/position/BPcum joins with markers).
+- **Visualization Helpers**
+  - `ggplot_qtl_scan.R`, `ggplotly_qtl_scan.R`: Scan plotting (ggplot2/plotly variants).
+  - `ggplot_alleles.R`: Allele effects plotting.
+  - `plot_enhancements.R`, `ui_styles.R`, `plot_null.R`: Themes, styles, and fallbacks.
+- **Apps/Utilities**
+  - `scanApp.R`, `cisTransPlotApp.R`, `manhattanPlotApp.R`, `interactiveSubtractionApp.R`: Focused app shells for specific views.
+  - `helpers.R`: Shared utilities (validation, formatting, conversions, reactive helpers).
+  - `preprocess_pheno_data.R`, `update_annotation_list_from_csvs.R`: Data prep and annotation tooling.
+  - `scripts/`, `kalynn_R/`: Processing pipelines and project-specific scripts.
+- **Package Files**
+  - `DESCRIPTION`, `NAMESPACE`, `man/`: Package metadata and documentation.
+  - `inst/`, `data/`, `docs/`: Installed assets, datasets, and docs.
 
-to attach the package. The following apps are available:
+### Notes
 
-```
-> qtlApp()     # full app (similar in appearance to previous app)
-> scanApp()    # scan app (read and plot QTL genome scan)
-> peakApp()    # peak app (read and show table of peaks and plot of allele estimates)
-> traitApp()   # trait app (read datasets and trait file and show tables)
-> mainParApp() # main parameter app (set up parameters used by other apps)
-```
-
-The app could also be deployed by
-
-```
-> shiny::runApp("inst/shinyApp/")
-```
-
-Please note that for now, the data files are hardwired in the 
-[qtlSetup.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/inst/shinyApp/qtlSetup.R)
-file.
-Once data file location is established, this will be modified.
-
-
-## Package Details
-
-For details on modular apps, see
-[ShinyApps page in Documentation repo](https://github.com/AttieLab-Systems-Genetics/Documentation/blob/main/ShinyApps.md).
-The package has several analysis files used by shiny modules:
-
-- [trait_scan.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/trait_scan.R)
-- [QTL_plot_visualizer.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/QTL_plot_visualizer.R)
-- [peak_finder.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/peak_finder.R)
-
-The shiny modules in hierarchy of calling are:
-
-- [qtlServer.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/qtlServer.R): QTL app
-  - [mainParServer.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/mainParServer.R): main parameters
-    - [traitServer.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/traitServer.R): break out display of `datasets` and return of `trait_list`
-  - [scanServer.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/scanServer.R): QTL scan read from file
-  - [peakServer.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/peakServer.R): QTL peaks read from file
-
-The deployable app
-[app.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/inst/shinyApp/app.R)
-sources the file
-[qtlSetup.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/inst/shinyApp/qtlSetup.R)
-to load data files and then calls the 
-[qtlServer.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/R/qtlServer.R).
-
-- [qtlSetup.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/inst/shinyApp/qtlSetup.R): file setup
-- [app.R](https://github.com/AttieLab-Systems-Genetics/qtlApp/blob/main/inst/shinyApp/app.R): app that calls the modules
-
-## Plans:
-
-The `qtlApp` is now a package on GitHub with self-documenting modules.
-New modules following this design should be added as the app evolves through group discussion.
-
-For reference on GitHub development, see
-
-- use GitHub app on laptop (figure out tunneling to Attie Server)
-- [Adding locally hosted code to GitHub](https://docs.github.com/en/migrations/importing-source-code/using-the-command-line-to-import-source-code/adding-locally-hosted-code-to-github)
-- [HappyGit: Get started with GitHub](https://happygitwithr.com/usage-intro)
-- [Connect your GitHub to server](https://github.com/AttieLab-Systems-Genetics/Documentation/blob/main/Server/Connecting.md#connect-your-github-to-server)
-- [EDA: GitHub Pages](https://github.com/byandell-envsys/EarthDataAnalytics/blob/main/references.md#github-pages)
-- [Oh Shit! Git!](https://ohshitgit.com/)
-
-Some guiding principles:
-
-- break out code as coherent pieces (functions or modules or workflow steps) in files.
-- use indentation throughout
-- use higher level packages where possible and relevant
-  - be explicit about `package::function()`
-  - build your own packages one at a time
-- use `|>` rather than `%>%` (see 
-[Differences between the base R and magrittr pipes](https://www.tidyverse.org/blog/2023/04/base-vs-magrittr-pipe/))
+- Interaction analysis supports additive and sex/diet modes with automatic on‑the‑fly subtraction for difference plots; split-by overlays render additive-only comparisons for interpretability.
+- Default LOD thresholds: additive 7.5; interactive 10.5. Colored threshold lines are used consistently across plots and overlays.
+- The system uses debounced reactives and stable state patterns to prevent circular dependencies and double-firing during UI updates.
