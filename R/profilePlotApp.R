@@ -13,6 +13,7 @@
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom stringr str_replace_all
 #' @importFrom data.table .
+#' @importFrom stats t.test wilcox.test p.adjust
 #' @export
 profilePlotUI <- function(id) {
     ns <- shiny::NS(id)
@@ -116,6 +117,29 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         selected = "Sex",
                         multiple = FALSE
                     )
+                ),
+                div(
+                    style = "display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; max-width: 700px;",
+                    shiny::selectInput(
+                        ns("test_method"),
+                        "Group-vs-Rest Test:",
+                        choices = c(
+                            "Wilcoxon (rank-sum)" = "wilcox",
+                            "t-test (Welch)" = "ttest"
+                        ),
+                        selected = "wilcox"
+                    ),
+                    shiny::selectInput(
+                        ns("p_adjust_method"),
+                        "P-adjust:",
+                        choices = c(
+                            "BH (FDR)" = "BH",
+                            "Bonferroni" = "bonferroni",
+                            "None" = "none"
+                        ),
+                        selected = "BH"
+                    ),
+                    shiny::checkboxInput(ns("show_p_annotations"), "Show p on plot", value = TRUE)
                 ),
                 plotly::plotlyOutput(ns("profile_boxplot")) |>
                     shinycssloaders::withSpinner(type = 8, color = "#3498db")
@@ -258,6 +282,57 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             tick_angle <- if (is_heavy_combo || tick_count > 10) -45 else 0
             tick_font_size <- if (is_heavy_combo || tick_count > 14) 8 else if (tick_count > 8) 10 else 12
 
+            # Compute per-group vs all-others p-values (on-the-fly)
+            test_method <- if (!is.null(input$test_method) && nzchar(input$test_method)) input$test_method else "wilcox"
+            padj_method <- if (!is.null(input$p_adjust_method) && nzchar(input$p_adjust_method)) input$p_adjust_method else "BH"
+            group_levels <- levels(plot_data_clean[[grouping_col_name]])
+            pvals <- rep(NA_real_, length(group_levels))
+            for (i in seq_along(group_levels)) {
+                lev <- group_levels[i]
+                in_group <- plot_data_clean[[grouping_col_name]] == lev
+                n_in <- sum(in_group, na.rm = TRUE)
+                n_out <- sum(!in_group, na.rm = TRUE)
+                if (is.finite(n_in) && is.finite(n_out) && n_in >= 3 && n_out >= 3) {
+                    pvals[i] <- tryCatch(
+                        {
+                            if (identical(test_method, "wilcox")) {
+                                stats::wilcox.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], exact = FALSE)$p.value
+                            } else {
+                                stats::t.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], var.equal = FALSE)$p.value
+                            }
+                        },
+                        error = function(e) NA_real_
+                    )
+                } else {
+                    pvals[i] <- NA_real_
+                }
+            }
+            pvals_adj <- if (!identical(padj_method, "none")) stats::p.adjust(pvals, method = padj_method) else pvals
+
+            # Compute y positions for annotations above each group's box
+            y_by_group <- plot_data_clean[, .(y_max = max(Value, na.rm = TRUE)), by = c(grouping_col_name)]
+            # Reorder to match level order
+            y_by_group <- y_by_group[match(group_levels, y_by_group[[grouping_col_name]]), ]
+            y_range <- max(plot_data_clean$Value, na.rm = TRUE) - min(plot_data_clean$Value, na.rm = TRUE)
+            y_margin <- if (is.finite(y_range) && y_range > 0) 0.05 * y_range else 0.1
+            ann_y <- y_by_group$y_max + y_margin
+            ann_text <- vapply(seq_along(group_levels), function(i) {
+                pv <- pvals_adj[i]
+                if (is.na(pv)) "p: n/a" else paste0("p=", formatC(pv, format = "g", digits = 3))
+            }, character(1))
+            annotations <- lapply(seq_along(group_levels), function(i) {
+                list(
+                    x = tick_vals[i],
+                    y = ann_y[i],
+                    text = ann_text[i],
+                    xref = "x",
+                    yref = "y",
+                    showarrow = FALSE,
+                    align = "center",
+                    font = list(size = 10, color = "#2c3e50")
+                )
+            })
+
             # Build uncolored boxplots (one per x group)
             p <- plotly::plot_ly()
             p <- plotly::add_trace(
@@ -370,6 +445,10 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 ),
                 yaxis = list(title = "<b>Phenotype Value</b>")
             )
+
+            if (isTRUE(input$show_p_annotations)) {
+                p <- plotly::layout(p, annotations = annotations)
+            }
 
             return(p)
         })
