@@ -74,22 +74,8 @@ correlationServer <- function(id, import_reactives, main_par) {
         ns <- session$ns
 
         # Prefer Docker-mounted correlation dir(s)
-        candidate_dirs <- c(
-            "/data/dev/miniViewer_3.0/correlations",
-            "/data/dev/miniViewer_3.0",
-            "/data/dev/miniviewier_3.0/correlations", # typo variant mentioned
-            "/mnt/rdrive/mkeller3/General/main_directory/correlations"
-        )
-        correlations_dir <- NULL
-        for (d in candidate_dirs) {
-            if (dir.exists(d)) {
-                correlations_dir <- d
-                break
-            }
-        }
-        if (is.null(correlations_dir)) {
-            correlations_dir <- "/data/dev/miniViewer_3.0/correlations" # default fallback
-        }
+        correlations_dir <- "/data/dev/miniViewer_3.0"
+
 
         # Map internal trait type to correlation file tokens and labels
         trait_type_to_token <- function(trait_type_char) {
@@ -183,7 +169,12 @@ correlationServer <- function(id, import_reactives, main_par) {
                 file.path(correlations_dir, "clinical_traits_vs_clinical_traits_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_clinical_traits_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_liver_lipids_corr.csv"),
-                file.path(correlations_dir, "liver_genes_vs_plasma_metabolites_corr.csv")
+                file.path(correlations_dir, "liver_genes_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "liver_lipids_vs_liver_lipids_corr.csv"),
+                file.path(correlations_dir, "plasma_metabolites_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "clinical_traits_vs_liver_lipids_corr.csv"),
+                file.path(correlations_dir, "clinical_traits_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "liver_lipids_vs_plasma_metabolites_corr.csv")
             )
 
             files <- character(0)
@@ -257,10 +248,16 @@ correlationServer <- function(id, import_reactives, main_par) {
                     )
                     return()
                 }
-                # Build choices mapping: label -> file path
-                build_label <- function(src, tgt) paste(token_to_label(src), "vs", token_to_label(tgt))
-                labels <- mapply(build_label, subset_dt$source, subset_dt$target, USE.NAMES = FALSE)
-                choices <- stats::setNames(subset_dt$file, labels)
+                # Build choices mapping to only show the target dataset label (the "other side")
+                other_tokens <- ifelse(subset_dt$source == token, subset_dt$target, subset_dt$source)
+                labels <- vapply(other_tokens, token_to_label, character(1))
+                # Prefer files where the current token is on the source side; then deduplicate by label
+                order_pref <- ifelse(subset_dt$source == token, 0L, 1L)
+                ord <- order(order_pref, labels)
+                subset_dt <- subset_dt[ord]
+                labels <- labels[ord]
+                keep_idx <- !duplicated(labels)
+                choices <- stats::setNames(subset_dt$file[keep_idx], labels[keep_idx])
                 shiny::updateSelectInput(session, "correlation_dataset_selector",
                     choices = choices,
                     selected = if (length(choices) > 0) choices[[1]] else NULL
@@ -335,7 +332,7 @@ correlationServer <- function(id, import_reactives, main_par) {
             file_path <- input$correlation_dataset_selector
             if (!file.exists(file_path)) {
                 shiny::showNotification(paste("Correlation file not found:", basename(file_path)), type = "error", duration = 4)
-                return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+                return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
             # Determine which side (source/target) corresponds to the current trait type
             pairs_dt <- list_available_pairs()
@@ -349,7 +346,7 @@ correlationServer <- function(id, import_reactives, main_par) {
             key_info <- resolve_trait_keys(trait, side_token, file_path, import_reactives())
             if (is.null(key_info)) {
                 shiny::showNotification(paste("Trait not found in correlation file:", trait), type = "warning", duration = 4)
-                return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+                return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
 
             if (key_info$mode == "column") {
@@ -376,6 +373,19 @@ correlationServer <- function(id, import_reactives, main_par) {
                 } else {
                     out[, p_value := as.numeric(NA)]
                 }
+                # Add num_mice from companion file if available
+                nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", file_path)
+                if (file.exists(nmouse_path)) {
+                    nsel <- c("phenotype", "Phenotype", key_info$key)
+                    nsel <- nsel[nsel %in% names(data.table::fread(nmouse_path, nrows = 0))]
+                    ndt <- data.table::fread(nmouse_path, select = nsel)
+                    if ("Phenotype" %in% names(ndt)) data.table::setnames(ndt, "Phenotype", "phenotype")
+                    if (!"phenotype" %in% names(ndt)) ndt[, phenotype := seq_len(.N)]
+                    nmerge <- ndt[, .(trait = phenotype, num_mice = .SD[[1]]), .SDcols = key_info$key]
+                    out <- merge(out, nmerge, by = "trait", all.x = TRUE, sort = FALSE)
+                } else {
+                    out[, num_mice := as.numeric(NA)]
+                }
             } else {
                 # Row mode: read entire file, find the row, and transpose to long format
                 dt_full <- data.table::fread(file_path)
@@ -383,12 +393,12 @@ correlationServer <- function(id, import_reactives, main_par) {
                 if ("Phenotype" %in% names(dt_full)) data.table::setnames(dt_full, "Phenotype", "phenotype")
                 if (!"phenotype" %in% names(dt_full)) {
                     shiny::showNotification("Correlation file missing 'phenotype' column.", type = "error", duration = NULL)
-                    return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+                    return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
                 }
                 row_dt <- dt_full[phenotype == key_info$key]
                 if (nrow(row_dt) == 0) {
                     shiny::showNotification(paste("Trait not found in 'phenotype' column:", trait), type = "warning", duration = 4)
-                    return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0)))
+                    return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
                 }
                 # Convert the single row (excluding phenotype) to long format
                 numeric_cols <- setdiff(names(row_dt), "phenotype")
@@ -421,6 +431,31 @@ correlationServer <- function(id, import_reactives, main_par) {
                     }
                 } else {
                     out[, p_value := as.numeric(NA)]
+                }
+
+                # Add num_mice from companion num_mice file (same row)
+                nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", file_path)
+                if (file.exists(nmouse_path)) {
+                    nfull <- data.table::fread(nmouse_path)
+                    if ("Phenotype" %in% names(nfull)) data.table::setnames(nfull, "Phenotype", "phenotype")
+                    if ("phenotype" %in% names(nfull)) {
+                        nrow_dt <- nfull[phenotype == key_info$key]
+                        if (nrow(nrow_dt) == 1) {
+                            ncols <- setdiff(names(nrow_dt), "phenotype")
+                            nlong <- data.table::melt(nrow_dt,
+                                id.vars = "phenotype", measure.vars = ncols,
+                                variable.name = "trait", value.name = "num_mice"
+                            )
+                            nmerge <- nlong[, .(trait, num_mice)]
+                            out <- merge(out, nmerge, by = "trait", all.x = TRUE, sort = FALSE)
+                        } else {
+                            out[, num_mice := as.numeric(NA)]
+                        }
+                    } else {
+                        out[, num_mice := as.numeric(NA)]
+                    }
+                } else {
+                    out[, num_mice := as.numeric(NA)]
                 }
 
                 # Map gene ids -> symbols when the other side is genes (columns), i.e., when traits look like 'liver_<gene_id>'
@@ -472,18 +507,47 @@ correlationServer <- function(id, import_reactives, main_par) {
             tbl <- filtered_table()
             tbl <- data.table::as.data.table(tbl)
             # Include a hidden abs_correlation column for default ordering by magnitude
+            display_tbl <- tbl[, .(abs_correlation, trait, correlation_value, p_value, num_mice)]
+            data.table::setnames(display_tbl,
+                old = c("trait", "correlation_value", "p_value", "num_mice"),
+                new = c("Trait", "Correlation", "Pvalue", "# Mice"),
+                skip_absent = TRUE
+            )
             dt <- DT::datatable(
-                tbl[, .(abs_correlation, trait, correlation_value, p_value)],
+                display_tbl,
                 rownames = FALSE,
+                width = "100%",
+                class = "compact",
+                escape = FALSE,
                 options = list(
                     pageLength = 25,
-                    autoWidth = TRUE,
+                    autoWidth = FALSE,
+                    responsive = TRUE,
+                    scrollX = FALSE,
                     order = list(list(0, "desc")), # order by hidden abs_correlation
-                    columnDefs = list(list(visible = FALSE, targets = 0)),
+                    columnDefs = list(
+                        list(visible = FALSE, targets = 0),
+                        list(width = "42%", targets = 1), # Trait
+                        list(width = "16%", targets = 2), # Correlation
+                        list(width = "18%", targets = 3), # Pvalue
+                        list(width = "12%", targets = 4) # # Mice
+                    ),
                     dom = "tip"
+                ),
+                callback = htmlwidgets::JS(
+                    "table.settings()[0].aoColumns.forEach(function(col){",
+                    "  if(col && col.nTh){col.nTh.style.whiteSpace='nowrap';col.nTh.style.wordBreak='normal';col.nTh.style.fontSize='90%';col.nTh.style.padding='6px 8px';}",
+                    "});",
+                    "table.on('draw.dt', function(){",
+                    "  table.columns().every(function(){",
+                    "    $(this.nodes()).css({'white-space':'normal','word-break':'break-word'});",
+                    "  });",
+                    "});"
                 )
             )
-            DT::formatRound(dt, columns = "correlation_value", digits = 4)
+            dt <- DT::formatRound(dt, columns = "Correlation", digits = 4)
+            dt <- DT::formatStyle(dt, columns = c("Trait", "Correlation", "Pvalue", "# Mice"), `white-space` = "normal", `word-wrap` = "break-word", fontSize = "90%")
+            dt
         })
 
         return(invisible(NULL))

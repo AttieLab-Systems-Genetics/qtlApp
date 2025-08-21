@@ -438,7 +438,7 @@ peaksTableServer <- function(
                 position = "Position",
                 lod = lod_title,
                 lod_diff = "LOD Diff",
-                qtl_pval = "QtL Pval",
+                qtl_pval = "QTL Pval",
                 pval_diff = "Diff Pval",
                 marker = "Marker"
             )
