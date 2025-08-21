@@ -70,6 +70,11 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             )
         })
 
+        # Helper: whether we have exactly one grouping variable
+        single_grouping_selected <- reactive({
+            !is.null(input$grouping_selector) && length(input$grouping_selector) == 1
+        })
+
         # Dynamic UI for the plot area
         output$plot_ui_wrapper <- renderUI({
             # Show a message if no trait is selected yet
@@ -118,31 +123,116 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         multiple = FALSE
                     )
                 ),
+                # One-vs-rest controls are only shown when exactly one grouping is selected
+                shiny::conditionalPanel(
+                    condition = sprintf("input['%s'].length === 1", ns("grouping_selector")),
+                    div(
+                        style = "display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; max-width: 700px;",
+                        shiny::selectInput(
+                            ns("test_method"),
+                            "Group-vs-Rest Test:",
+                            choices = c(
+                                "Wilcoxon (rank-sum)" = "wilcox",
+                                "t-test (Welch)" = "ttest"
+                            ),
+                            selected = "wilcox"
+                        ),
+                        shiny::selectInput(
+                            ns("p_adjust_method"),
+                            "P-adjust:",
+                            choices = c(
+                                "BH (FDR)" = "BH",
+                                "Bonferroni" = "bonferroni",
+                                "None" = "none"
+                            ),
+                            selected = "BH"
+                        )
+                    )
+                ),
                 div(
-                    style = "display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; max-width: 700px;",
-                    shiny::selectInput(
-                        ns("test_method"),
-                        "Group-vs-Rest Test:",
-                        choices = c(
-                            "Wilcoxon (rank-sum)" = "wilcox",
-                            "t-test (Welch)" = "ttest"
-                        ),
-                        selected = "wilcox"
-                    ),
-                    shiny::selectInput(
-                        ns("p_adjust_method"),
-                        "P-adjust:",
-                        choices = c(
-                            "BH (FDR)" = "BH",
-                            "Bonferroni" = "bonferroni",
-                            "None" = "none"
-                        ),
-                        selected = "BH"
-                    ),
+                    style = "margin-bottom: 10px;",
                     shiny::checkboxInput(ns("show_p_annotations"), "Show p on plot", value = TRUE)
+                ),
+                shiny::conditionalPanel(
+                    condition = sprintf("input['%s'].length > 1", ns("grouping_selector")),
+                    div(
+                        style = "display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; max-width: 700px;",
+                        shiny::selectInput(ns("pair_group_a"), "Pairwise: Group A", choices = c(), selected = NULL),
+                        shiny::selectInput(ns("pair_group_b"), "Group B", choices = c(), selected = NULL)
+                    )
                 ),
                 plotly::plotlyOutput(ns("profile_boxplot")) |>
                     shinycssloaders::withSpinner(type = 8, color = "#3498db")
+            )
+        })
+
+        # Update pairwise selectors based on current grouping and available levels
+        shiny::observe({
+            plot_data <- selected_trait_data()
+            grouping_vars <- input$grouping_selector
+
+            if (is.null(plot_data) || is.null(grouping_vars) || length(grouping_vars) <= 1) {
+                return()
+            }
+
+            plot_data_clean <- data.table::copy(plot_data)
+            if ("GenLit" %in% names(plot_data_clean)) {
+                parts <- data.table::tstrsplit(as.character(plot_data_clean$GenLit), "_", fixed = TRUE)
+                if (length(parts) >= 2) {
+                    plot_data_clean[, Generation := parts[[1]]]
+                    plot_data_clean[, Litter := parts[[2]]]
+                } else {
+                    plot_data_clean[, Generation := plot_data_clean$GenLit]
+                    plot_data_clean[, Litter := NA_character_]
+                }
+            }
+            if ("Generation_Litter" %in% grouping_vars) {
+                grouping_vars <- unique(c(setdiff(grouping_vars, "Generation_Litter"), "Generation", "Litter"))
+            }
+            if ("Sex" %in% grouping_vars) {
+                plot_data_clean <- plot_data_clean[Sex %in% c("F", "M")]
+            }
+            if ("Diet" %in% grouping_vars) {
+                plot_data_clean <- plot_data_clean[Diet %in% c("HC", "HF")]
+            }
+            # Build grouping column name
+            if (length(grouping_vars) > 1) {
+                if (all(c("Generation", "Litter") %in% grouping_vars)) {
+                    plot_data_clean[, GL_combined := paste0(Generation, "_", Litter)]
+                    remaining <- setdiff(grouping_vars, c("Generation", "Litter"))
+                    cols <- c("GL_combined", remaining)
+                    if (length(cols) > 1) {
+                        plot_data_clean[, Combined_Group := do.call(paste, c(.SD, sep = " x ")), .SDcols = cols]
+                    } else {
+                        plot_data_clean[, Combined_Group := GL_combined]
+                    }
+                    grouping_col_name <- "Combined_Group"
+                } else {
+                    plot_data_clean[, Combined_Group := do.call(paste, c(.SD, sep = " x ")), .SDcols = grouping_vars]
+                    grouping_col_name <- "Combined_Group"
+                }
+            } else {
+                grouping_col_name <- grouping_vars
+            }
+            cleaned_col <- iconv(as.character(plot_data_clean[[grouping_col_name]]), to = "ASCII//TRANSLIT", sub = "")
+            plot_data_clean[, (grouping_col_name) := as.factor(cleaned_col)]
+            plot_data_clean <- plot_data_clean[!grepl("[^ -~]", get(grouping_col_name))]
+
+            if (!(grouping_col_name %in% names(plot_data_clean))) {
+                return()
+            }
+            group_levels <- levels(plot_data_clean[[grouping_col_name]])
+            if (is.null(group_levels) || length(group_levels) == 0) {
+                return()
+            }
+
+            shiny::updateSelectInput(session, "pair_group_a",
+                choices = group_levels,
+                selected = if (!is.null(input$pair_group_a) && input$pair_group_a %in% group_levels) input$pair_group_a else NULL
+            )
+            shiny::updateSelectInput(session, "pair_group_b",
+                choices = group_levels,
+                selected = if (!is.null(input$pair_group_b) && input$pair_group_b %in% group_levels) input$pair_group_b else NULL
             )
         })
 
@@ -282,56 +372,74 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             tick_angle <- if (is_heavy_combo || tick_count > 10) -45 else 0
             tick_font_size <- if (is_heavy_combo || tick_count > 14) 8 else if (tick_count > 8) 10 else 12
 
-            # Compute per-group vs all-others p-values (on-the-fly)
-            test_method <- if (!is.null(input$test_method) && nzchar(input$test_method)) input$test_method else "wilcox"
-            padj_method <- if (!is.null(input$p_adjust_method) && nzchar(input$p_adjust_method)) input$p_adjust_method else "BH"
-            group_levels <- levels(plot_data_clean[[grouping_col_name]])
-            pvals <- rep(NA_real_, length(group_levels))
-            for (i in seq_along(group_levels)) {
-                lev <- group_levels[i]
-                in_group <- plot_data_clean[[grouping_col_name]] == lev
-                n_in <- sum(in_group, na.rm = TRUE)
-                n_out <- sum(!in_group, na.rm = TRUE)
-                if (is.finite(n_in) && is.finite(n_out) && n_in >= 3 && n_out >= 3) {
-                    pvals[i] <- tryCatch(
-                        {
-                            if (identical(test_method, "wilcox")) {
-                                stats::wilcox.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], exact = FALSE)$p.value
-                            } else {
-                                stats::t.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], var.equal = FALSE)$p.value
-                            }
-                        },
-                        error = function(e) NA_real_
-                    )
-                } else {
-                    pvals[i] <- NA_real_
-                }
-            }
-            pvals_adj <- if (!identical(padj_method, "none")) stats::p.adjust(pvals, method = padj_method) else pvals
-
-            # Compute y positions for annotations above each group's box
+            # y positions shared by annotations (both one-vs-rest and pairwise)
             y_by_group <- plot_data_clean[, .(y_max = max(Value, na.rm = TRUE)), by = c(grouping_col_name)]
-            # Reorder to match level order
-            y_by_group <- y_by_group[match(group_levels, y_by_group[[grouping_col_name]]), ]
-            y_range <- max(plot_data_clean$Value, na.rm = TRUE) - min(plot_data_clean$Value, na.rm = TRUE)
+            y_by_group <- y_by_group[match(tick_text, y_by_group[[grouping_col_name]]), ]
+            y_min <- min(plot_data_clean$Value, na.rm = TRUE)
+            y_max <- max(plot_data_clean$Value, na.rm = TRUE)
+            y_range <- y_max - y_min
             y_margin <- if (is.finite(y_range) && y_range > 0) 0.05 * y_range else 0.1
-            ann_y <- y_by_group$y_max + y_margin
-            ann_text <- vapply(seq_along(group_levels), function(i) {
-                pv <- pvals_adj[i]
-                if (is.na(pv)) "p: n/a" else paste0("p=", formatC(pv, format = "g", digits = 3))
-            }, character(1))
-            annotations <- lapply(seq_along(group_levels), function(i) {
-                list(
-                    x = tick_vals[i],
-                    y = ann_y[i],
-                    text = ann_text[i],
-                    xref = "x",
-                    yref = "y",
-                    showarrow = FALSE,
-                    align = "center",
-                    font = list(size = 10, color = "#2c3e50")
-                )
-            })
+
+            annotations <- list()
+
+            # Compute per-group vs all-others p-values only when exactly one grouping is selected
+            if (isTRUE(single_grouping_selected())) {
+                test_method <- if (!is.null(input$test_method) && nzchar(input$test_method)) input$test_method else "wilcox"
+                padj_method <- if (!is.null(input$p_adjust_method) && nzchar(input$p_adjust_method)) input$p_adjust_method else "BH"
+                group_levels <- levels(plot_data_clean[[grouping_col_name]])
+                pvals <- rep(NA_real_, length(group_levels))
+                group_medians <- rep(NA_real_, length(group_levels))
+                for (i in seq_along(group_levels)) {
+                    lev <- group_levels[i]
+                    in_group <- plot_data_clean[[grouping_col_name]] == lev
+                    n_in <- sum(in_group, na.rm = TRUE)
+                    n_out <- sum(!in_group, na.rm = TRUE)
+                    group_medians[i] <- suppressWarnings(stats::median(plot_data_clean$Value[in_group], na.rm = TRUE))
+                    if (is.finite(n_in) && is.finite(n_out) && n_in >= 3 && n_out >= 3) {
+                        pvals[i] <- tryCatch(
+                            {
+                                if (identical(test_method, "wilcox")) {
+                                    stats::wilcox.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], exact = FALSE)$p.value
+                                } else {
+                                    stats::t.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], var.equal = FALSE)$p.value
+                                }
+                            },
+                            error = function(e) NA_real_
+                        )
+                    } else {
+                        pvals[i] <- NA_real_
+                    }
+                }
+                pvals_adj <- stats::p.adjust(pvals, method = padj_method)
+
+                # Decide top or bottom placement based on each group's median relative to overall range
+                threshold <- y_min + 0.6 * y_range
+                ann_y <- vapply(seq_along(group_levels), function(i) {
+                    med <- group_medians[i]
+                    if (is.na(med)) {
+                        return(y_max + y_margin)
+                    }
+                    if (med > threshold) y_min - y_margin * 0.6 else y_max + y_margin
+                }, numeric(1))
+
+                # Ensure the bottom annotations are within view by extending y-axis range later
+                ann_text <- vapply(seq_along(group_levels), function(i) {
+                    pv <- pvals_adj[i]
+                    if (is.na(pv)) "p: n/a" else paste0("p=", formatC(pv, format = "g", digits = 3))
+                }, character(1))
+                annotations <- lapply(seq_along(group_levels), function(i) {
+                    list(
+                        x = tick_vals[i],
+                        y = ann_y[i],
+                        text = ann_text[i],
+                        xref = "x",
+                        yref = "y",
+                        showarrow = FALSE,
+                        align = "center",
+                        font = list(size = 10, color = "#2c3e50")
+                    )
+                })
+            }
 
             # Build uncolored boxplots (one per x group)
             p <- plotly::plot_ly()
@@ -428,6 +536,15 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 )
             }
 
+            # Expand y-axis range if we placed bottom annotations
+            if (isTRUE(input$show_p_annotations) && isTRUE(single_grouping_selected())) {
+                placed_bottom <- FALSE
+                if (exists("ann_y") && any(ann_y < y_min)) placed_bottom <- TRUE
+                if (placed_bottom) {
+                    p <- plotly::layout(p, yaxis = list(range = c(y_min - y_margin, y_max)))
+                }
+            }
+
             p <- plotly::layout(
                 p,
                 title = list(
@@ -446,8 +563,78 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 yaxis = list(title = "<b>Phenotype Value</b>")
             )
 
+            # Pairwise bracket and p-value annotation
+            pair_ann <- NULL
+            pair_shapes <- NULL
+            if (length(grouping_vars) > 1 && !is.null(input$pair_group_a) && !is.null(input$pair_group_b) &&
+                nzchar(input$pair_group_a) && nzchar(input$pair_group_b) &&
+                !identical(input$pair_group_a, input$pair_group_b) &&
+                input$pair_group_a %in% tick_text && input$pair_group_b %in% tick_text) {
+                # Use same test/p-adjust selections
+                test_method <- if (!is.null(input$test_method) && nzchar(input$test_method)) input$test_method else "wilcox"
+                padj_method <- if (!is.null(input$p_adjust_method) && nzchar(input$p_adjust_method)) input$p_adjust_method else "BH"
+
+                idx_a <- which(tick_text == input$pair_group_a)
+                idx_b <- which(tick_text == input$pair_group_b)
+                x_a <- tick_vals[idx_a]
+                x_b <- tick_vals[idx_b]
+
+                in_a <- plot_data_clean[[grouping_col_name]] == input$pair_group_a
+                in_b <- plot_data_clean[[grouping_col_name]] == input$pair_group_b
+                n_a <- sum(in_a, na.rm = TRUE)
+                n_b <- sum(in_b, na.rm = TRUE)
+
+                if (is.finite(n_a) && is.finite(n_b) && n_a >= 3 && n_b >= 3) {
+                    p_pair <- tryCatch(
+                        {
+                            if (identical(test_method, "wilcox")) {
+                                stats::wilcox.test(plot_data_clean$Value[in_a], plot_data_clean$Value[in_b], exact = FALSE)$p.value
+                            } else {
+                                stats::t.test(plot_data_clean$Value[in_a], plot_data_clean$Value[in_b], var.equal = FALSE)$p.value
+                            }
+                        },
+                        error = function(e) NA_real_
+                    )
+                    p_pair_adj <- if (!identical(padj_method, "none")) stats::p.adjust(p_pair, method = padj_method) else p_pair
+
+                    y_by_group2 <- y_by_group
+                    y_a <- y_by_group2$y_max[idx_a]
+                    y_b <- y_by_group2$y_max[idx_b]
+                    y_top <- max(y_a, y_b) + y_margin
+                    y_mid <- y_top + y_margin * 0.3
+                    line_style <- list(color = "#2c3e50", width = 1)
+
+                    pair_shapes <- list(
+                        list(type = "line", xref = "x", yref = "y", x0 = x_a, x1 = x_a, y0 = y_top - y_margin * 0.6, y1 = y_top, line = line_style),
+                        list(type = "line", xref = "x", yref = "y", x0 = x_b, x1 = x_b, y0 = y_top - y_margin * 0.6, y1 = y_top, line = line_style),
+                        list(type = "line", xref = "x", yref = "y", x0 = x_a, x1 = x_b, y0 = y_top, y1 = y_top, line = line_style)
+                    )
+
+                    pair_ann <- list(list(
+                        x = (x_a + x_b) / 2,
+                        y = y_mid,
+                        text = if (is.na(p_pair_adj)) "p: n/a" else paste0("p=", formatC(p_pair_adj, format = "g", digits = 3)),
+                        xref = "x",
+                        yref = "y",
+                        showarrow = FALSE,
+                        align = "center",
+                        font = list(size = 11, color = "#2c3e50")
+                    ))
+                }
+            }
+
             if (isTRUE(input$show_p_annotations)) {
-                p <- plotly::layout(p, annotations = annotations)
+                if (length(annotations) > 0) {
+                    p <- plotly::layout(p, annotations = annotations)
+                }
+                if (!is.null(pair_ann)) {
+                    # Merge annotations lists while preserving existing ones
+                    current_anns <- if (!is.null(p$x$layout$annotations)) p$x$layout$annotations else list()
+                    p <- plotly::layout(p, annotations = c(current_anns, pair_ann))
+                }
+                if (!is.null(pair_shapes)) {
+                    p <- plotly::layout(p, shapes = pair_shapes)
+                }
             }
 
             return(p)
