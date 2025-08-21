@@ -144,52 +144,13 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
       same_threshold <- diet_present && sex_present && identical(as.numeric(thresholds_by_type["Diet Interactive"]), as.numeric(thresholds_by_type["Sex Interactive"]))
 
       if (same_threshold) {
-        # Draw dashed threshold where each dash is split half-and-half by color,
-        # with a white gap between dashes so it reads visually as a dashed line.
+        # Draw two closely spaced dashed lines so they scale with zoom in plotly
         if (is.finite(xmin) && is.finite(xmax) && xmin < xmax) {
           ythr <- as.numeric(thresholds_by_type["Diet Interactive"]) # same as Sex Interactive
-
-          # Define dash pattern in data space
-          n_dashes <- 80
-          period <- (xmax - xmin) / n_dashes # dash + gap length
-          dash_len <- period * 0.6 # visible dash portion
-          gap_len <- period - dash_len # white gap portion
-
-          # Build starts for each dash
-          starts <- seq(xmin, xmax, by = period)
-
-          # Left half of dash = Diet color; Right half = Sex color
-          seg1 <- data.frame(
-            x0 = starts,
-            x1 = pmin(starts + dash_len / 2, xmax),
-            y0 = ythr,
-            y1 = ythr
-          )
-          seg2 <- data.frame(
-            x0 = pmin(starts + dash_len / 2, xmax),
-            x1 = pmin(starts + dash_len, xmax),
-            y0 = ythr,
-            y1 = ythr
-          )
-
-          if (nrow(seg1) > 0) {
-            p <- p + ggplot2::geom_segment(
-              data = seg1,
-              ggplot2::aes(x = x0, xend = x1, y = y0, yend = y1),
-              inherit.aes = FALSE,
-              color = color_map["Diet Interactive"],
-              linewidth = 0.6
-            )
-          }
-          if (nrow(seg2) > 0) {
-            p <- p + ggplot2::geom_segment(
-              data = seg2,
-              ggplot2::aes(x = x0, xend = x1, y = y0, yend = y1),
-              inherit.aes = FALSE,
-              color = color_map["Sex Interactive"],
-              linewidth = 0.6
-            )
-          }
+          eps <- max(0.03, y_axis_max * 0.003)
+          p <- p +
+            ggplot2::geom_hline(yintercept = ythr - eps, color = color_map["Diet Interactive"], linetype = "dashed", linewidth = 0.6) +
+            ggplot2::geom_hline(yintercept = ythr + eps, color = color_map["Sex Interactive"], linetype = "dashed", linewidth = 0.6)
         }
       } else {
         # Draw them separately if only one present or thresholds differ
