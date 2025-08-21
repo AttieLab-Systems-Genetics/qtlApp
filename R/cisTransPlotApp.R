@@ -204,17 +204,16 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         plot_data_dt[, gene_label := gene_symbol]
       }
 
-      # Vectorized conditional creation of the difference text part for the hover text
-      diff_text <- if ("lod_diff" %in% names(plot_data_dt)) {
-        ifelse(!is.na(plot_data_dt$lod_diff), paste0(" (Diff: ", round(plot_data_dt$lod_diff, 2), ")"), "")
+      # Vectorized LOD line for hover: show LOD Diff when difference data, else LOD
+      lod_line <- if ("lod_diff" %in% names(plot_data_dt)) {
+        paste0("LOD Diff: ", round(plot_data_dt$lod_diff, 2))
       } else {
-        ""
+        paste0("LOD: ", round(plot_data_dt$qtl_lod, 2))
       }
 
       plot_data_dt[, hover_text := paste0(
         "Gene: ", gene_label, "<br>",
-        "LOD: ", round(qtl_lod, 2),
-        diff_text,
+        lod_line,
         "<br>Gene Pos: ", gene_chr_char, ":", round(gene_start, 2), " Mb",
         "<br>Marker Pos: ", qtl_chr_char, ":", round(qtl_pos, 2), " Mb"
       )]
