@@ -505,6 +505,49 @@ correlationServer <- function(id, import_reactives, main_par) {
 
         output$correlation_table <- DT::renderDT({
             tbl <- filtered_table()
+            if (is.null(tbl) || !is.data.frame(tbl) || nrow(tbl) == 0) {
+                # Render an empty, stable table with correct columns but no rows
+                empty_tbl <- data.table::as.data.table(data.frame(
+                    abs_correlation = numeric(0),
+                    Trait = character(0),
+                    Correlation = numeric(0),
+                    `Pvalue` = character(0),
+                    `# Mice` = numeric(0),
+                    check.names = FALSE
+                ))
+                return(DT::datatable(
+                    empty_tbl,
+                    rownames = FALSE,
+                    width = "100%",
+                    class = "compact",
+                    escape = FALSE,
+                    options = list(
+                        pageLength = 25,
+                        autoWidth = FALSE,
+                        responsive = TRUE,
+                        scrollX = FALSE,
+                        order = list(list(0, "desc")),
+                        columnDefs = list(
+                            list(visible = FALSE, targets = 0),
+                            list(width = "42%", targets = 1),
+                            list(width = "16%", targets = 2),
+                            list(width = "18%", targets = 3),
+                            list(width = "12%", targets = 4)
+                        ),
+                        dom = "tip"
+                    ),
+                    callback = htmlwidgets::JS(
+                        "table.settings()[0].aoColumns.forEach(function(col){",
+                        "  if(col && col.nTh){col.nTh.style.whiteSpace='nowrap';col.nTh.style.wordBreak='normal';col.nTh.style.fontSize='90%';col.nTh.style.padding='6px 8px';}",
+                        "});",
+                        "table.on('draw.dt', function(){",
+                        "  table.columns().every(function(){",
+                        "    $(this.nodes()).css({'white-space':'normal','word-break':'break-word'});",
+                        "  });",
+                        "});"
+                    )
+                ))
+            }
             tbl <- data.table::as.data.table(tbl)
             # Include a hidden abs_correlation column for default ordering by magnitude
             display_tbl <- tbl[, .(abs_correlation, trait, correlation_value, p_value, num_mice)]
