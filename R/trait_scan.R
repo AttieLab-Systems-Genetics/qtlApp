@@ -171,11 +171,40 @@ process_trait_from_file <- function(fst_path, row_index_path, selected_trait, ch
     {
       # Read the row index to find the trait
       trait_index <- fst::read_fst(row_index_path, as.data.table = TRUE)
-      trait_index[, Phenotype := tolower(Phenotype)]
-      trait_rows <- trait_index[Phenotype == tolower(selected_trait), ]
+      trait_index[, Phenotype := tolower(trimws(as.character(Phenotype)))]
+      sel_trait <- tolower(trimws(as.character(selected_trait)))
 
+      # First: exact lower-case match
+      trait_rows <- trait_index[Phenotype == sel_trait, ]
+
+      # Fallback: normalized match removing non-alphanumeric characters
       if (nrow(trait_rows) == 0) {
-        return(NULL)
+        sel_norm <- gsub("[^a-z0-9]+", "", sel_trait)
+        trait_index[, phen_norm := gsub("[^a-z0-9]+", "", Phenotype)]
+        trait_rows <- trait_index[phen_norm == sel_norm, ]
+        if (nrow(trait_rows) == 0) {
+          # Last resort: substring search on normalized keys
+          trait_rows <- trait_index[grepl(sel_norm, phen_norm, fixed = TRUE), ]
+          if (nrow(trait_rows) == 0) {
+            # Debug: show a few available keys to help diagnose mismatches
+            sample_keys <- paste(utils::head(unique(trait_index$Phenotype), 5), collapse = "; ")
+            message(sprintf(
+              "process_trait_from_file: No Phenotype match for '%s' (norm='%s') in %s chr %s. Sample keys: %s",
+              sel_trait, sel_norm, basename(fst_path), as.character(chr_num), sample_keys
+            ))
+            return(NULL)
+          } else {
+            message(sprintf(
+              "process_trait_from_file: Using normalized substring match for '%s' (norm='%s') in %s chr %s",
+              sel_trait, sel_norm, basename(fst_path), as.character(chr_num)
+            ))
+          }
+        } else {
+          message(sprintf(
+            "process_trait_from_file: Using normalized exact match for '%s' (norm='%s') in %s chr %s",
+            sel_trait, sel_norm, basename(fst_path), as.character(chr_num)
+          ))
+        }
       }
 
       # Handle both old (from/to) and new (.row_min/.row_max) column naming
@@ -207,7 +236,14 @@ process_trait_from_file <- function(fst_path, row_index_path, selected_trait, ch
 
       # Filter by phenotype if column exists
       if ("Phenotype" %in% colnames(data)) {
-        data <- data[tolower(Phenotype) == tolower(selected_trait)]
+        data <- data[tolower(Phenotype) == sel_trait]
+        if (nrow(data) == 0) {
+          # Try normalized filter inside slice too
+          data[, Phenotype := tolower(trimws(as.character(Phenotype)))]
+          data[, phen_norm := gsub("[^a-z0-9]+", "", Phenotype)]
+          sel_norm <- gsub("[^a-z0-9]+", "", sel_trait)
+          data <- data[phen_norm == sel_norm]
+        }
       }
 
       if (nrow(data) > 0) {

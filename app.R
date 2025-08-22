@@ -631,21 +631,29 @@ server <- function(input, output, session) {
 
     # Find split-by additive group names for scans
     find_split_scan_groups <- function(dataset_group, interaction_type) {
-        dt <- file_index_dt()
-        if (is.null(dt) || nrow(dt) == 0 || is.null(dataset_group) || is.null(interaction_type)) {
+        base_path <- "/data/dev/miniViewer_3.0/"
+        if (is.null(dataset_group) || is.null(interaction_type)) {
             return(NULL)
         }
+
         base_name <- gsub(",[[:space:]]*(interactive|additive).*$", "", dataset_group, ignore.case = TRUE)
         base_name <- trimws(base_name)
         component <- get_dataset_component(base_name)
         if (is.null(component)) {
+            message("split-by debug: could not derive component from base_name=", base_name)
+            return(NULL)
+        }
+
+        dt <- file_index_dt()
+        if (is.null(dt) || nrow(dt) == 0) {
+            message("split-by debug: file_index_dt() is NULL or empty")
             return(NULL)
         }
 
         # Limit to scans within the same dataset category as the current dataset
         cat_now <- tryCatch(
             {
-                unique(dt[group == dataset_group, dataset_category])[1]
+                unique(dt[grepl(base_name, get("group"), ignore.case = TRUE) | grepl(base_name, get("dataset_category"), ignore.case = TRUE), dataset_category])[1]
             },
             error = function(e) NULL
         )
@@ -656,7 +664,11 @@ server <- function(input, output, session) {
             dt_scans <- dt[file_type == "scans" & dataset_category == cat_now]
         } else {
             # fallback to component-based filtering if category not resolvable
-            dt_scans <- dt[file_type == "scans" & (grepl(component, File_path, ignore.case = TRUE) | grepl(component, group, ignore.case = TRUE))]
+            dt_scans <- dt[file_type == "scans" & (grepl(component, File_path, ignore.case = TRUE) | ("group" %in% names(dt) && grepl(component, group, ignore.case = TRUE)))]
+        }
+        message(sprintf("split-by debug: dt_scans rows=%s, dataset_category=%s, cols=[%s]", nrow(dt_scans), as.character(cat_now), paste(names(dt_scans), collapse = ", ")))
+        if (nrow(dt_scans) > 0) {
+            message(sprintf("split-by debug: sample paths: %s", paste(head(basename(dt_scans$File_path), 2), collapse = "; ")))
         }
         if (nrow(dt_scans) == 0) {
             return(NULL)
@@ -664,27 +676,78 @@ server <- function(input, output, session) {
 
         # Helper to pick groups by path pattern (fallback to group name contains)
         pick_group <- function(pattern_path, pattern_group = NULL) {
-            sel <- dt_scans[grepl(pattern_path, File_path, ignore.case = TRUE)]
-            if (nrow(sel) == 0 && !is.null(pattern_group)) {
+            # Use boundary-aware regex for male/female to avoid 'male' matching 'female'
+            rx <- pattern_path
+            if (identical(pattern_path, "male_mice_additive")) rx <- "(^|[_/])male_mice_additive([_/]|$)"
+            if (identical(pattern_path, "female_mice_additive")) rx <- "(^|[_/])female_mice_additive([_/]|$)"
+            sel <- dt_scans[grepl(rx, File_path, ignore.case = TRUE, perl = TRUE)]
+            message(sprintf("split-by debug: pick_group path pattern '%s' matched %s rows", pattern_path, nrow(sel)))
+            if (nrow(sel) == 0 && !is.null(pattern_group) && "group" %in% names(dt_scans)) {
                 sel <- dt_scans[grepl(paste0("\\b", pattern_group, "\\b"), group, ignore.case = TRUE, perl = TRUE)]
+                message(sprintf("split-by debug: pick_group group token '%s' matched %s rows", pattern_group, nrow(sel)))
+            }
+            unique(sel$group)
+        }
+
+        # Helper to pick by sex column when available
+        pick_by_sex <- function(target) {
+            sex_col <- grep("^(sex|sexes)$", names(dt_scans), ignore.case = TRUE, value = TRUE)
+            if (length(sex_col) == 0) {
+                message("split-by debug: no 'sex' column in file_index")
+                return(character(0))
+            }
+            sc <- sex_col[1]
+            vals <- tolower(as.character(dt_scans[[sc]]))
+            is_f <- vals %in% c("f", "female")
+            is_m <- vals %in% c("m", "male")
+            message(sprintf("split-by debug: sex column freq: female=%s, male=%s", sum(is_f, na.rm = TRUE), sum(is_m, na.rm = TRUE)))
+            if (target == "female") {
+                sel <- dt_scans[is_f == TRUE]
+            } else if (target == "male") {
+                sel <- dt_scans[is_m == TRUE]
+            } else {
+                return(character(0))
             }
             unique(sel$group)
         }
 
         if (interaction_type == "sex") {
-            g1 <- pick_group("female_mice_additive", "female")
-            g2 <- pick_group("male_mice_additive", "male")
-            if (length(g1) > 0 && length(g2) > 0) {
-                message(sprintf("split-by scans detected (sex): %s | %s", g1[1], g2[1]))
-                return(list(labels = c("Female", "Male"), groups = c(g1[1], g2[1])))
+            # Prefer explicit sex column selection when available
+            g1 <- pick_by_sex("female")
+            g2 <- pick_by_sex("male")
+            # Fallback to path/group textual patterns if needed
+            if (length(g1) == 0) g1 <- pick_group("female_mice_additive", "female")
+            if (length(g2) == 0) g2 <- pick_group("male_mice_additive", "male")
+            if ("group" %in% names(dt_scans)) {
+                if (length(g1) == 0) g1 <- unique(dt_scans[grepl("\\bF\\b", group, perl = TRUE), group])
+                if (length(g2) == 0) g2 <- unique(dt_scans[grepl("\\bM\\b", group, perl = TRUE), group])
+                if (length(g1) > 0 && length(g2) > 0) {
+                    if (identical(g1[1], g2[1])) {
+                        message("split-by debug: detected identical groups for female and male; falling back to path-based tokens")
+                        return(list(labels = c("Female", "Male"), groups = c("female", "male")))
+                    }
+                    message(sprintf("split-by scans detected (sex): %s | %s", g1[1], g2[1]))
+                    return(list(labels = c("Female", "Male"), groups = c(g1[1], g2[1])))
+                }
             }
+            # No 'group' column or failed mapping: return label tags to trigger path-based fallback loader
+            message("split-by scans detected (sex): returning label tags Female|Male (path-based)")
+            return(list(labels = c("Female", "Male"), groups = c("female", "male")))
         } else if (interaction_type == "diet") {
             g1 <- pick_group("HC_mice_additive", "HC")
             g2 <- pick_group("HF_mice_additive", "HF")
-            if (length(g1) > 0 && length(g2) > 0) {
-                message(sprintf("split-by scans detected (diet): %s | %s", g1[1], g2[1]))
-                return(list(labels = c("HC Diet", "HF Diet"), groups = c(g1[1], g2[1])))
+            if ("group" %in% names(dt_scans)) {
+                if (length(g1) > 0 && length(g2) > 0) {
+                    if (identical(g1[1], g2[1])) {
+                        message("split-by debug: detected identical groups for HC and HF; falling back to path-based tokens")
+                        return(list(labels = c("HC Diet", "HF Diet"), groups = c("HC", "HF")))
+                    }
+                    message(sprintf("split-by scans detected (diet): %s | %s", g1[1], g2[1]))
+                    return(list(labels = c("HC Diet", "HF Diet"), groups = c(g1[1], g2[1])))
+                }
             }
+            message("split-by scans detected (diet): returning label tags HC|HF (path-based)")
+            return(list(labels = c("HC Diet", "HF Diet"), groups = c("HC", "HF")))
         }
         return(NULL)
     }
@@ -720,7 +783,17 @@ server <- function(input, output, session) {
                     resolved_trait <- resolved_trait_try
                 }
             }
-            message(sprintf("split-by overlay: loading group '%s' with trait '%s' (resolved)", group_name, resolved_trait))
+            # Also resolve in the additive dataset context (important for split-by fallback)
+            additive_context_trait <- resolved_trait
+            if (exists("resolve_trait_for_scan", mode = "function") && !is.null(dataset_group) && nzchar(dataset_group)) {
+                base_name_ctx <- gsub(",\\s*interactive\\s*\\([^)]+\\)", "", dataset_group, ignore.case = TRUE, perl = TRUE)
+                additive_dataset_ctx <- paste0(trimws(base_name_ctx), ", additive")
+                resolved_trait_ctx <- tryCatch(resolve_trait_for_scan(ir, additive_dataset_ctx, trait), error = function(e) NULL)
+                if (!is.null(resolved_trait_ctx) && nzchar(resolved_trait_ctx)) {
+                    additive_context_trait <- resolved_trait_ctx
+                }
+            }
+            message(sprintf("split-by overlay: loading group '%s' with trait '%s' (resolved); additive-context trait='%s'", group_name, resolved_trait, additive_context_trait))
 
             res <- tryCatch(
                 {
@@ -733,6 +806,106 @@ server <- function(input, output, session) {
                 },
                 error = function(e) NULL
             )
+
+            # Fallback: path-driven scan assembly when group-based lookup fails
+            if (is.null(res) || is.null(res$scan_data) || nrow(res$scan_data) == 0) {
+                message(sprintf("split-by overlay: attempting path-based fallback for '%s'", group_name))
+                dt_all <- data.table::as.data.table(ir$file_directory)
+                if (!"file_type" %in% names(dt_all) || !"File_path" %in% names(dt_all)) {
+                    message("split-by overlay: file_index is missing required columns for fallback")
+                    return(NULL)
+                }
+                # Narrow to scans and current category if available
+                cat_now <- tryCatch(selected_dataset_category_reactive(), error = function(e) NULL)
+                if (!is.null(cat_now) && nzchar(cat_now) && "dataset_category" %in% names(dt_all)) {
+                    dt_scans2 <- dt_all[file_type == "scans" & dataset_category == cat_now]
+                } else {
+                    dt_scans2 <- dt_all[file_type == "scans"]
+                }
+                message(sprintf("split-by debug: fallback dt_scans2 rows=%s, cols=[%s]", nrow(dt_scans2), paste(names(dt_scans2), collapse = ", ")))
+                if (!nrow(dt_scans2)) {
+                    return(NULL)
+                }
+
+                # Infer target pattern from group_name
+                target <- NULL
+                if (!is.null(group_name) && nzchar(group_name)) {
+                    if (grepl("female|\\bF\\b", group_name, ignore.case = TRUE, perl = TRUE)) target <- "female"
+                    if (grepl("male|\\bM\\b", group_name, ignore.case = TRUE, perl = TRUE)) target <- "male"
+                    if (grepl("\\bHC\\b", group_name, ignore.case = TRUE, perl = TRUE)) target <- "HC"
+                    if (grepl("\\bHF\\b", group_name, ignore.case = TRUE, perl = TRUE)) target <- "HF"
+                }
+                message(sprintf("split-by debug: inferred target for fallback='%s'", as.character(target)))
+
+                path_pattern <- NULL
+                if (identical(target, "female")) path_pattern <- "female_mice_additive"
+                if (identical(target, "male")) path_pattern <- "male_mice_additive"
+                if (identical(target, "HC")) path_pattern <- "HC_mice_additive"
+                if (identical(target, "HF")) path_pattern <- "HF_mice_additive"
+
+                if (is.null(path_pattern)) {
+                    message("split-by overlay: cannot infer target from group name; skipping fallback")
+                    return(NULL)
+                }
+
+                # Boundary-aware regex for male/female
+                rx <- path_pattern
+                if (identical(path_pattern, "male_mice_additive")) rx <- "(^|[_/])male_mice_additive([_/]|$)"
+                if (identical(path_pattern, "female_mice_additive")) rx <- "(^|[_/])female_mice_additive([_/]|$)"
+                rows <- dt_scans2[grepl(rx, File_path, ignore.case = TRUE, perl = TRUE)]
+                message(sprintf("split-by debug: fallback path pattern '%s' matched %s rows", path_pattern, nrow(rows)))
+
+                # ALT patterns for Liver Lipids (handle files not containing exact 'female_mice_additive' token)
+                if (!nrow(rows) && (identical(target, "female") || identical(target, "male"))) {
+                    alt_rx <- if (identical(target, "female")) {
+                        "(^|[_/])female[^/_]*.*additive.*\\.fst$"
+                    } else {
+                        "(^|[_/])male[^/_]*.*additive.*\\.fst$"
+                    }
+                    rows <- dt_scans2[grepl(alt_rx, File_path, ignore.case = TRUE, perl = TRUE)]
+                    message(sprintf("split-by debug: ALT fallback pattern '%s' matched %s rows", alt_rx, nrow(rows)))
+                    if (!nrow(rows)) {
+                        # Show sample available paths to help debugging
+                        sample_paths <- paste(head(basename(dt_scans2$File_path), 4), collapse = "; ")
+                        message(sprintf("split-by debug: No matches after ALT fallback. Sample paths: %s", sample_paths))
+                    }
+                }
+
+                if (!nrow(rows)) {
+                    message(sprintf("split-by overlay: no scan rows matched any pattern for target '%s'", as.character(target)))
+                    return(NULL)
+                }
+
+                # Assemble scan_data by reading trait slice from each chromosome fst
+                assembled <- list()
+                for (i in seq_len(nrow(rows))) {
+                    chr_num <- rows$ID_code[i]
+                    original_fst_path <- rows$File_path[i]
+                    trait_type <- tolower(rows$trait_type[i])
+                    fst_path <- tryCatch(correct_file_path(original_fst_path, trait_type), error = function(e) original_fst_path)
+                    message(sprintf("split-by debug: fallback read fst chr=%s path=%s", as.character(chr_num), basename(fst_path)))
+                    if (!file.exists(fst_path)) {
+                        message("split-by debug: fst path missing")
+                        next
+                    }
+                    idx_path <- tryCatch(get_or_create_row_index(fst_path), error = function(e) NULL)
+                    if (is.null(idx_path) || !file.exists(idx_path)) {
+                        message("split-by debug: index path missing for fst")
+                        next
+                    }
+                    # Use additive-context trait if available
+                    trait_for_slice <- additive_context_trait %||% resolved_trait
+                    one <- tryCatch(process_trait_from_file(fst_path, idx_path, trait_for_slice, chr_num), error = function(e) NULL)
+                    message(sprintf("split-by debug: fallback trait rows for chr %s: %s", as.character(chr_num), ifelse(is.null(one), 0, nrow(one))))
+                    if (!is.null(one) && nrow(one) > 0) assembled[[length(assembled) + 1]] <- one
+                }
+                if (length(assembled) == 0) {
+                    message("split-by overlay: fallback produced no rows")
+                    return(NULL)
+                }
+                res <- list(scan_data = data.table::rbindlist(assembled, fill = TRUE))
+            }
+
             if (is.null(res) || is.null(res$scan_data) || nrow(res$scan_data) == 0) {
                 message(sprintf("split-by overlay: empty scan for group '%s'", group_name))
                 return(NULL)
@@ -740,7 +913,7 @@ server <- function(input, output, session) {
             # Process with additive threshold for consistency
             tbl <- tryCatch(
                 {
-                    QTL_plot_visualizer(res$scan_data, resolved_trait, 7.5, ir$markers)
+                    QTL_plot_visualizer(res$scan_data, additive_context_trait %||% resolved_trait, 7.5, ir$markers)
                 },
                 error = function(e) NULL
             )
@@ -765,9 +938,20 @@ server <- function(input, output, session) {
 
         d1 <- load_scan(info$groups[1])
         d2 <- load_scan(info$groups[2])
-        if (is.null(d1) || is.null(d2) || nrow(d1) == 0 || nrow(d2) == 0) {
-            message("split-by overlay: one or both series missing after load")
+        # Allow single-series rendering if one series is available
+        have_d1 <- !is.null(d1) && nrow(d1) > 0
+        have_d2 <- !is.null(d2) && nrow(d2) > 0
+        if (!have_d1 && !have_d2) {
+            message("split-by overlay: both series missing after load")
             return(NULL)
+        }
+        if (have_d1 && !have_d2) {
+            message(sprintf("split-by overlay: only '%s' available; rendering single-series overlay", info$labels[1]))
+            return(list(labels = info$labels, d1 = d1, d2 = NULL, interaction_type = interaction_type))
+        }
+        if (!have_d1 && have_d2) {
+            message(sprintf("split-by overlay: only '%s' available; rendering single-series overlay", info$labels[2]))
+            return(list(labels = info$labels, d1 = NULL, d2 = d2, interaction_type = interaction_type))
         }
 
         list(labels = info$labels, d1 = d1, d2 = d2, interaction_type = interaction_type)
@@ -1664,24 +1848,37 @@ server <- function(input, output, session) {
                 ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
             return(plotly::ggplotly(placeholder_plot))
         }
-        d1 <- payload$d1
-        d2 <- payload$d2
         labels <- payload$labels
+        present <- list()
+        if (!is.null(payload$d1) && nrow(payload$d1) > 0) present[[length(present) + 1]] <- list(df = payload$d1, label = labels[1])
+        if (!is.null(payload$d2) && nrow(payload$d2) > 0) present[[length(present) + 1]] <- list(df = payload$d2, label = labels[2])
+        if (length(present) == 0) {
+            placeholder_plot <- ggplot2::ggplot() +
+                ggplot2::theme_void() +
+                ggplot2::labs(title = "No split-by additive scans available for this selection") +
+                ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
+            return(plotly::ggplotly(placeholder_plot))
+        }
         interaction_type <- payload$interaction_type
 
-        # Build combined data with series labels
-        d1$series <- labels[1]
-        d2$series <- labels[2]
+        # Build combined data with series labels (supports 1 or 2 series)
         xvar <- if (is.null(selected_chromosome_rv()) || selected_chromosome_rv() == "All") "BPcum" else "position"
-        combined <- rbind(d1[, c("chr", "LOD", "BPcum", "position")], d2[, c("chr", "LOD", "BPcum", "position")])
-        combined$series <- c(d1$series, d2$series)
+        combined_list <- lapply(present, function(s) {
+            df <- s$df[, c("chr", "LOD", "BPcum", "position")]
+            df$series <- s$label
+            df
+        })
+        combined <- do.call(rbind, combined_list)
 
         # Colors per interaction type
-        color_map <- if (interaction_type == "sex") {
+        base_color_map <- if (interaction_type == "sex") {
             c("Female" = "#e74c3c", "Male" = "#2c3e50")
         } else {
             c("HC Diet" = "#2c3e50", "HF Diet" = "#f6ae2d")
         }
+        # Subset color map to present series only
+        present_labels <- unique(combined$series)
+        color_map <- base_color_map[names(base_color_map) %in% present_labels]
 
         # Build plot
         g <- ggplot2::ggplot(combined, ggplot2::aes(x = .data[[xvar]], y = LOD, color = series, group = interaction(series, chr))) +
@@ -1689,7 +1886,7 @@ server <- function(input, output, session) {
             ggplot2::scale_color_manual(values = color_map, name = "Series") +
             ggplot2::labs(x = if (xvar == "BPcum") "Chromosome" else paste0("Position on Chr ", selected_chromosome_rv(), " (Mb)"), y = "LOD Score") +
             create_modern_theme() +
-            ggplot2::theme(legend.position = "bottom") +
+            ggplot2::theme(legend.position = if (length(present_labels) > 1) "bottom" else "none") +
             ggplot2::geom_hline(yintercept = 7.5, linetype = "dashed", color = "grey20", linewidth = 0.6)
 
         # Axis labeling across genome
