@@ -156,32 +156,38 @@ server <- function(input, output, session) {
     })
 
     # Mark slider initialized when it first emits a value
-    shiny::observeEvent(input[[ns_app_controller("LOD_thr")]], {
-        if (!isTRUE(lod_slider_initialized_rv()) && !is.null(input[[ns_app_controller("LOD_thr")]])) {
-            lod_slider_initialized_rv(TRUE)
-        }
-    }, ignoreInit = FALSE)
+    shiny::observeEvent(input[[ns_app_controller("LOD_thr")]],
+        {
+            if (!isTRUE(lod_slider_initialized_rv()) && !is.null(input[[ns_app_controller("LOD_thr")]])) {
+                lod_slider_initialized_rv(TRUE)
+            }
+        },
+        ignoreInit = FALSE
+    )
 
     # When sidebar interaction type changes, reset LOD slider value to recommended minimum
-    shiny::observeEvent(sidebar_interaction_type_rv(), {
-        it <- sidebar_interaction_type_rv()
-        scan_min <- switch(it,
-            "sex" = 4.1,
-            "diet" = 4.1,
-            "sex_diet" = 9.5,
-            7.5
-        )
-        current_val <- input[[ns_app_controller("LOD_thr")]]
-        # During first-time initialization, set to recommended min once
-        if (!isTRUE(lod_slider_initialized_rv())) {
-            shiny::updateSliderInput(session, ns_app_controller("LOD_thr"), value = scan_min)
-            return()
-        }
-        # Only bump up if below new minimum; never force lower on user
-        if (!is.null(current_val) && current_val < scan_min) {
-            shiny::updateSliderInput(session, ns_app_controller("LOD_thr"), value = scan_min)
-        }
-    }, ignoreInit = TRUE)
+    shiny::observeEvent(sidebar_interaction_type_rv(),
+        {
+            it <- sidebar_interaction_type_rv()
+            scan_min <- switch(it,
+                "sex" = 4.1,
+                "diet" = 4.1,
+                "sex_diet" = 9.5,
+                7.5
+            )
+            current_val <- input[[ns_app_controller("LOD_thr")]]
+            # During first-time initialization, set to recommended min once
+            if (!isTRUE(lod_slider_initialized_rv())) {
+                shiny::updateSliderInput(session, ns_app_controller("LOD_thr"), value = scan_min)
+                return()
+            }
+            # Only bump up if below new minimum; never force lower on user
+            if (!is.null(current_val) && current_val < scan_min) {
+                shiny::updateSliderInput(session, ns_app_controller("LOD_thr"), value = scan_min)
+            }
+        },
+        ignoreInit = TRUE
+    )
 
     # Our own LOD threshold reactive (no longer from mainParServer)
     lod_threshold_rv <- shiny::reactive({
@@ -602,6 +608,172 @@ server <- function(input, output, session) {
         reshaped
     })
 
+    # --- NEW: Split-by additive scan overlay (Male vs Female or HC vs HF) ---
+    # Helper to derive dataset component from base dataset name
+    get_dataset_component <- function(base_name) {
+        if (grepl("Liver Genes", base_name, ignore.case = TRUE)) {
+            return("liver_genes")
+        }
+        if (grepl("Liver Lipids", base_name, ignore.case = TRUE)) {
+            return("liver_lipids")
+        }
+        if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
+            return("clinical_traits")
+        }
+        if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
+            return("plasma_metabolites")
+        }
+        if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
+            return("liver_isoforms")
+        }
+        return(NULL)
+    }
+
+    # Find split-by additive group names for scans
+    find_split_scan_groups <- function(dataset_group, interaction_type) {
+        dt <- file_index_dt()
+        if (is.null(dt) || nrow(dt) == 0 || is.null(dataset_group) || is.null(interaction_type)) {
+            return(NULL)
+        }
+        base_name <- gsub(",[[:space:]]*(interactive|additive).*$", "", dataset_group, ignore.case = TRUE)
+        base_name <- trimws(base_name)
+        component <- get_dataset_component(base_name)
+        if (is.null(component)) {
+            return(NULL)
+        }
+
+        # Limit to scans within the same dataset category as the current dataset
+        cat_now <- tryCatch(
+            {
+                unique(dt[group == dataset_group, dataset_category])[1]
+            },
+            error = function(e) NULL
+        )
+        if (is.null(cat_now) || is.na(cat_now) || !nzchar(cat_now)) {
+            cat_now <- NA
+        }
+        if (!is.na(cat_now)) {
+            dt_scans <- dt[file_type == "scans" & dataset_category == cat_now]
+        } else {
+            # fallback to component-based filtering if category not resolvable
+            dt_scans <- dt[file_type == "scans" & (grepl(component, File_path, ignore.case = TRUE) | grepl(component, group, ignore.case = TRUE))]
+        }
+        if (nrow(dt_scans) == 0) {
+            return(NULL)
+        }
+
+        # Helper to pick groups by path pattern (fallback to group name contains)
+        pick_group <- function(pattern_path, pattern_group = NULL) {
+            sel <- dt_scans[grepl(pattern_path, File_path, ignore.case = TRUE)]
+            if (nrow(sel) == 0 && !is.null(pattern_group)) {
+                sel <- dt_scans[grepl(paste0("\\b", pattern_group, "\\b"), group, ignore.case = TRUE, perl = TRUE)]
+            }
+            unique(sel$group)
+        }
+
+        if (interaction_type == "sex") {
+            g1 <- pick_group("female_mice_additive", "female")
+            g2 <- pick_group("male_mice_additive", "male")
+            if (length(g1) > 0 && length(g2) > 0) {
+                message(sprintf("split-by scans detected (sex): %s | %s", g1[1], g2[1]))
+                return(list(labels = c("Female", "Male"), groups = c(g1[1], g2[1])))
+            }
+        } else if (interaction_type == "diet") {
+            g1 <- pick_group("HC_mice_additive", "HC")
+            g2 <- pick_group("HF_mice_additive", "HF")
+            if (length(g1) > 0 && length(g2) > 0) {
+                message(sprintf("split-by scans detected (diet): %s | %s", g1[1], g2[1]))
+                return(list(labels = c("HC Diet", "HF Diet"), groups = c(g1[1], g2[1])))
+            }
+        }
+        return(NULL)
+    }
+
+    # Load split-by additive scan data for current trait and chr view
+    split_by_scan_overlay_data <- shiny::reactive({
+        trait <- trait_for_lod_scan_rv()
+        dataset_group <- mapped_dataset_for_interaction()
+        interaction_type <- current_interaction_type_rv()
+        if (is.null(trait) || !nzchar(trait) || is.null(dataset_group) || is.null(interaction_type)) {
+            return(NULL)
+        }
+        if (!(interaction_type %in% c("sex", "diet"))) {
+            return(NULL)
+        }
+
+        info <- find_split_scan_groups(dataset_group, interaction_type)
+        if (is.null(info) || length(info$groups) < 2) {
+            message("split-by overlay: no groups found for current selection")
+            return(NULL)
+        }
+
+        ir <- import_reactives()
+        shiny::req(ir, ir$file_directory, ir$markers)
+
+        # Helper to load and process a group's scan for this trait
+        load_scan <- function(group_name) {
+            # Resolve trait aliases for this dataset if helper is available
+            resolved_trait <- trait
+            if (exists("resolve_trait_for_scan", mode = "function")) {
+                resolved_trait_try <- tryCatch(resolve_trait_for_scan(ir, group_name, trait), error = function(e) trait)
+                if (!is.null(resolved_trait_try) && nzchar(resolved_trait_try)) {
+                    resolved_trait <- resolved_trait_try
+                }
+            }
+            message(sprintf("split-by overlay: loading group '%s' with trait '%s' (resolved)", group_name, resolved_trait))
+
+            res <- tryCatch(
+                {
+                    trait_scan(
+                        file_dir = ir$file_directory,
+                        selected_dataset = group_name,
+                        selected_trait = resolved_trait,
+                        cache_env = NULL
+                    )
+                },
+                error = function(e) NULL
+            )
+            if (is.null(res) || is.null(res$scan_data) || nrow(res$scan_data) == 0) {
+                message(sprintf("split-by overlay: empty scan for group '%s'", group_name))
+                return(NULL)
+            }
+            # Process with additive threshold for consistency
+            tbl <- tryCatch(
+                {
+                    QTL_plot_visualizer(res$scan_data, resolved_trait, 7.5, ir$markers)
+                },
+                error = function(e) NULL
+            )
+            if (is.null(tbl) || nrow(tbl) == 0) {
+                message(sprintf("split-by overlay: empty processed table for group '%s'", group_name))
+                return(NULL)
+            }
+            # Apply current chromosome filter
+            sel_chr <- selected_chromosome_rv()
+            if (!is.null(sel_chr) && sel_chr != "All") {
+                chr_num <- sel_chr
+                if (sel_chr == "X") chr_num <- 20
+                if (sel_chr == "Y") chr_num <- 21
+                if (sel_chr == "M") chr_num <- 22
+                chr_num <- suppressWarnings(as.numeric(chr_num))
+                if (!is.na(chr_num)) {
+                    tbl <- dplyr::filter(tbl, chr == chr_num)
+                }
+            }
+            as.data.frame(tbl)
+        }
+
+        d1 <- load_scan(info$groups[1])
+        d2 <- load_scan(info$groups[2])
+        if (is.null(d1) || is.null(d2) || nrow(d1) == 0 || nrow(d2) == 0) {
+            message("split-by overlay: one or both series missing after load")
+            return(NULL)
+        }
+
+        list(labels = info$labels, d1 = d1, d2 = d2, interaction_type = interaction_type)
+    }) |> shiny::debounce(200)
+    # --- end NEW ---
+
     # Helper to build a small info panel from a peak row
     build_peak_info_panel <- function(peak_row) {
         if (is.null(peak_row) || nrow(peak_row) == 0) {
@@ -890,7 +1062,8 @@ server <- function(input, output, session) {
     sidebar_interaction_type_rv <- shiny::reactiveVal("none")
 
     # NEW: Observer to decouple interaction type selection from downstream reactivity
-    shiny::observeEvent(input[[ns_app_controller("interaction_type_selector")]], {
+    shiny::observeEvent(input[[ns_app_controller("interaction_type_selector")]],
+        {
             req(input[[ns_app_controller("interaction_type_selector")]])
             new_value <- input[[ns_app_controller("interaction_type_selector")]]
             # Guard against loops: only update when value truly changes
@@ -905,7 +1078,10 @@ server <- function(input, output, session) {
             # This prevents being stuck on a chromosome view from a previous scan type
             shiny::updateSelectInput(session, ns_app_controller("selected_chr"), selected = "All")
             message("Reset chromosome view to 'All' due to interaction type change.")
-        }, ignoreNULL = TRUE, ignoreInit = TRUE)
+        },
+        ignoreNULL = TRUE,
+        ignoreInit = TRUE
+    )
 
     # Observer to update sidebar interaction type when input changes (independent of main UI)
     shiny::observeEvent(input[[ns_app_controller("sidebar_interaction_type")]],
@@ -1135,6 +1311,8 @@ server <- function(input, output, session) {
 
         ui_elements <- list()
 
+        overlay_included <- FALSE
+
         # View 1: Additive Peak - show panel and plot when a peak is selected
         if (!is.null(additive_peak)) {
             message(paste("scanApp: Rendering SINGLE allele effects for peak:", additive_peak$marker))
@@ -1153,6 +1331,23 @@ server <- function(input, output, session) {
                     )
                 )
             ))
+
+            # Insert split-by overlay immediately after default allele effects (when present)
+            interaction_type_now <- current_interaction_type_rv()
+            if (!is.null(interaction_type_now) && interaction_type_now %in% c("sex", "diet")) {
+                ui_elements <- c(ui_elements, list(
+                    hr(style = "margin: 20px 0; border-top: 2px solid #8e9ba7;"),
+                    div(
+                        style = "margin-bottom: 8px; font-weight: bold;",
+                        if (interaction_type_now == "sex") "Split-by additive LOD overlay (Female vs Male)" else "Split-by additive LOD overlay (HC vs HF)"
+                    ),
+                    shinycssloaders::withSpinner(
+                        plotly::plotlyOutput(ns_app_controller("split_by_lod_overlay_plot"), height = "380px"),
+                        type = 8, color = if (interaction_type_now == "sex") "#e74c3c" else "#3498db"
+                    )
+                ))
+                overlay_included <- TRUE
+            }
         }
 
         # View 2: Selected peaks comparison (side-by-side) when diff peaks are set
@@ -1212,6 +1407,22 @@ server <- function(input, output, session) {
         # View 3: Default split-by allele plots (Female/Male or HC/HF) when available
         interaction_type <- current_interaction_type_rv()
         if (!is.null(interaction_type) && interaction_type %in% c("sex", "diet")) {
+            # If default allele not present above, make sure overlay appears before split-by allele plots
+            if (!isTRUE(overlay_included)) {
+                ui_elements <- c(ui_elements, list(
+                    hr(style = "margin: 20px 0; border-top: 2px solid #8e9ba7;"),
+                    div(
+                        style = "margin-bottom: 8px; font-weight: bold;",
+                        if (interaction_type == "sex") "Split-by additive LOD overlay (Female vs Male)" else "Split-by additive LOD overlay (HC vs HF)"
+                    ),
+                    shinycssloaders::withSpinner(
+                        plotly::plotlyOutput(ns_app_controller("split_by_lod_overlay_plot"), height = "380px"),
+                        type = 8, color = if (interaction_type == "sex") "#e74c3c" else "#3498db"
+                    )
+                ))
+                overlay_included <- TRUE
+            }
+
             pieces <- split_by_default_peak_rows()
             split_ui <- list()
             if (!is.null(pieces) && length(pieces) > 0) {
@@ -1362,39 +1573,43 @@ server <- function(input, output, session) {
 
     # Difference allele plot renderers (side-by-side comparison)
     output[[ns_app_controller("diff_plot_title_1")]] <- renderText({
-      data <- diff_allele_data_1()
-      req(data)
-      if ("plot_label" %in% names(data)) unique(data$plot_label) else "Selected Peak 1"
+        data <- diff_allele_data_1()
+        req(data)
+        if ("plot_label" %in% names(data)) unique(data$plot_label) else "Selected Peak 1"
     })
 
     output[[ns_app_controller("diff_plot_title_2")]] <- renderText({
-      data <- diff_allele_data_2()
-      req(data)
-      if ("plot_label" %in% names(data)) unique(data$plot_label) else "Selected Peak 2"
+        data <- diff_allele_data_2()
+        req(data)
+        if ("plot_label" %in% names(data)) unique(data$plot_label) else "Selected Peak 2"
     })
 
     output[[ns_app_controller("diff_allele_plot_1")]] <- shiny::renderPlot({
-      data <- diff_allele_data_1()
-      req(data)
-      ggplot_alleles(data)
+        data <- diff_allele_data_1()
+        req(data)
+        ggplot_alleles(data)
     })
 
     output[[ns_app_controller("diff_allele_plot_2")]] <- shiny::renderPlot({
-      data <- diff_allele_data_2()
-      req(data)
-      ggplot_alleles(data)
+        data <- diff_allele_data_2()
+        req(data)
+        ggplot_alleles(data)
     })
 
     output[[ns_app_controller("diff_info_1")]] <- shiny::renderUI({
-      peak <- scan_module_outputs$diff_peak_1()
-      if (is.null(peak)) return(NULL)
-      build_peak_info_panel(peak)
+        peak <- scan_module_outputs$diff_peak_1()
+        if (is.null(peak)) {
+            return(NULL)
+        }
+        build_peak_info_panel(peak)
     })
 
     output[[ns_app_controller("diff_info_2")]] <- shiny::renderUI({
-      peak <- scan_module_outputs$diff_peak_2()
-      if (is.null(peak)) return(NULL)
-      build_peak_info_panel(peak)
+        peak <- scan_module_outputs$diff_peak_2()
+        if (is.null(peak)) {
+            return(NULL)
+        }
+        build_peak_info_panel(peak)
     })
 
     # --- Split-by default allele plots (Female/Male or HC/HF) ---
@@ -1437,6 +1652,69 @@ server <- function(input, output, session) {
         }
         build_peak_info_panel(pieces[[2]]$row)
     })
+
+    # --- NEW: Render split-by additive LOD overlay plot ---
+    output[[ns_app_controller("split_by_lod_overlay_plot")]] <- plotly::renderPlotly({
+        payload <- split_by_scan_overlay_data()
+        if (is.null(payload)) {
+            # Placeholder when no split-by data
+            placeholder_plot <- ggplot2::ggplot() +
+                ggplot2::theme_void() +
+                ggplot2::labs(title = "No split-by additive scans available for this selection") +
+                ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
+            return(plotly::ggplotly(placeholder_plot))
+        }
+        d1 <- payload$d1
+        d2 <- payload$d2
+        labels <- payload$labels
+        interaction_type <- payload$interaction_type
+
+        # Build combined data with series labels
+        d1$series <- labels[1]
+        d2$series <- labels[2]
+        xvar <- if (is.null(selected_chromosome_rv()) || selected_chromosome_rv() == "All") "BPcum" else "position"
+        combined <- rbind(d1[, c("chr", "LOD", "BPcum", "position")], d2[, c("chr", "LOD", "BPcum", "position")])
+        combined$series <- c(d1$series, d2$series)
+
+        # Colors per interaction type
+        color_map <- if (interaction_type == "sex") {
+            c("Female" = "#e74c3c", "Male" = "#2c3e50")
+        } else {
+            c("HC Diet" = "#2c3e50", "HF Diet" = "#f6ae2d")
+        }
+
+        # Build plot
+        g <- ggplot2::ggplot(combined, ggplot2::aes(x = .data[[xvar]], y = LOD, color = series, group = interaction(series, chr))) +
+            ggplot2::geom_line(linewidth = 0.7, alpha = 0.9) +
+            ggplot2::scale_color_manual(values = color_map, name = "Series") +
+            ggplot2::labs(x = if (xvar == "BPcum") "Chromosome" else paste0("Position on Chr ", selected_chromosome_rv(), " (Mb)"), y = "LOD Score") +
+            create_modern_theme() +
+            ggplot2::theme(legend.position = "bottom") +
+            ggplot2::geom_hline(yintercept = 7.5, linetype = "dashed", color = "grey20", linewidth = 0.6)
+
+        # Axis labeling across genome
+        if (xvar == "BPcum") {
+            axisdf <- dplyr::as_tibble(combined) |>
+                dplyr::group_by(chr) |>
+                dplyr::summarise(center = (max(.data[[xvar]], na.rm = TRUE) + min(.data[[xvar]], na.rm = TRUE)) / 2, .groups = "drop")
+            axisdf$chr <- chr_XYM(axisdf$chr)
+            g <- g + ggplot2::scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = ggplot2::expansion(mult = c(0.01, 0.01)))
+        }
+
+        plotly::ggplotly(g, tooltip = c("x", "y")) |>
+            plotly::layout(
+                dragmode = "zoom",
+                hovermode = "closest",
+                title = list(text = NULL),
+                xaxis = list(fixedrange = FALSE),
+                yaxis = list(fixedrange = TRUE)
+            ) |>
+            plotly::config(
+                displaylogo = FALSE,
+                modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud")
+            )
+    })
+    # --- end NEW ---
 
     # --- FIXED Trait Search Logic ---
     # Store a flag to prevent auto-search immediately after dataset changes
