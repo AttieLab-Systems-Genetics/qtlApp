@@ -13,7 +13,7 @@
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom stringr str_replace_all
 #' @importFrom data.table .
-#' @importFrom stats t.test wilcox.test p.adjust
+#' @importFrom stats t.test wilcox.test p.adjust quantile
 #' @export
 profilePlotUI <- function(id) {
     ns <- shiny::NS(id)
@@ -363,6 +363,29 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             plot_data_clean[, x_jitter := jitter(x_index, amount = 0.2)]
             tick_vals <- sort(unique(plot_data_clean$x_index))
             tick_text <- levels(plot_data_clean[[grouping_col_name]])
+
+            # Compute 1.5 x IQR thresholds per x group and flag outliers
+            thresholds_dt <- plot_data_clean[,
+                {
+                    vals <- Value[is.finite(Value)]
+                    if (length(vals) >= 4) {
+                        q1 <- as.numeric(stats::quantile(vals, 0.25, na.rm = TRUE, type = 7))
+                        q3 <- as.numeric(stats::quantile(vals, 0.75, na.rm = TRUE, type = 7))
+                        iqr <- q3 - q1
+                        lower <- q1 - 1.5 * iqr
+                        upper <- q3 + 1.5 * iqr
+                    } else {
+                        lower <- -Inf
+                        upper <- Inf
+                    }
+                    .(lower = lower, upper = upper)
+                },
+                by = grouping_col_name
+            ]
+            plot_data_clean <- thresholds_dt[plot_data_clean, on = grouping_col_name]
+            plot_data_clean[, is_outlier := (Value < lower | Value > upper)]
+            plot_data_clean[!is.finite(is_outlier), is_outlier := FALSE]
+
             # Dynamic x-axis label formatting to prevent clutter
             has_gen_lit <- all(c("Generation", "Litter") %in% grouping_vars)
             has_sex <- "Sex" %in% grouping_vars
@@ -449,10 +472,10 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                 x = ~x_index,
                 y = ~Value,
                 type = "box",
-                boxpoints = FALSE,
+                boxpoints = "outliers",
                 line = list(color = "#000000", width = 1.5),
                 fillcolor = "rgba(0,0,0,0)",
-                marker = list(size = 5),
+                marker = list(size = 5, opacity = 0),
                 showlegend = FALSE
             )
 
@@ -464,7 +487,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                     if ("F" %in% plot_data_clean$Sex) {
                         p <- plotly::add_markers(
                             p,
-                            data = plot_data_clean[Sex == "F"],
+                            data = plot_data_clean[Sex == "F" & (is.na(is_outlier) | is_outlier == FALSE)],
                             x = ~x_jitter,
                             y = ~Value,
                             marker = list(size = 6, opacity = 0.8, color = "#e41a1c"),
@@ -472,11 +495,24 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                             legendgroup = "Sex",
                             showlegend = TRUE
                         )
+                        # Outliers for Female
+                        if (any(plot_data_clean$Sex == "F" & plot_data_clean$is_outlier, na.rm = TRUE)) {
+                            p <- plotly::add_markers(
+                                p,
+                                data = plot_data_clean[Sex == "F" & is_outlier == TRUE],
+                                x = ~x_jitter,
+                                y = ~Value,
+                                marker = list(size = 7, opacity = 0.95, color = "#e41a1c"),
+                                name = "Female (outlier)",
+                                legendgroup = "Sex",
+                                showlegend = FALSE
+                            )
+                        }
                     }
                     if ("M" %in% plot_data_clean$Sex) {
                         p <- plotly::add_markers(
                             p,
-                            data = plot_data_clean[Sex == "M"],
+                            data = plot_data_clean[Sex == "M" & (is.na(is_outlier) | is_outlier == FALSE)],
                             x = ~x_jitter,
                             y = ~Value,
                             marker = list(size = 6, opacity = 0.8, color = "#377eb8"),
@@ -484,13 +520,26 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                             legendgroup = "Sex",
                             showlegend = TRUE
                         )
+                        # Outliers for Male
+                        if (any(plot_data_clean$Sex == "M" & plot_data_clean$is_outlier, na.rm = TRUE)) {
+                            p <- plotly::add_markers(
+                                p,
+                                data = plot_data_clean[Sex == "M" & is_outlier == TRUE],
+                                x = ~x_jitter,
+                                y = ~Value,
+                                marker = list(size = 7, opacity = 0.95, color = "#377eb8"),
+                                name = "Male (outlier)",
+                                legendgroup = "Sex",
+                                showlegend = FALSE
+                            )
+                        }
                     }
                 } else if (identical(color_col_name, "Diet")) {
                     # Force two explicit traces to guarantee colors
                     if ("HC" %in% plot_data_clean$Diet) {
                         p <- plotly::add_markers(
                             p,
-                            data = plot_data_clean[Diet == "HC"],
+                            data = plot_data_clean[Diet == "HC" & (is.na(is_outlier) | is_outlier == FALSE)],
                             x = ~x_jitter,
                             y = ~Value,
                             marker = list(size = 6, opacity = 0.8, color = "#ff7f00"),
@@ -498,11 +547,23 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                             legendgroup = "Diet",
                             showlegend = TRUE
                         )
+                        if (any(plot_data_clean$Diet == "HC" & plot_data_clean$is_outlier, na.rm = TRUE)) {
+                            p <- plotly::add_markers(
+                                p,
+                                data = plot_data_clean[Diet == "HC" & is_outlier == TRUE],
+                                x = ~x_jitter,
+                                y = ~Value,
+                                marker = list(size = 7, opacity = 0.95, color = "#ff7f00"),
+                                name = "HC (outlier)",
+                                legendgroup = "Diet",
+                                showlegend = FALSE
+                            )
+                        }
                     }
                     if ("HF" %in% plot_data_clean$Diet) {
                         p <- plotly::add_markers(
                             p,
-                            data = plot_data_clean[Diet == "HF"],
+                            data = plot_data_clean[Diet == "HF" & (is.na(is_outlier) | is_outlier == FALSE)],
                             x = ~x_jitter,
                             y = ~Value,
                             marker = list(size = 6, opacity = 0.8, color = "#ffd92f"),
@@ -510,13 +571,25 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                             legendgroup = "Diet",
                             showlegend = TRUE
                         )
+                        if (any(plot_data_clean$Diet == "HF" & plot_data_clean$is_outlier, na.rm = TRUE)) {
+                            p <- plotly::add_markers(
+                                p,
+                                data = plot_data_clean[Diet == "HF" & is_outlier == TRUE],
+                                x = ~x_jitter,
+                                y = ~Value,
+                                marker = list(size = 7, opacity = 0.95, color = "#ffd92f"),
+                                name = "HF (outlier)",
+                                legendgroup = "Diet",
+                                showlegend = FALSE
+                            )
+                        }
                     }
                 } else {
                     # Fallback to a vibrant palette distinct from Sex/Diet
                     colors_map <- "Dark2"
                     p <- plotly::add_markers(
                         p,
-                        data = plot_data_clean,
+                        data = plot_data_clean[is.na(is_outlier) | is_outlier == FALSE],
                         x = ~x_jitter,
                         y = ~Value,
                         color = ~ get(color_col_name),
@@ -524,16 +597,38 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         marker = list(size = 6, opacity = 0.8),
                         showlegend = TRUE
                     )
+                    if (any(plot_data_clean$is_outlier, na.rm = TRUE)) {
+                        p <- plotly::add_markers(
+                            p,
+                            data = plot_data_clean[is_outlier == TRUE],
+                            x = ~x_jitter,
+                            y = ~Value,
+                            color = ~ get(color_col_name),
+                            colors = colors_map,
+                            marker = list(size = 7, opacity = 0.95),
+                            showlegend = FALSE
+                        )
+                    }
                 }
             } else {
                 p <- plotly::add_markers(
                     p,
-                    data = plot_data_clean,
+                    data = plot_data_clean[is.na(is_outlier) | is_outlier == FALSE],
                     x = ~x_jitter,
                     y = ~Value,
                     marker = list(size = 5, opacity = 0.6, color = "rgba(127, 140, 141, 0.8)"),
                     showlegend = FALSE
                 )
+                if (any(plot_data_clean$is_outlier, na.rm = TRUE)) {
+                    p <- plotly::add_markers(
+                        p,
+                        data = plot_data_clean[is_outlier == TRUE],
+                        x = ~x_jitter,
+                        y = ~Value,
+                        marker = list(size = 7, opacity = 0.95, color = "rgba(127, 140, 141, 0.8)"),
+                        showlegend = FALSE
+                    )
+                }
             }
 
             # Expand y-axis range if we placed bottom annotations
