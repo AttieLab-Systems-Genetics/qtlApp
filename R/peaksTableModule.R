@@ -126,6 +126,12 @@ peaksTableServer <- function(
 
         # Local cache for peaks table
         peaks_table_full_rv <- shiny::reactiveVal(NULL)
+        # Track previous DT selected rows and which compare slot to fill next (1=left, 2=right)
+        prev_selected_rows_rv <- shiny::reactiveVal(integer(0))
+        compare_next_slot_rv <- shiny::reactiveVal(1L)
+        # Track which display row index occupies each compare slot
+        compare_slot1_idx_rv <- shiny::reactiveVal(NA_integer_)
+        compare_slot2_idx_rv <- shiny::reactiveVal(NA_integer_)
 
         # Helper to resolve import_reactives to a list
         resolve_import <- function() {
@@ -303,6 +309,10 @@ peaksTableServer <- function(
 
         # Helper: always select highest LOD row if table has rows and no user selection
         auto_select_best_if_none_selected <- function() {
+            # Do not auto-select when compare mode is active
+            if (isTRUE(input$compare_mode)) {
+                return(invisible(NULL))
+            }
             disp <- peaks_table_display()
             if (is.null(disp) || nrow(disp) == 0) {
                 # Do not clear selection here; table may be in transition.
@@ -369,6 +379,38 @@ peaksTableServer <- function(
             }
             invisible(NULL)
         }
+        # Clear selections when toggling compare mode on; restore default selection when turning off
+        shiny::observeEvent(input$compare_mode,
+            {
+                proxy <- DT::dataTableProxy("peaks_table", session = session)
+                if (isTRUE(input$compare_mode)) {
+                    # Clear all downstream selections
+                    if (!is.null(set_selected_peak_fn)) set_selected_peak_fn(NULL)
+                    if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                    if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                    # Clear any visual selection in the table
+                    try(
+                        {
+                            DT::selectRows(proxy, NULL)
+                        },
+                        silent = TRUE
+                    )
+                    # Reset compare tracking state
+                    prev_selected_rows_rv(integer(0))
+                    compare_next_slot_rv(1L)
+                    compare_slot1_idx_rv(NA_integer_)
+                    compare_slot2_idx_rv(NA_integer_)
+                } else {
+                    # Leaving compare mode: return to single-select default behavior
+                    prev_selected_rows_rv(integer(0))
+                    compare_next_slot_rv(1L)
+                    compare_slot1_idx_rv(NA_integer_)
+                    compare_slot2_idx_rv(NA_integer_)
+                    auto_select_best_if_none_selected()
+                }
+            },
+            ignoreInit = TRUE
+        )
 
         # Enforce default selection whenever the table data changes (after UI flush)
         shiny::observeEvent(peaks_table_display(),
@@ -514,7 +556,7 @@ peaksTableServer <- function(
                 sel <- input$peaks_table_rows_selected
                 full <- peaks_table_full_rv()
                 disp <- peaks_table_display()
-                if (is.null(sel) || length(sel) == 0 || is.null(full) || is.null(disp)) {
+                if (is.null(full) || is.null(disp)) {
                     return(NULL)
                 }
 
@@ -544,22 +586,119 @@ peaksTableServer <- function(
                     as.data.frame(full[idx[1], , drop = FALSE])
                 }
 
-                if (isTRUE(input$compare_mode)) {
-                    # Compare mode: allow up to 2 selections and populate diff slots
-                    sel <- sel[seq_len(min(2L, length(sel)))]
-                    peak_rows <- lapply(sel, map_one)
-                    peak_rows <- Filter(Negate(is.null), peak_rows)
+                # Helper to find display row index for a given full peak row
+                find_display_index_for_peak_row <- function(peak_row) {
+                    if (is.null(peak_row) || nrow(peak_row) == 0) {
+                        return(NA_integer_)
+                    }
+                    # Try marker match first
+                    if ("marker" %in% colnames(peak_row) && "marker" %in% colnames(disp)) {
+                        idx <- which(as.character(disp$marker) == as.character(peak_row$marker[1]))
+                        if (length(idx) > 0) {
+                            return(idx[1])
+                        }
+                    }
+                    chr_col <- if ("qtl_chr" %in% colnames(peak_row)) "qtl_chr" else if ("chr" %in% colnames(peak_row)) "chr" else NULL
+                    pos_col <- if ("qtl_pos" %in% colnames(peak_row)) "qtl_pos" else if ("pos" %in% colnames(peak_row)) "pos" else NULL
+                    lod_col <- if ("qtl_lod" %in% colnames(peak_row)) "qtl_lod" else if ("lod" %in% colnames(peak_row)) "lod" else NULL
+                    if (!is.null(chr_col) && !is.null(pos_col) && !is.null(lod_col)) {
+                        idx <- which(
+                            as.character(disp$chr) == as.character(peak_row[[chr_col]][1]) &
+                                abs(as.numeric(disp$pos) - as.numeric(peak_row[[pos_col]][1])) < 1e-6 &
+                                abs(as.numeric(disp$lod) - as.numeric(peak_row[[lod_col]][1])) < 1e-6
+                        )
+                        if (length(idx) > 0) {
+                            return(idx[1])
+                        }
+                    }
+                    NA_integer_
+                }
 
-                    # Clear additive selection in compare mode
+                if (isTRUE(input$compare_mode)) {
+                    # Compare mode behavior: alternate overwriting left/right after initial two
+                    proxy <- DT::dataTableProxy("peaks_table", session = session)
+                    prev <- prev_selected_rows_rv()
+                    prev_selected_rows_rv(sel %||% integer(0))
+
+                    # If nothing selected, clear both compare slots
+                    if (is.null(sel) || length(sel) == 0) {
+                        if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                        if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                        compare_slot1_idx_rv(NA_integer_)
+                        compare_slot2_idx_rv(NA_integer_)
+                        try(
+                            {
+                                DT::selectRows(proxy, NULL)
+                            },
+                            silent = TRUE
+                        )
+                        return(invisible(NULL))
+                    }
+
+                    added <- setdiff(sel, prev)
+                    removed <- setdiff(prev, sel)
+                    # Ensure additive single selection is cleared
                     if (!is.null(set_selected_peak_fn)) set_selected_peak_fn(NULL)
 
-                    if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
-                    if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                    # Handle removals: clear slots whose indices were removed
+                    if (length(removed) > 0) {
+                        slot1_idx <- compare_slot1_idx_rv()
+                        slot2_idx <- compare_slot2_idx_rv()
+                        if (slot1_idx %in% removed) {
+                            if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                            compare_slot1_idx_rv(NA_integer_)
+                            compare_next_slot_rv(1L)
+                        }
+                        if (slot2_idx %in% removed) {
+                            if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                            compare_slot2_idx_rv(NA_integer_)
+                            compare_next_slot_rv(2L)
+                        }
+                    }
 
-                    if (length(peak_rows) >= 1 && !is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(peak_rows[[1]])
-                    if (length(peak_rows) >= 2 && !is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(peak_rows[[2]])
+                    if (length(added) >= 1) {
+                        # Use the most recently added row
+                        sel_idx <- added[length(added)]
+                        new_peak <- map_one(sel_idx)
+                        if (!is.null(new_peak)) {
+                            next_slot <- compare_next_slot_rv()
+                            if (next_slot == 1L) {
+                                if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(new_peak)
+                                compare_slot1_idx_rv(sel_idx)
+                                compare_next_slot_rv(2L)
+                            } else {
+                                if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(new_peak)
+                                compare_slot2_idx_rv(sel_idx)
+                                compare_next_slot_rv(1L)
+                            }
+                        }
+                    } else {
+                        # No new additions (probably a deselect). If one or two rows remain, populate in order
+                        kept <- sel[seq_len(min(2L, length(sel)))]
+                        peaks <- lapply(kept, map_one)
+                        peaks <- Filter(Negate(is.null), peaks)
+                        if (!is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(NULL)
+                        if (!is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(NULL)
+                        if (length(peaks) >= 1 && !is.null(clear_diff_peak_1_fn)) clear_diff_peak_1_fn(peaks[[1]])
+                        if (length(peaks) >= 2 && !is.null(clear_diff_peak_2_fn)) clear_diff_peak_2_fn(peaks[[2]])
+                    }
+
+                    # Update visual selection to match current slot indices (at most two)
+                    sel_indices <- c(compare_slot1_idx_rv(), compare_slot2_idx_rv())
+                    sel_indices <- sel_indices[!is.na(sel_indices)]
+                    sel_indices <- unique(sel_indices)
+                    # If more than 2 rows are currently selected in DT, reduce to our two slots
+                    try(
+                        {
+                            DT::selectRows(proxy, sel_indices)
+                        },
+                        silent = TRUE
+                    )
                 } else {
                     # Single-select mode: behave as before
+                    if (is.null(sel) || length(sel) == 0) {
+                        return(NULL)
+                    }
                     peak_row <- map_one(sel[1])
                     if (is.null(peak_row)) {
                         return(NULL)
