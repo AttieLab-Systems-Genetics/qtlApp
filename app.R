@@ -528,7 +528,6 @@ server <- function(input, output, session) {
             return(NULL)
         }
 
-        results <- list()
         # Helper to read, filter by trait, and take top LOD row
         load_top_row <- function(fp) {
             if (!file.exists(fp)) {
@@ -557,6 +556,105 @@ server <- function(input, output, session) {
                 dt <- dt[order(-get(lod_col))]
             }
             as.data.frame(dt[1, , drop = FALSE])
+        }
+
+        # Helper to read, filter by trait and peak window (chr +/- 4 Mb), and take top LOD row
+        load_peak_window_row <- function(fp, target_chr, target_pos_mb) {
+            if (!file.exists(fp)) {
+                return(NULL)
+            }
+            df <- tryCatch(
+                {
+                    data.table::fread(fp)
+                },
+                error = function(e) NULL
+            )
+            if (is.null(df) || nrow(df) == 0) {
+                return(NULL)
+            }
+            trait_col <- if ("gene_symbol" %in% colnames(df)) "gene_symbol" else if ("phenotype" %in% colnames(df)) "phenotype" else if ("metabolite" %in% colnames(df)) "metabolite" else if ("metabolite_name" %in% colnames(df)) "metabolite_name" else NULL
+            if (is.null(trait_col)) {
+                return(NULL)
+            }
+            dt <- data.table::as.data.table(df)[tolower(get(trait_col)) == tolower(trait)]
+            if (nrow(dt) == 0) {
+                return(NULL)
+            }
+            # Determine chromosome and position columns
+            chr_col <- if ("qtl_chr" %in% colnames(dt)) "qtl_chr" else if ("chr" %in% colnames(dt)) "chr" else if ("qtl_chr_char" %in% colnames(dt)) "qtl_chr_char" else NULL
+            pos_col <- if ("qtl_pos" %in% colnames(dt)) "qtl_pos" else if ("pos" %in% colnames(dt)) "pos" else NULL
+            if (is.null(chr_col) || is.null(pos_col)) {
+                return(NULL)
+            }
+            # Coerce chromosome to numeric, mapping X/Y/M when needed
+            chr_vals <- dt[[chr_col]]
+            chr_num <- suppressWarnings(as.numeric(chr_vals))
+            if (all(is.na(chr_num))) {
+                # attempt character mapping
+                chr_char <- toupper(as.character(chr_vals))
+                chr_num <- suppressWarnings(as.numeric(chr_char))
+                chr_num[is.na(chr_num) & chr_char == "X"] <- 20
+                chr_num[is.na(chr_num) & chr_char == "Y"] <- 21
+                chr_num[is.na(chr_num) & chr_char == "M"] <- 22
+            }
+            pos_num <- suppressWarnings(as.numeric(dt[[pos_col]]))
+            if (all(is.na(pos_num))) {
+                return(NULL)
+            }
+            # Filter by chromosome and ±4 Mb window
+            window_ok <- (!is.na(chr_num) & !is.na(pos_num) & chr_num == as.numeric(target_chr) & abs(pos_num - as.numeric(target_pos_mb)) <= 4)
+            dt <- dt[window_ok]
+            if (nrow(dt) == 0) {
+                return(NULL)
+            }
+            lod_col <- if ("qtl_lod" %in% colnames(dt)) "qtl_lod" else if ("lod" %in% colnames(dt)) "lod" else NULL
+            if (!is.null(lod_col)) {
+                dt <- dt[order(-get(lod_col))]
+            }
+            as.data.frame(dt[1, , drop = FALSE])
+        }
+
+        results <- list()
+
+        # Try to use the currently selected peak (from peaks table) to constrain split-by peaks
+        sel_peak <- tryCatch(scan_module_outputs$selected_peak(), error = function(e) NULL)
+        use_window <- !is.null(sel_peak)
+        target_chr <- target_pos <- NA
+        if (use_window) {
+            chr_col_sp <- if ("qtl_chr" %in% colnames(sel_peak)) "qtl_chr" else if ("chr" %in% colnames(sel_peak)) "chr" else NULL
+            pos_col_sp <- if ("qtl_pos" %in% colnames(sel_peak)) "qtl_pos" else if ("pos" %in% colnames(sel_peak)) "pos" else NULL
+            if (!is.null(chr_col_sp) && !is.null(pos_col_sp)) {
+                target_chr <- suppressWarnings(as.numeric(sel_peak[[chr_col_sp]][1]))
+                # Map X/Y/M if chr is character
+                if (is.na(target_chr)) {
+                    chr_char_sp <- toupper(as.character(sel_peak[[chr_col_sp]][1]))
+                    target_chr <- suppressWarnings(as.numeric(chr_char_sp))
+                    if (is.na(target_chr)) {
+                        if (chr_char_sp == "X") target_chr <- 20
+                        if (chr_char_sp == "Y") target_chr <- 21
+                        if (chr_char_sp == "M") target_chr <- 22
+                    }
+                }
+                target_pos <- suppressWarnings(as.numeric(sel_peak[[pos_col_sp]][1]))
+                use_window <- !is.na(target_chr) && !is.na(target_pos)
+            } else {
+                use_window <- FALSE
+            }
+        }
+
+        if (use_window) {
+            r1 <- load_peak_window_row(paths$file1, target_chr, target_pos)
+            r2 <- load_peak_window_row(paths$file2, target_chr, target_pos)
+
+            if (!is.null(r1)) results[[length(results) + 1]] <- list(label = paths$labels[1], row = r1)
+            if (!is.null(r2)) results[[length(results) + 1]] <- list(label = paths$labels[2], row = r2)
+
+            # If at least one split-by row matched the window, return those
+            if (length(results) > 0) {
+                return(results)
+            }
+            # When a specific peak is selected but no matches found in its window, do not fall back
+            return(NULL)
         }
 
         r1 <- load_top_row(paths$file1)
@@ -1870,6 +1968,13 @@ server <- function(input, output, session) {
         })
         combined <- do.call(rbind, combined_list)
 
+        # Build formatted hover text like main scans: show Chr#: Mb hover text instead of BPcum
+        combined$chr_char <- chr_XYM(combined$chr)
+        combined$hover_text <- paste0(
+            "LOD: ", round(combined$LOD, 2),
+            "<br>Chr", combined$chr_char, ":", round(combined$position, 1), " Mb"
+        )
+
         # Colors per interaction type
         base_color_map <- if (interaction_type == "sex") {
             c("Female" = "#e74c3c", "Male" = "#2c3e50")
@@ -1881,7 +1986,7 @@ server <- function(input, output, session) {
         color_map <- base_color_map[names(base_color_map) %in% present_labels]
 
         # Build plot
-        g <- ggplot2::ggplot(combined, ggplot2::aes(x = .data[[xvar]], y = LOD, color = series, group = interaction(series, chr))) +
+        g <- ggplot2::ggplot(combined, ggplot2::aes(x = .data[[xvar]], y = LOD, color = series, group = interaction(series, chr), text = .data$hover_text)) +
             ggplot2::geom_line(linewidth = 0.7, alpha = 0.9) +
             ggplot2::scale_color_manual(values = color_map, name = "Series") +
             ggplot2::labs(x = if (xvar == "BPcum") "Chromosome" else paste0("Position on Chr ", selected_chromosome_rv(), " (Mb)"), y = "LOD Score") +
@@ -1898,7 +2003,7 @@ server <- function(input, output, session) {
             g <- g + ggplot2::scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = ggplot2::expansion(mult = c(0.01, 0.01)))
         }
 
-        plotly::ggplotly(g, tooltip = c("x", "y")) |>
+        plotly::ggplotly(g, tooltip = "text") |>
             plotly::layout(
                 dragmode = "zoom",
                 hovermode = "closest",
