@@ -340,9 +340,28 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       # Set key for faster operations
       data.table::setkey(peaks_dt, chr_factor, qtl_pos)
 
+      # Add cumulative genome positions and chromosome summary for single-panel plot
+      markers_data <- shiny::req(import_reactives()$markers)
+      chr_summary <- data.table::as.data.table(markers_data)[
+        , .(chr_len = max(pos)),
+        by = chr
+      ][
+        , chr_num := chr_to_numeric(chr)
+      ][
+        order(chr_num)
+      ][
+        , tot := cumsum(as.numeric(chr_len)) - chr_len
+      ][
+        , center := tot + (chr_len / 2)
+      ]
+
+      peaks_dt[, qtl_chr_char := chr_XYM(qtl_chr)]
+      peaks_dt[chr_summary, on = .(qtl_chr_char = chr), qtl_BPcum := qtl_pos + i.tot]
+
       # Add metadata for plot creation
       attr(peaks_dt, "is_qtlxcovar_data") <- difference_mode
       attr(peaks_dt, "interaction_type") <- interaction_type
+      attr(peaks_dt, "chr_summary") <- chr_summary[, .(chr, tot, center)]
 
       return(peaks_dt)
     }) %>% shiny::debounce(150)
@@ -396,8 +415,8 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       }
 
       # Streamlined plot creation
-      p <- ggplot2::ggplot(df_to_plot, ggplot2::aes(x = qtl_pos, y = get(lod_display_col), text = hover_text, key = marker, customdata = phenotype)) +
-        ggplot2::geom_point(alpha = 0.6, size = 1.2, color = "#2c3e50") +
+      p <- ggplot2::ggplot(df_to_plot, ggplot2::aes(x = qtl_BPcum, y = get(lod_display_col), text = hover_text, key = marker, customdata = phenotype)) +
+        ggplot2::geom_point(alpha = 0.6, size = 1.2, color = "red") +
         {
           if (is.null(y_axis_limits)) {
             ggplot2::scale_y_continuous(
@@ -420,9 +439,8 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
             },
             " (|LOD| ≥ ", main_par()$LOD_thr(), ")"
           ),
-          x = "Position (Mbp)"
+          x = "Chromosome"
         ) +
-        ggplot2::facet_grid(. ~ chr_factor, scales = "free_x", space = "free_x", switch = "x") +
         ggplot2::theme_minimal(base_size = 10) +
         ggplot2::theme(
           panel.spacing.x = ggplot2::unit(0.1, "lines"),
@@ -434,15 +452,23 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
           plot.title = ggplot2::element_text(hjust = 0.5, face = "bold", size = 11)
         )
 
+      # Chromosome gridlines and labels on a single continuous axis
+      chr_summary <- attr(df_to_plot, "chr_summary")
+      if (!is.null(chr_summary)) {
+        p <- p +
+          ggplot2::geom_vline(xintercept = chr_summary$tot, linetype = "dotted", color = "grey70", alpha = 0.2, size = 0.2) +
+          ggplot2::scale_x_continuous(labels = chr_summary$chr, breaks = chr_summary$center)
+      }
+
       # Add horizontal line for difference plots
       if (is_qtlxcovar_data && interaction_type != "none") {
-        p <- p + ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7)
+        p <- p + ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", alpha = 0.8)
       }
 
       # Optimized plotly conversion
       plotly::ggplotly(p, tooltip = "text", source = ns("manhattan_plotly")) %>%
-        plotly::layout(dragmode = "zoom") %>%
-        plotly::config(scrollZoom = TRUE, displaylogo = FALSE, modeBarButtonsToRemove = c("select2d", "lasso2d", "pan2d")) %>%
+        plotly::layout(dragmode = "pan") %>%
+        plotly::config(scrollZoom = TRUE, displaylogo = FALSE, modeBarButtonsToRemove = c("select2d", "lasso2d")) %>%
         plotly::event_register("plotly_click")
     }) %>% shiny::debounce(200)
 
