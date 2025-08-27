@@ -22,10 +22,14 @@
 scanApp <- function() {
   # Source required module files and helpers first
   source("R/helpers.R")
+  source("R/utils_operators.R")
   source("R/interaction_dataset_mapping.R")
   source("R/lod_thresholds.R")
   source("R/peak_info_ui.R")
   source("R/split_by_helpers.R")
+  source("R/split_by_scan_groups.R")
+  source("R/split_by_overlay_plot.R")
+  source("R/qtlxcovar_files.R")
   source("R/data_handling.R")
   source("R/scanApp_monolithic_backup.R")
   source("R/importApp.R")

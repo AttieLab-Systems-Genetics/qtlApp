@@ -20,10 +20,14 @@ library(stats) # Added for setNames
 
 # Source files in specific order
 source("R/helpers.R")
+source("R/utils_operators.R")
 source("R/interaction_dataset_mapping.R")
 source("R/lod_thresholds.R")
 source("R/peak_info_ui.R")
 source("R/split_by_helpers.R")
+source("R/split_by_scan_groups.R")
+source("R/split_by_overlay_plot.R")
+source("R/qtlxcovar_files.R")
 source("R/data_handling.R")
 source("R/import_data.R")
 source("R/importApp.R")
@@ -63,8 +67,6 @@ server <- function(input, output, session) {
         source("R/ggplot_alleles.R")
     }
 
-    # Define the %||% operator for null coalescing
-    `%||%` <- function(a, b) if (!is.null(a)) a else b
 
 
     trait_cache <- new.env(parent = emptyenv())
@@ -609,129 +611,6 @@ server <- function(input, output, session) {
     })
 
 
-    # Find split-by additive group names for scans
-    find_split_scan_groups <- function(dataset_group, interaction_type) {
-        base_path <- "/data/dev/miniViewer_3.0/"
-        if (is.null(dataset_group) || is.null(interaction_type)) {
-            return(NULL)
-        }
-
-        base_name <- gsub(",[[:space:]]*(interactive|additive).*$", "", dataset_group, ignore.case = TRUE)
-        base_name <- trimws(base_name)
-        component <- get_dataset_component(base_name)
-        if (is.null(component)) {
-            message("split-by debug: could not derive component from base_name=", base_name)
-            return(NULL)
-        }
-
-        dt <- file_index_dt()
-        if (is.null(dt) || nrow(dt) == 0) {
-            message("split-by debug: file_index_dt() is NULL or empty")
-            return(NULL)
-        }
-
-        # Limit to scans within the same dataset category as the current dataset
-        cat_now <- tryCatch(
-            {
-                unique(dt[grepl(base_name, get("group"), ignore.case = TRUE) | grepl(base_name, get("dataset_category"), ignore.case = TRUE), dataset_category])[1]
-            },
-            error = function(e) NULL
-        )
-        if (is.null(cat_now) || is.na(cat_now) || !nzchar(cat_now)) {
-            cat_now <- NA
-        }
-        if (!is.na(cat_now)) {
-            dt_scans <- dt[file_type == "scans" & dataset_category == cat_now]
-        } else {
-            # fallback to component-based filtering if category not resolvable
-            dt_scans <- dt[file_type == "scans" & (grepl(component, File_path, ignore.case = TRUE) | ("group" %in% names(dt) && grepl(component, group, ignore.case = TRUE)))]
-        }
-        message(sprintf("split-by debug: dt_scans rows=%s, dataset_category=%s, cols=[%s]", nrow(dt_scans), as.character(cat_now), paste(names(dt_scans), collapse = ", ")))
-        if (nrow(dt_scans) > 0) {
-            message(sprintf("split-by debug: sample paths: %s", paste(head(basename(dt_scans$File_path), 2), collapse = "; ")))
-        }
-        if (nrow(dt_scans) == 0) {
-            return(NULL)
-        }
-
-        # Helper to pick groups by path pattern (fallback to group name contains)
-        pick_group <- function(pattern_path, pattern_group = NULL) {
-            # Use boundary-aware regex for male/female to avoid 'male' matching 'female'
-            rx <- pattern_path
-            if (identical(pattern_path, "male_mice_additive")) rx <- "(^|[_/])male_mice_additive([_/]|$)"
-            if (identical(pattern_path, "female_mice_additive")) rx <- "(^|[_/])female_mice_additive([_/]|$)"
-            sel <- dt_scans[grepl(rx, File_path, ignore.case = TRUE, perl = TRUE)]
-            message(sprintf("split-by debug: pick_group path pattern '%s' matched %s rows", pattern_path, nrow(sel)))
-            if (nrow(sel) == 0 && !is.null(pattern_group) && "group" %in% names(dt_scans)) {
-                sel <- dt_scans[grepl(paste0("\\b", pattern_group, "\\b"), group, ignore.case = TRUE, perl = TRUE)]
-                message(sprintf("split-by debug: pick_group group token '%s' matched %s rows", pattern_group, nrow(sel)))
-            }
-            unique(sel$group)
-        }
-
-        # Helper to pick by sex column when available
-        pick_by_sex <- function(target) {
-            sex_col <- grep("^(sex|sexes)$", names(dt_scans), ignore.case = TRUE, value = TRUE)
-            if (length(sex_col) == 0) {
-                message("split-by debug: no 'sex' column in file_index")
-                return(character(0))
-            }
-            sc <- sex_col[1]
-            vals <- tolower(as.character(dt_scans[[sc]]))
-            is_f <- vals %in% c("f", "female")
-            is_m <- vals %in% c("m", "male")
-            message(sprintf("split-by debug: sex column freq: female=%s, male=%s", sum(is_f, na.rm = TRUE), sum(is_m, na.rm = TRUE)))
-            if (target == "female") {
-                sel <- dt_scans[is_f == TRUE]
-            } else if (target == "male") {
-                sel <- dt_scans[is_m == TRUE]
-            } else {
-                return(character(0))
-            }
-            unique(sel$group)
-        }
-
-        if (interaction_type == "sex") {
-            # Prefer explicit sex column selection when available
-            g1 <- pick_by_sex("female")
-            g2 <- pick_by_sex("male")
-            # Fallback to path/group textual patterns if needed
-            if (length(g1) == 0) g1 <- pick_group("female_mice_additive", "female")
-            if (length(g2) == 0) g2 <- pick_group("male_mice_additive", "male")
-            if ("group" %in% names(dt_scans)) {
-                if (length(g1) == 0) g1 <- unique(dt_scans[grepl("\\bF\\b", group, perl = TRUE), group])
-                if (length(g2) == 0) g2 <- unique(dt_scans[grepl("\\bM\\b", group, perl = TRUE), group])
-                if (length(g1) > 0 && length(g2) > 0) {
-                    if (identical(g1[1], g2[1])) {
-                        message("split-by debug: detected identical groups for female and male; falling back to path-based tokens")
-                        return(list(labels = c("Female", "Male"), groups = c("female", "male")))
-                    }
-                    message(sprintf("split-by scans detected (sex): %s | %s", g1[1], g2[1]))
-                    return(list(labels = c("Female", "Male"), groups = c(g1[1], g2[1])))
-                }
-            }
-            # No 'group' column or failed mapping: return label tags to trigger path-based fallback loader
-            message("split-by scans detected (sex): returning label tags Female|Male (path-based)")
-            return(list(labels = c("Female", "Male"), groups = c("female", "male")))
-        } else if (interaction_type == "diet") {
-            g1 <- pick_group("HC_mice_additive", "HC")
-            g2 <- pick_group("HF_mice_additive", "HF")
-            if ("group" %in% names(dt_scans)) {
-                if (length(g1) > 0 && length(g2) > 0) {
-                    if (identical(g1[1], g2[1])) {
-                        message("split-by debug: detected identical groups for HC and HF; falling back to path-based tokens")
-                        return(list(labels = c("HC Diet", "HF Diet"), groups = c("HC", "HF")))
-                    }
-                    message(sprintf("split-by scans detected (diet): %s | %s", g1[1], g2[1]))
-                    return(list(labels = c("HC Diet", "HF Diet"), groups = c(g1[1], g2[1])))
-                }
-            }
-            message("split-by scans detected (diet): returning label tags HC|HF (path-based)")
-            return(list(labels = c("HC Diet", "HF Diet"), groups = c("HC", "HF")))
-        }
-        return(NULL)
-    }
-
     # Load split-by additive scan data for current trait and chr view
     split_by_scan_overlay_data <- shiny::reactive({
         trait <- trait_for_lod_scan_rv()
@@ -744,7 +623,7 @@ server <- function(input, output, session) {
             return(NULL)
         }
 
-        info <- find_split_scan_groups(dataset_group, interaction_type)
+        info <- find_split_scan_groups(file_index_dt(), dataset_group, interaction_type, selected_dataset_category_reactive())
         if (is.null(info) || length(info$groups) < 2) {
             message("split-by overlay: no groups found for current selection")
             return(NULL)
