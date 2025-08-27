@@ -20,6 +20,10 @@ library(stats) # Added for setNames
 
 # Source files in specific order
 source("R/helpers.R")
+source("R/interaction_dataset_mapping.R")
+source("R/lod_thresholds.R")
+source("R/peak_info_ui.R")
+source("R/split_by_helpers.R")
 source("R/data_handling.R")
 source("R/import_data.R")
 source("R/importApp.R")
@@ -62,53 +66,6 @@ server <- function(input, output, session) {
     # Define the %||% operator for null coalescing
     `%||%` <- function(a, b) if (!is.null(a)) a else b
 
-    # Helper function to map HC_HF dataset names to their interactive versions
-    # Only maps to datasets that actually exist in the file system
-    get_interactive_dataset_name <- function(base_dataset, interaction_type) {
-        if (is.null(interaction_type) || interaction_type == "none") {
-            return(base_dataset)
-        }
-
-        # HC_HF Liver Genes (supports both Sex and Diet interactions)
-        if (grepl("HC_HF Liver Genes", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "sex") {
-                return("HC_HF Liver Genes, interactive (Sex)")
-            } else if (interaction_type == "diet") {
-                return("HC_HF Liver Genes, interactive (Diet)")
-            }
-        }
-        # HC_HF Liver Lipids (supports Diet and Sex x Diet interactions)
-        else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "diet") {
-                return("HC_HF Liver Lipids, interactive (Diet)")
-            } else if (interaction_type == "sex") {
-                return("HC_HF Liver Lipids, interactive (Sex)")
-            } else if (interaction_type == "sex_diet") {
-                return("HC_HF Liver Lipids, interactive (Sex_Diet)")
-            }
-        }
-        # HC_HF Clinical Traits (supports Sex, Diet, and Sex x Diet interactions)
-        else if (grepl("HC_HF.*Clinical", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "sex") {
-                return("HC_HF Systemic Clinical Traits, interactive (Sex)")
-            } else if (interaction_type == "diet") {
-                return("HC_HF Systemic Clinical Traits, interactive (Diet)")
-            } else if (interaction_type == "sex_diet") {
-                return("HC_HF Systemic Clinical Traits, interactive (Sex_Diet)")
-            }
-        } else if (grepl("HC_HF.*Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
-            if (interaction_type == "sex") {
-                return("HC_HF Plasma plasma_metabolite, interactive (Sex)")
-            } else if (interaction_type == "diet") {
-                return("HC_HF Plasma plasma_metabolite, interactive (Diet)")
-            } else if (interaction_type == "sex_diet") {
-                return("HC_HF Plasma plasma_metabolite, interactive (Sex_Diet)")
-            }
-        }
-
-        # Fallback to original dataset if no mapping found
-        return(base_dataset)
-    }
 
     trait_cache <- new.env(parent = emptyenv())
     peaks_cache <- new.env(parent = emptyenv())
@@ -132,13 +89,7 @@ server <- function(input, output, session) {
     output[[ns_app_controller("lod_threshold_slider")]] <- shiny::renderUI({
         interaction_type <- sidebar_interaction_type_rv()
         # For overview plots, interaction types imply difference plots using qtlxcovar files.
-        scan_info <- switch(interaction_type,
-            "sex" = list(type = "Sex Difference", min = 4.1),
-            "diet" = list(type = "Diet Difference", min = 4.1),
-            "sex_diet" = list(type = "Sex x Diet Difference", min = 9.5),
-            "none" = list(type = "Additive", min = 7.5),
-            list(type = "Additive", min = 7.5) # Default
-        )
+        scan_info <- scan_info_for_interaction(interaction_type)
 
         # Use the input value if it exists and is valid, otherwise default to the new min
         current_val <- input[[ns_app_controller("LOD_thr")]]
@@ -169,12 +120,7 @@ server <- function(input, output, session) {
     shiny::observeEvent(sidebar_interaction_type_rv(),
         {
             it <- sidebar_interaction_type_rv()
-            scan_min <- switch(it,
-                "sex" = 4.1,
-                "diet" = 4.1,
-                "sex_diet" = 9.5,
-                7.5
-            )
+            scan_min <- recommended_min_lod_for_sidebar(it)
             current_val <- input[[ns_app_controller("LOD_thr")]]
             # During first-time initialization, set to recommended min once
             if (!isTRUE(lod_slider_initialized_rv())) {
@@ -193,11 +139,7 @@ server <- function(input, output, session) {
     lod_threshold_rv <- shiny::reactive({
         current_scan_type <- scan_type()
         interaction_type <- current_interaction_type_rv()
-        default_threshold <- if (current_scan_type == "interactive") {
-            if (!is.null(interaction_type) && interaction_type == "sex_diet") 15.7 else 10.5
-        } else {
-            7.5
-        }
+        default_threshold <- default_threshold_for_scan(current_scan_type, interaction_type)
         input[[ns_app_controller("LOD_thr")]] %||% default_threshold
     }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
 
@@ -469,46 +411,6 @@ server <- function(input, output, session) {
         return(reshaped)
     })
 
-    # Helper: map dataset group + interaction to split-by filepaths and labels
-    get_split_by_filepaths <- function(dataset_group, interaction_type) {
-        base_path <- "/data/dev/miniViewer_3.0/"
-        if (is.null(dataset_group) || is.null(interaction_type)) {
-            return(NULL)
-        }
-
-        base_name <- gsub(",[[:space:]]*(interactive|additive).*$", "", dataset_group, ignore.case = TRUE)
-        base_name <- trimws(base_name)
-
-        dataset_component <- NULL
-        if (grepl("Liver Genes", base_name, ignore.case = TRUE)) {
-            dataset_component <- "liver_genes"
-        } else if (grepl("Liver Lipids", base_name, ignore.case = TRUE)) {
-            dataset_component <- "liver_lipids"
-        } else if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
-            dataset_component <- "clinical_traits"
-        } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
-            dataset_component <- "plasma_metabolites"
-        } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
-            dataset_component <- "liver_isoforms"
-        } else {
-            return(NULL)
-        }
-
-        if (interaction_type == "sex") {
-            return(list(
-                file1 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_female_mice_additive.csv")),
-                file2 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_male_mice_additive.csv")),
-                labels = c("Female", "Male")
-            ))
-        } else if (interaction_type == "diet") {
-            return(list(
-                file1 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HC_mice_additive.csv")),
-                file2 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HF_mice_additive.csv")),
-                labels = c("HC Diet", "HF Diet")
-            ))
-        }
-        return(NULL)
-    }
 
     # Compute default split-by peak rows (top LOD per split) for current trait
     split_by_default_peak_rows <- shiny::reactive({
@@ -706,26 +608,6 @@ server <- function(input, output, session) {
         reshaped
     })
 
-    # --- NEW: Split-by additive scan overlay (Male vs Female or HC vs HF) ---
-    # Helper to derive dataset component from base dataset name
-    get_dataset_component <- function(base_name) {
-        if (grepl("Liver Genes", base_name, ignore.case = TRUE)) {
-            return("liver_genes")
-        }
-        if (grepl("Liver Lipids", base_name, ignore.case = TRUE)) {
-            return("liver_lipids")
-        }
-        if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
-            return("clinical_traits")
-        }
-        if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
-            return("plasma_metabolites")
-        }
-        if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
-            return("liver_isoforms")
-        }
-        return(NULL)
-    }
 
     # Find split-by additive group names for scans
     find_split_scan_groups <- function(dataset_group, interaction_type) {
@@ -1056,73 +938,6 @@ server <- function(input, output, session) {
     }) |> shiny::debounce(200)
     # --- end NEW ---
 
-    # Helper to build a small info panel from a peak row
-    build_peak_info_panel <- function(peak_row) {
-        if (is.null(peak_row) || nrow(peak_row) == 0) {
-            return(NULL)
-        }
-        display_trait <- if ("gene_symbol" %in% colnames(peak_row) && !is.null(peak_row$gene_symbol) && nzchar(as.character(peak_row$gene_symbol))) {
-            as.character(peak_row$gene_symbol)
-        } else if ("phenotype" %in% colnames(peak_row) && !is.null(peak_row$phenotype) && nzchar(as.character(peak_row$phenotype))) {
-            as.character(peak_row$phenotype)
-        } else if ("trait" %in% colnames(peak_row)) {
-            as.character(peak_row$trait)
-        } else {
-            NA
-        }
-        chr_col <- if ("qtl_chr" %in% colnames(peak_row)) "qtl_chr" else if ("chr" %in% colnames(peak_row)) "chr" else NULL
-        pos_col <- if ("qtl_pos" %in% colnames(peak_row)) "qtl_pos" else if ("pos" %in% colnames(peak_row)) "pos" else NULL
-        lod_col <- if ("qtl_lod" %in% colnames(peak_row)) "qtl_lod" else if ("lod" %in% colnames(peak_row)) "lod" else NULL
-        position_txt <- if (!is.null(chr_col) && !is.null(pos_col)) paste0(peak_row[[chr_col]][1], ":", round(as.numeric(peak_row[[pos_col]][1]), 2), " Mb") else NA
-        lod_txt <- if (!is.null(lod_col)) round(as.numeric(peak_row[[lod_col]][1]), 2) else NA
-
-        info_elements <- list(
-            tags$div(tags$strong("Trait:"), display_trait),
-            tags$div(tags$strong("Marker:"), if ("marker" %in% colnames(peak_row)) as.character(peak_row$marker) else NA),
-            tags$div(tags$strong("Position:"), position_txt),
-            tags$div(tags$strong("LOD:"), lod_txt)
-        )
-
-        # Add cis/trans badge when available in split-by rows
-        if ("cis" %in% colnames(peak_row)) {
-            cis_val <- isTRUE(peak_row$cis[1])
-            cis_label <- ifelse(cis_val, "Cis", "Trans")
-            status_color <- ifelse(cis_val, "#27ae60", "#c0392b")
-            info_elements <- c(info_elements, list(
-                tags$div(tags$strong("Status:"), tags$span(cis_label, style = paste("color: white; background-color:", status_color, "; padding: 2px 6px; border-radius: 4px; font-size: 11px;")))
-            ))
-        }
-
-        # Add QTL p-value if present (qtl_pval preferred; fallback to pval)
-        pval_col <- if ("qtl_pval" %in% colnames(peak_row)) "qtl_pval" else if ("pval" %in% colnames(peak_row)) "pval" else NULL
-        if (!is.null(pval_col)) {
-            pval_val <- suppressWarnings(as.numeric(peak_row[[pval_col]][1]))
-            pval_txt <- if (!is.na(pval_val)) format(signif(pval_val, 3), scientific = TRUE) else as.character(peak_row[[pval_col]][1])
-            info_elements <- c(info_elements, list(
-                tags$div(tags$strong("QTL p-value:"), pval_txt)
-            ))
-        }
-
-        # Founder effects if present (A-H)
-        allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-        strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
-        available_alleles <- allele_cols[allele_cols %in% colnames(peak_row)]
-        if (length(available_alleles) > 0) {
-            allele_list <- lapply(seq_along(available_alleles), function(i) {
-                col <- available_alleles[i]
-                value <- peak_row[[col]]
-                if (!is.na(value)) paste0(strain_names[i], ": ", round(value, 3))
-            })
-            allele_list <- Filter(Negate(is.null), allele_list)
-            if (length(allele_list) > 0) {
-                info_elements <- c(info_elements, list(
-                    tags$div(tags$strong("Founder Effects:")),
-                    tags$div(style = "font-family: monospace; font-size: 11px; margin-left: 10px;", lapply(allele_list, tags$div))
-                ))
-            }
-        }
-        do.call(tagList, info_elements)
-    }
 
     selected_dataset_category_reactive <- shiny::reactive({
         shiny::req(main_selected_dataset_group(), file_index_dt())
@@ -1788,49 +1603,7 @@ server <- function(input, output, session) {
         if (is.null(peak_info) || nrow(peak_info) == 0) {
             return(NULL)
         }
-        display_trait <- if ("gene_symbol" %in% colnames(peak_info) && !is.null(peak_info$gene_symbol) && nzchar(as.character(peak_info$gene_symbol))) {
-            as.character(peak_info$gene_symbol)
-        } else if ("phenotype" %in% colnames(peak_info) && !is.null(peak_info$phenotype) && nzchar(as.character(peak_info$phenotype))) {
-            as.character(peak_info$phenotype)
-        } else {
-            as.character(peak_info$trait)
-        }
-        info_elements <- list(
-            tags$div(tags$strong("Trait:"), display_trait),
-            tags$div(tags$strong("Marker:"), peak_info$marker),
-            tags$div(tags$strong("Position:"), paste0(peak_info$qtl_chr, ":", round(peak_info$qtl_pos, 2), " Mb")),
-            tags$div(tags$strong("LOD:"), round(peak_info$qtl_lod, 2))
-        )
-        if ("cis" %in% colnames(peak_info)) {
-            cis_label <- ifelse(isTRUE(peak_info$cis), "Cis", "Trans")
-            status_color <- ifelse(isTRUE(peak_info$cis), "#27ae60", "#c0392b")
-            info_elements <- c(info_elements, list(
-                tags$div(tags$strong("Status:"), tags$span(cis_label, style = paste("color: white; background-color:", status_color, "; padding: 2px 6px; border-radius: 4px; font-size: 11px;")))
-            ))
-        }
-        if ("qtl_ci_lo" %in% colnames(peak_info) && "qtl_ci_hi" %in% colnames(peak_info)) {
-            info_elements <- c(info_elements, list(
-                tags$div(tags$strong("CI:"), paste0("[", round(peak_info$qtl_ci_lo, 2), " - ", round(peak_info$qtl_ci_hi, 2), "] Mb"))
-            ))
-        }
-        allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
-        strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
-        available_alleles <- allele_cols[allele_cols %in% colnames(peak_info)]
-        if (length(available_alleles) > 0) {
-            allele_list <- lapply(seq_along(available_alleles), function(i) {
-                col <- available_alleles[i]
-                value <- peak_info[[col]]
-                if (!is.na(value)) paste0(strain_names[i], ": ", round(value, 3))
-            })
-            allele_list <- Filter(Negate(is.null), allele_list)
-            if (length(allele_list) > 0) {
-                info_elements <- c(info_elements, list(
-                    tags$div(tags$strong("Founder Effects:")),
-                    tags$div(style = "font-family: monospace; font-size: 11px; margin-left: 10px;", lapply(allele_list, tags$div))
-                ))
-            }
-        }
-        do.call(tagList, info_elements)
+        build_peak_info_panel(peak_info)
     })
 
     # Render the allele effects plot

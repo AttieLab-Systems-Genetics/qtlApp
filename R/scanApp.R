@@ -22,6 +22,10 @@
 scanApp <- function() {
   # Source required module files and helpers first
   source("R/helpers.R")
+  source("R/interaction_dataset_mapping.R")
+  source("R/lod_thresholds.R")
+  source("R/peak_info_ui.R")
+  source("R/split_by_helpers.R")
   source("R/data_handling.R")
   source("R/scanApp_monolithic_backup.R")
   source("R/importApp.R")
@@ -174,13 +178,8 @@ scanApp <- function() {
       current_scan_type <- scan_type()
       interaction_type <- interactive_analysis$interaction_type()
 
-      # Set different minimums based on scan type
-      min_val <- if (current_scan_type == "interactive") {
-        if (!is.null(interaction_type) && interaction_type == "sex_diet") 15.7 else 10.5
-      } else {
-        7.5
-      }
-      default_val <- min_val # Start at minimum value
+      min_val <- default_threshold_for_scan(current_scan_type, interaction_type)
+      default_val <- min_val
 
       sliderInput("LOD_thr",
         label = paste("LOD Threshold (", current_scan_type, "scan):"),
@@ -193,11 +192,7 @@ scanApp <- function() {
     lod_threshold_rv <- shiny::reactive({
       current_scan_type <- scan_type()
       interaction_type <- interactive_analysis$interaction_type()
-      default_threshold <- if (current_scan_type == "interactive") {
-        if (!is.null(interaction_type) && interaction_type == "sex_diet") 15.7 else 10.5
-      } else {
-        7.5
-      }
+      default_threshold <- default_threshold_for_scan(current_scan_type, interaction_type)
       input$LOD_thr %||% default_threshold
     }) %>% shiny::debounce(300) # Debounce LOD threshold to prevent rapid re-firing
 
