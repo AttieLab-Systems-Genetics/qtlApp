@@ -1013,7 +1013,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         yref = "y",
                         text = "\u25CF",
                         showarrow = FALSE,
-                        font = list(size = 20, color = "#2c3e50"),
+                        font = list(size = 26, color = "#2c3e50"),
                         xanchor = "center",
                         yanchor = "middle"
                     )
@@ -1050,7 +1050,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         yref = "y",
                         text = "\u25CF",
                         showarrow = FALSE,
-                        font = list(size = 22, color = "#2c3e50"),
+                        font = list(size = 25, color = "#2c3e50"),
                         xanchor = "center",
                         yanchor = "middle"
                     )
