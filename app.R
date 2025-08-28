@@ -1648,6 +1648,8 @@ server <- function(input, output, session) {
 
         # Highlight +/- 4 Mb window around the currently selected peak (if available)
         sel_peak <- scan_module_outputs$selected_peak()
+        x0_highlight <- NULL
+        x1_highlight <- NULL
         if (!is.null(sel_peak) && is.data.frame(sel_peak) && nrow(sel_peak) >= 1) {
             chr_col <- if ("qtl_chr" %in% names(sel_peak)) "qtl_chr" else if ("chr" %in% names(sel_peak)) "chr" else NULL
             pos_col <- if ("qtl_pos" %in% names(sel_peak)) "qtl_pos" else if ("pos" %in% names(sel_peak)) "pos" else NULL
@@ -1664,15 +1666,24 @@ server <- function(input, output, session) {
                 }
                 target_pos <- suppressWarnings(as.numeric(sel_peak[[pos_col]][1]))
                 if (!is.na(target_chr) && !is.na(target_pos)) {
-                    win_lo <- target_pos - 4
-                    win_hi <- target_pos + 4
+                    win_lo <- target_pos - 8
+                    win_hi <- target_pos + 8
                     if (xvar == "BPcum") {
                         chr_df <- tryCatch(dplyr::filter(combined, chr == target_chr), error = function(e) NULL)
                         if (!is.null(chr_df) && nrow(chr_df) > 0) {
-                            xmin <- chr_df$BPcum[which.min(abs(chr_df$position - win_lo))]
-                            xmax <- chr_df$BPcum[which.min(abs(chr_df$position - win_hi))]
+                            # Prefer continuous range if points exist within [win_lo, win_hi]
+                            chr_df_sub <- tryCatch(dplyr::filter(chr_df, position >= win_lo, position <= win_hi), error = function(e) NULL)
+                            if (!is.null(chr_df_sub) && nrow(chr_df_sub) > 0) {
+                                xmin <- suppressWarnings(min(chr_df_sub$BPcum, na.rm = TRUE))
+                                xmax <- suppressWarnings(max(chr_df_sub$BPcum, na.rm = TRUE))
+                            } else {
+                                xmin <- chr_df$BPcum[which.min(abs(chr_df$position - win_lo))]
+                                xmax <- chr_df$BPcum[which.min(abs(chr_df$position - win_hi))]
+                            }
                             if (is.finite(xmin) && is.finite(xmax) && xmax > xmin) {
                                 g <- g + ggplot2::annotate("rect", xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = "#f1c40f", alpha = 0.15)
+                                x0_highlight <- xmin
+                                x1_highlight <- xmax
                             }
                         }
                     } else {
@@ -1680,6 +1691,8 @@ server <- function(input, output, session) {
                         xmax <- win_hi
                         if (is.finite(xmin) && is.finite(xmax) && xmax > xmin) {
                             g <- g + ggplot2::annotate("rect", xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = "#f1c40f", alpha = 0.15)
+                            x0_highlight <- xmin
+                            x1_highlight <- xmax
                         }
                     }
                 }
@@ -1695,7 +1708,7 @@ server <- function(input, output, session) {
             g <- g + ggplot2::scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = ggplot2::expansion(mult = c(0.01, 0.01)))
         }
 
-        plotly::ggplotly(g, tooltip = "text") |>
+        plt <- plotly::ggplotly(g, tooltip = "text") |>
             plotly::layout(
                 dragmode = "zoom",
                 hovermode = "closest",
@@ -1707,6 +1720,96 @@ server <- function(input, output, session) {
                 displaylogo = FALSE,
                 modeBarButtonsToRemove = c("select2d", "lasso2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines", "sendDataToCloud")
             )
+
+        # Ensure highlight band is applied at the plotly layer for reliability
+        if (!is.null(x0_highlight) && !is.null(x1_highlight)) {
+            message(sprintf("split-by highlight (render): chr=%s, x0=%.3f, x1=%.3f, view=%s", as.character(if (!is.null(sel_peak)) sel_peak[[if ("qtl_chr" %in% names(sel_peak)) "qtl_chr" else if ("chr" %in% names(sel_peak)) "chr" else "chr"]][1] else NA), x0_highlight, x1_highlight, if (xvar == "BPcum") "All" else paste0("Chr ", selected_chromosome_rv())))
+            # Span the full y range of the current data to ensure visibility
+            y0_lim <- suppressWarnings(min(combined$LOD, na.rm = TRUE))
+            y1_lim <- suppressWarnings(max(combined$LOD, na.rm = TRUE))
+            if (!is.finite(y0_lim) || !is.finite(y1_lim) || y1_lim <= y0_lim) {
+                y0_lim <- 0
+                y1_lim <- 1
+            }
+            # Compute center x for a vertical line at the peak position
+            center_x <- NA_real_
+            if (!is.null(sel_peak)) {
+                chr_col <- if ("qtl_chr" %in% names(sel_peak)) "qtl_chr" else if ("chr" %in% names(sel_peak)) "chr" else NULL
+                pos_col <- if ("qtl_pos" %in% names(sel_peak)) "qtl_pos" else if ("pos" %in% names(sel_peak)) "pos" else NULL
+                if (!is.null(chr_col) && !is.null(pos_col)) {
+                    t_chr <- suppressWarnings(as.numeric(sel_peak[[chr_col]][1]))
+                    if (is.na(t_chr)) {
+                        cch <- toupper(as.character(sel_peak[[chr_col]][1]))
+                        if (cch == "X") t_chr <- 20
+                        if (cch == "Y") t_chr <- 21
+                        if (cch == "M") t_chr <- 22
+                        if (suppressWarnings(!is.na(as.numeric(cch)))) t_chr <- as.numeric(cch)
+                    }
+                    t_pos <- suppressWarnings(as.numeric(sel_peak[[pos_col]][1]))
+                    if (!is.na(t_chr) && !is.na(t_pos)) {
+                        if (xvar == "BPcum") {
+                            chr_df <- tryCatch(dplyr::filter(combined, chr == t_chr), error = function(e) NULL)
+                            if (!is.null(chr_df) && nrow(chr_df) > 0) {
+                                center_x <- chr_df$BPcum[which.min(abs(chr_df$position - t_pos))]
+                            }
+                        } else {
+                            center_x <- t_pos
+                        }
+                    }
+                }
+            }
+            rect_shape <- list(
+                type = "rect",
+                xref = "x",
+                yref = "y",
+                x0 = x0_highlight,
+                x1 = x1_highlight,
+                y0 = y0_lim,
+                y1 = y1_lim,
+                layer = "above",
+                fillcolor = "rgba(241,196,15,0.35)",
+                line = list(color = "rgba(243,156,18,0.9)", width = 1)
+            )
+            shapes_list <- list(rect_shape)
+            if (is.finite(center_x)) {
+                line_shape <- list(
+                    type = "line",
+                    xref = "x",
+                    yref = "y",
+                    x0 = center_x,
+                    x1 = center_x,
+                    y0 = y0_lim,
+                    y1 = y1_lim,
+                    layer = "above",
+                    line = list(color = "rgba(243,156,18,1.0)", width = 2, dash = "dot")
+                )
+                shapes_list <- c(shapes_list, list(line_shape))
+            }
+            plt <- plt |> plotly::layout(shapes = shapes_list)
+            # Add an explicit center line trace for maximum visibility
+            if (is.finite(center_x)) {
+                plt <- plt |> plotly::add_segments(
+                    x = center_x, xend = center_x, y = y0_lim, yend = y1_lim,
+                    line = list(color = "rgba(243,156,18,1.0)", width = 3, dash = "dot"), inherit = FALSE, showlegend = FALSE
+                )
+            }
+            # Add a filled polygon band as data to guarantee visibility
+            poly_x <- c(x0_highlight, x1_highlight, x1_highlight, x0_highlight, x0_highlight)
+            poly_y <- c(y0_lim, y0_lim, y1_lim, y1_lim, y0_lim)
+            plt <- plt |> plotly::add_trace(
+                x = poly_x,
+                y = poly_y,
+                type = "scatter",
+                mode = "lines",
+                fill = "toself",
+                fillcolor = "rgba(241,196,15,0.25)",
+                line = list(color = "rgba(243,156,18,0.9)", width = 1),
+                inherit = FALSE,
+                showlegend = FALSE,
+                name = "Selection Window"
+            )
+        }
+        plt
     })
     # --- end NEW ---
 
@@ -1756,10 +1859,17 @@ server <- function(input, output, session) {
             if (is.null(chr_df) || nrow(chr_df) == 0) {
                 return(invisible(NULL))
             }
-            idx_lo <- which.min(abs(chr_df$position - win_lo))
-            idx_hi <- which.min(abs(chr_df$position - win_hi))
-            x0 <- chr_df$BPcum[idx_lo]
-            x1 <- chr_df$BPcum[idx_hi]
+            # Prefer continuous range if points exist within [win_lo, win_hi]
+            chr_df_sub <- tryCatch(dplyr::filter(chr_df, position >= win_lo, position <= win_hi), error = function(e) NULL)
+            if (!is.null(chr_df_sub) && nrow(chr_df_sub) > 0) {
+                x0 <- suppressWarnings(min(chr_df_sub$BPcum, na.rm = TRUE))
+                x1 <- suppressWarnings(max(chr_df_sub$BPcum, na.rm = TRUE))
+            } else {
+                idx_lo <- which.min(abs(chr_df$position - win_lo))
+                idx_hi <- which.min(abs(chr_df$position - win_hi))
+                x0 <- chr_df$BPcum[idx_lo]
+                x1 <- chr_df$BPcum[idx_hi]
+            }
             if (!is.finite(x0) || !is.finite(x1)) {
                 return(invisible(NULL))
             }
@@ -1769,18 +1879,58 @@ server <- function(input, output, session) {
                 x1 <- tmp
             }
         }
-        shape <- list(
+        # Determine y range from available series to ensure rectangle is visible
+        y_series <- c()
+        if (!is.null(payload$d1) && nrow(payload$d1) > 0) y_series <- c(y_series, payload$d1$LOD)
+        if (!is.null(payload$d2) && nrow(payload$d2) > 0) y_series <- c(y_series, payload$d2$LOD)
+        y0_lim <- suppressWarnings(min(y_series, na.rm = TRUE))
+        y1_lim <- suppressWarnings(max(y_series, na.rm = TRUE))
+        if (!is.finite(y0_lim) || !is.finite(y1_lim) || y1_lim <= y0_lim) {
+            y0_lim <- 0
+            y1_lim <- 1
+        }
+        # Center line x
+        center_x <- if (!is.null(sel_chr) && sel_chr != "All") {
+            target_pos
+        } else {
+            df_map <- if (!is.null(payload$d1) && nrow(payload$d1) > 0) payload$d1 else payload$d2
+            if (is.null(df_map)) {
+                NA_real_
+            } else {
+                chr_df <- tryCatch(dplyr::filter(df_map, chr == target_chr), error = function(e) NULL)
+                if (is.null(chr_df) || nrow(chr_df) == 0) NA_real_ else chr_df$BPcum[which.min(abs(chr_df$position - target_pos))]
+            }
+        }
+        message(sprintf("split-by highlight (proxy): chr=%s, x0=%.3f, x1=%.3f, view=%s", as.character(sel_peak[[chr_col]][1]), x0, x1, if (!is.null(sel_chr) && sel_chr != "All") paste0("Chr ", sel_chr) else "All"))
+        rect_shape <- list(
             type = "rect",
             xref = "x",
-            yref = "paper",
+            yref = "y",
             x0 = x0,
             x1 = x1,
-            y0 = 0,
-            y1 = 1,
-            fillcolor = "rgba(241,196,15,0.15)",
-            line = list(width = 0)
+            y0 = y0_lim,
+            y1 = y1_lim,
+            layer = "above",
+            fillcolor = "rgba(241,196,15,0.35)",
+            line = list(color = "rgba(243,156,18,0.9)", width = 1)
         )
-        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list(shape))), silent = TRUE)
+        # Index 0 rectangle
+        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(`shapes[0]` = rect_shape)), silent = TRUE)
+        # Index 1 center line
+        if (is.finite(center_x)) {
+            line_shape <- list(
+                type = "line",
+                xref = "x",
+                yref = "y",
+                x0 = center_x,
+                x1 = center_x,
+                y0 = y0_lim,
+                y1 = y1_lim,
+                layer = "above",
+                line = list(color = "rgba(243,156,18,1.0)", width = 2, dash = "dot")
+            )
+            try(plotly::plotlyProxyInvoke(proxy, "relayout", list(`shapes[1]` = line_shape)), silent = TRUE)
+        }
         invisible(NULL)
     })
 
