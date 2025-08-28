@@ -962,47 +962,27 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     return(NULL)
                 }
                 if (is.null(hp)) {
-                    # Clear shapes (remove marker)
+                    # Clear shapes/annotations (remove marker)
                     plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(annotations = list()))
                 } else {
-                    # Always clear any existing shapes first to avoid multiple dots lingering
+                    # Always clear any existing shapes/annotations first to avoid lingering markers
                     plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(annotations = list()))
 
-                    # Compute radii in data units from a fixed pixel radius for a visually circular marker
-                    width_px <- tryCatch(plot_width_rv(), error = function(e) 1000)
-                    height_px <- tryCatch(plot_height_rv(), error = function(e) 600)
-                    if (isTRUE(show_stacked_plots())) {
-                        height_px <- height_px / 2
-                    }
-                    d_main <- tryCatch(scan_table_chr(), error = function(e) NULL)
-                    if (!is.null(d_main) && nrow(d_main) > 0) {
-                        x_vals <- suppressWarnings(as.numeric(d_main[[hp$xvar]]))
-                        y_vals <- suppressWarnings(as.numeric(d_main$LOD))
-                        x_rng <- diff(range(x_vals, na.rm = TRUE))
-                        y_rng <- diff(range(y_vals, na.rm = TRUE))
-                    } else {
-                        x_rng <- 1
-                        y_rng <- 1
-                    }
-                    rad_px <- 12
-                    r_x <- max((rad_px / as.numeric(width_px)) * x_rng, .Machine$double.eps)
-                    r_y <- max((rad_px / as.numeric(height_px)) * y_rng, .Machine$double.eps)
-                    # Visually tighten width to avoid horizontal oval due to plot margins
-                    r_x <- r_x * 0.5
-
-                    shape <- list(
-                        type = "circle",
+                    # Pixel-sized annotation dot that doesn't distort with zoom
+                    ann <- list(
+                        x = hp$x,
+                        y = hp$y,
                         xref = "x",
                         yref = "y",
-                        layer = "above",
-                        x0 = hp$x - r_x,
-                        x1 = hp$x + r_x,
-                        y0 = hp$y - r_y,
-                        y1 = hp$y + r_y,
-                        line = list(color = "#2c3e50", width = 3.0),
-                        fillcolor = "rgba(255,255,255,0.98)"
+                        text = "\u25CF",
+                        showarrow = FALSE,
+                        font = list(size = 20, color = "#2c3e50"),
+                        xanchor = "center",
+                        yanchor = "middle"
                     )
-                    plotly::plotlyProxyInvoke(proxy, "relayout", list(`shapes[0]` = shape))
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(`annotations[0]` = ann))
                 }
             },
             ignoreInit = FALSE
@@ -1021,42 +1001,23 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 }
                 if (is.null(hp)) {
                     plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(annotations = list()))
                 } else {
                     plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(annotations = list()))
 
-                    width_px <- tryCatch(plot_width_rv(), error = function(e) 1000)
-                    height_px <- tryCatch(plot_height_rv(), error = function(e) 600)
-                    if (isTRUE(show_stacked_plots())) {
-                        height_px <- height_px / 2
-                    }
-                    d_main <- tryCatch(scan_table_chr(), error = function(e) NULL)
-                    if (!is.null(d_main) && nrow(d_main) > 0) {
-                        x_vals <- suppressWarnings(as.numeric(d_main[[hp$xvar]]))
-                        y_vals <- suppressWarnings(as.numeric(d_main$LOD))
-                        x_rng <- diff(range(x_vals, na.rm = TRUE))
-                        y_rng <- diff(range(y_vals, na.rm = TRUE))
-                    } else {
-                        x_rng <- 1
-                        y_rng <- 1
-                    }
-                    rad_px <- 12
-                    r_x <- max((rad_px / as.numeric(width_px)) * x_rng, .Machine$double.eps)
-                    r_y <- max((rad_px / as.numeric(height_px)) * y_rng, .Machine$double.eps)
-                    r_x <- r_x * 0.5
-
-                    shape <- list(
-                        type = "circle",
+                    ann <- list(
+                        x = hp$x,
+                        y = hp$y,
                         xref = "x",
                         yref = "y",
-                        layer = "above",
-                        x0 = hp$x - r_x,
-                        x1 = hp$x + r_x,
-                        y0 = hp$y - r_y,
-                        y1 = hp$y + r_y,
-                        line = list(color = "#2c3e50", width = 3.0),
-                        fillcolor = "rgba(255,255,255,0.98)"
+                        text = "\u25CF",
+                        showarrow = FALSE,
+                        font = list(size = 20, color = "#2c3e50"),
+                        xanchor = "center",
+                        yanchor = "middle"
                     )
-                    plotly::plotlyProxyInvoke(proxy, "relayout", list(`shapes[0]` = shape))
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(`annotations[0]` = ann))
                 }
             },
             ignoreInit = FALSE
@@ -1076,42 +1037,24 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 }
                 if (is.null(hp2)) {
                     plotly::plotlyProxyInvoke(proxy2, "relayout", list(shapes = list()))
+                    plotly::plotlyProxyInvoke(proxy2, "relayout", list(annotations = list()))
                 } else {
-                    # Always clear any existing shapes first to avoid multiple dots lingering
+                    # Always clear any existing shapes/annotations first to avoid lingering markers
                     plotly::plotlyProxyInvoke(proxy2, "relayout", list(shapes = list()))
+                    plotly::plotlyProxyInvoke(proxy2, "relayout", list(annotations = list()))
 
-                    width_px <- tryCatch(plot_width_rv(), error = function(e) 1000)
-                    height_px <- tryCatch(plot_height_rv(), error = function(e) 600)
-                    # Difference plot is always stacked (half height)
-                    height_px <- height_px / 2
-                    d_diff <- tryCatch(diff_plot_data_reactive(), error = function(e) NULL)
-                    if (!is.null(d_diff) && nrow(d_diff) > 0) {
-                        x_vals <- suppressWarnings(as.numeric(d_diff[[hp2$xvar]]))
-                        y_vals <- suppressWarnings(as.numeric(d_diff$LOD))
-                        x_rng <- diff(range(x_vals, na.rm = TRUE))
-                        y_rng <- diff(range(y_vals, na.rm = TRUE))
-                    } else {
-                        x_rng <- 1
-                        y_rng <- 1
-                    }
-                    rad_px <- 12
-                    r_x <- max((rad_px / as.numeric(width_px)) * x_rng, .Machine$double.eps)
-                    r_y <- max((rad_px / as.numeric(height_px)) * y_rng, .Machine$double.eps)
-                    r_x <- r_x * 0.5
-
-                    shape2 <- list(
-                        type = "circle",
+                    ann2 <- list(
+                        x = hp2$x,
+                        y = hp2$y,
                         xref = "x",
                         yref = "y",
-                        layer = "above",
-                        x0 = hp2$x - r_x,
-                        x1 = hp2$x + r_x,
-                        y0 = hp2$y - r_y,
-                        y1 = hp2$y + r_y,
-                        line = list(color = "#2c3e50", width = 3.0),
-                        fillcolor = "rgba(255,255,255,0.98)"
+                        text = "\u25CF",
+                        showarrow = FALSE,
+                        font = list(size = 22, color = "#2c3e50"),
+                        xanchor = "center",
+                        yanchor = "middle"
                     )
-                    plotly::plotlyProxyInvoke(proxy2, "relayout", list(`shapes[0]` = shape2))
+                    plotly::plotlyProxyInvoke(proxy2, "relayout", list(`annotations[0]` = ann2))
                 }
             },
             ignoreInit = FALSE
