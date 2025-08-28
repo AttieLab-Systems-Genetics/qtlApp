@@ -365,6 +365,122 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             ignoreInit = TRUE
         )
 
+        # Compute highlight point (x,y) for the main scan plot based on selected peak
+        highlight_point_main <- shiny::reactive({
+            peak <- selected_peak_rv()
+            scan_data <- tryCatch(scan_table_chr(), error = function(e) NULL)
+            main_par_list <- tryCatch(main_par_inputs(), error = function(e) NULL)
+            if (is.null(peak) || is.null(scan_data) || nrow(scan_data) == 0 || is.null(main_par_list)) {
+                return(NULL)
+            }
+
+            # Determine selected chromosome view and x-axis variable
+            selected_chr <- main_par_list$selected_chr()
+            xvar <- if (identical(selected_chr, "All")) "BPcum" else "position"
+
+            # Extract target chr and position (Mb) from peak info
+            chr_col <- if ("qtl_chr" %in% colnames(peak)) "qtl_chr" else if ("chr" %in% colnames(peak)) "chr" else NULL
+            pos_col <- if ("qtl_pos" %in% colnames(peak)) "qtl_pos" else if ("pos" %in% colnames(peak)) "pos" else NULL
+            if (is.null(chr_col) || is.null(pos_col)) {
+                return(NULL)
+            }
+            target_chr <- suppressWarnings(as.numeric(peak[[chr_col]][1]))
+            if (is.na(target_chr)) {
+                chr_char <- toupper(as.character(peak[[chr_col]][1]))
+                target_chr <- suppressWarnings(as.numeric(chr_char))
+                if (is.na(target_chr)) {
+                    if (chr_char == "X") target_chr <- 20
+                    if (chr_char == "Y") target_chr <- 21
+                    if (chr_char == "M") target_chr <- 22
+                }
+            }
+            target_pos <- suppressWarnings(as.numeric(peak[[pos_col]][1]))
+            if (is.na(target_chr) || is.na(target_pos)) {
+                return(NULL)
+            }
+
+            # If zoomed to a specific chromosome and it doesn't match the target, skip
+            if (!identical(selected_chr, "All")) {
+                sel_chr_num <- selected_chr
+                if (selected_chr == "X") sel_chr_num <- 20
+                if (selected_chr == "Y") sel_chr_num <- 21
+                if (selected_chr == "M") sel_chr_num <- 22
+                sel_chr_num <- suppressWarnings(as.numeric(sel_chr_num))
+                if (is.na(sel_chr_num) || sel_chr_num != target_chr) {
+                    return(NULL)
+                }
+            }
+
+            # Restrict to target chromosome for nearest lookup
+            scan_chr <- tryCatch(dplyr::filter(scan_data, chr == target_chr), error = function(e) NULL)
+            if (is.null(scan_chr) || nrow(scan_chr) == 0) {
+                return(NULL)
+            }
+            # Find nearest point by position (Mb)
+            idx <- which.min(abs(scan_chr$position - target_pos))
+            if (length(idx) == 0 || is.infinite(idx) || is.na(idx)) {
+                return(NULL)
+            }
+            row <- scan_chr[idx, ]
+            list(x = row[[xvar]], y = row$LOD, xvar = xvar)
+        })
+
+        # Compute highlight point (x,y) for the difference plot based on selected peak
+        highlight_point_diff <- shiny::reactive({
+            peak <- selected_peak_rv()
+            diff_data <- tryCatch(diff_plot_data_reactive(), error = function(e) NULL)
+            main_par_list <- tryCatch(main_par_inputs(), error = function(e) NULL)
+            if (is.null(peak) || is.null(diff_data) || nrow(diff_data) == 0 || is.null(main_par_list)) {
+                return(NULL)
+            }
+
+            selected_chr <- main_par_list$selected_chr()
+            xvar <- if (identical(selected_chr, "All")) "BPcum" else "position"
+
+            chr_col <- if ("qtl_chr" %in% colnames(peak)) "qtl_chr" else if ("chr" %in% colnames(peak)) "chr" else NULL
+            pos_col <- if ("qtl_pos" %in% colnames(peak)) "qtl_pos" else if ("pos" %in% colnames(peak)) "pos" else NULL
+            if (is.null(chr_col) || is.null(pos_col)) {
+                return(NULL)
+            }
+            target_chr <- suppressWarnings(as.numeric(peak[[chr_col]][1]))
+            if (is.na(target_chr)) {
+                chr_char <- toupper(as.character(peak[[chr_col]][1]))
+                target_chr <- suppressWarnings(as.numeric(chr_char))
+                if (is.na(target_chr)) {
+                    if (chr_char == "X") target_chr <- 20
+                    if (chr_char == "Y") target_chr <- 21
+                    if (chr_char == "M") target_chr <- 22
+                }
+            }
+            target_pos <- suppressWarnings(as.numeric(peak[[pos_col]][1]))
+            if (is.na(target_chr) || is.na(target_pos)) {
+                return(NULL)
+            }
+
+            # If zoomed to a specific chromosome and it doesn't match the target, skip
+            if (!identical(selected_chr, "All")) {
+                sel_chr_num <- selected_chr
+                if (selected_chr == "X") sel_chr_num <- 20
+                if (selected_chr == "Y") sel_chr_num <- 21
+                if (selected_chr == "M") sel_chr_num <- 22
+                sel_chr_num <- suppressWarnings(as.numeric(sel_chr_num))
+                if (is.na(sel_chr_num) || sel_chr_num != target_chr) {
+                    return(NULL)
+                }
+            }
+
+            # Restrict to target chromosome for nearest lookup
+            diff_chr <- tryCatch(dplyr::filter(diff_data, chr == target_chr), error = function(e) NULL)
+            if (is.null(diff_chr) || nrow(diff_chr) == 0) {
+                return(NULL)
+            }
+            idx <- which.min(abs(diff_chr$position - target_pos))
+            if (length(idx) == 0 || is.infinite(idx) || is.na(idx)) {
+                return(NULL)
+            }
+            row <- diff_chr[idx, ]
+            list(x = row[[xvar]], y = row$LOD, xvar = xvar)
+        })
 
         # Reactive to store additive plot data for difference calculations
         additive_scan_data_rv <- shiny::reactiveVal(NULL)
@@ -719,6 +835,22 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         # Keep for compatibility when show_thresholds is FALSE (not used here)
                         p <- p
                     }
+                    # Overlay default-selection marker if available
+                    hp <- highlight_point_main()
+                    if (!is.null(hp)) {
+                        marker_df <- data.frame(x = hp$x, y = hp$y)
+                        p <- p + ggplot2::geom_point(
+                            data = marker_df,
+                            mapping = ggplot2::aes(x = x, y = y),
+                            inherit.aes = FALSE,
+                            shape = 21,
+                            size = 2.6,
+                            stroke = 0.8,
+                            color = "#2c3e50",
+                            fill = "#ffffff",
+                            alpha = 0.95
+                        )
+                    }
                     p
                 },
                 error = function(e) {
@@ -814,6 +946,22 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                             diff_plot <- diff_plot +
                                 ggplot2::geom_hline(yintercept = static_diff_threshold, linetype = "dashed", color = "grey20") +
                                 ggplot2::geom_hline(yintercept = -static_diff_threshold, linetype = "dashed", color = "grey20")
+                        }
+                        # Overlay default-selection marker if available
+                        hp2 <- highlight_point_diff()
+                        if (!is.null(hp2)) {
+                            marker_df2 <- data.frame(x = hp2$x, y = hp2$y)
+                            diff_plot <- diff_plot + ggplot2::geom_point(
+                                data = marker_df2,
+                                mapping = ggplot2::aes(x = x, y = y),
+                                inherit.aes = FALSE,
+                                shape = 21,
+                                size = 2.6,
+                                stroke = 0.8,
+                                color = "#2c3e50",
+                                fill = "#ffffff",
+                                alpha = 0.95
+                            )
                         }
                     }
 
