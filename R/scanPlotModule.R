@@ -370,7 +370,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             peak <- selected_peak_rv()
             scan_data <- tryCatch(scan_table_chr(), error = function(e) NULL)
             main_par_list <- tryCatch(main_par_inputs(), error = function(e) NULL)
-            if (is.null(peak) || is.null(scan_data) || nrow(scan_data) == 0 || is.null(main_par_list)) {
+            if (is.null(scan_data) || nrow(scan_data) == 0 || is.null(main_par_list)) {
                 return(NULL)
             }
 
@@ -378,25 +378,36 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             selected_chr <- main_par_list$selected_chr()
             xvar <- if (identical(selected_chr, "All")) "BPcum" else "position"
 
-            # Extract target chr and position (Mb) from peak info
-            chr_col <- if ("qtl_chr" %in% colnames(peak)) "qtl_chr" else if ("chr" %in% colnames(peak)) "chr" else NULL
-            pos_col <- if ("qtl_pos" %in% colnames(peak)) "qtl_pos" else if ("pos" %in% colnames(peak)) "pos" else NULL
-            if (is.null(chr_col) || is.null(pos_col)) {
-                return(NULL)
-            }
-            target_chr <- suppressWarnings(as.numeric(peak[[chr_col]][1]))
-            if (is.na(target_chr)) {
-                chr_char <- toupper(as.character(peak[[chr_col]][1]))
-                target_chr <- suppressWarnings(as.numeric(chr_char))
-                if (is.na(target_chr)) {
-                    if (chr_char == "X") target_chr <- 20
-                    if (chr_char == "Y") target_chr <- 21
-                    if (chr_char == "M") target_chr <- 22
+            # Fallback: when no peak is selected yet, use the highest LOD row as the default
+            if (is.null(peak)) {
+                idx_best <- suppressWarnings(which.max(as.numeric(scan_data$LOD)))
+                if (length(idx_best) == 0 || is.na(idx_best)) {
+                    return(NULL)
                 }
-            }
-            target_pos <- suppressWarnings(as.numeric(peak[[pos_col]][1]))
-            if (is.na(target_chr) || is.na(target_pos)) {
-                return(NULL)
+                fallback_row <- scan_data[idx_best, ]
+                target_chr <- fallback_row$chr
+                target_pos <- fallback_row$position
+            } else {
+                # Extract target chr and position (Mb) from peak info
+                chr_col <- if ("qtl_chr" %in% colnames(peak)) "qtl_chr" else if ("chr" %in% colnames(peak)) "chr" else NULL
+                pos_col <- if ("qtl_pos" %in% colnames(peak)) "qtl_pos" else if ("pos" %in% colnames(peak)) "pos" else NULL
+                if (is.null(chr_col) || is.null(pos_col)) {
+                    return(NULL)
+                }
+                target_chr <- suppressWarnings(as.numeric(peak[[chr_col]][1]))
+                if (is.na(target_chr)) {
+                    chr_char <- toupper(as.character(peak[[chr_col]][1]))
+                    target_chr <- suppressWarnings(as.numeric(chr_char))
+                    if (is.na(target_chr)) {
+                        if (chr_char == "X") target_chr <- 20
+                        if (chr_char == "Y") target_chr <- 21
+                        if (chr_char == "M") target_chr <- 22
+                    }
+                }
+                target_pos <- suppressWarnings(as.numeric(peak[[pos_col]][1]))
+                if (is.na(target_chr) || is.na(target_pos)) {
+                    return(NULL)
+                }
             }
 
             # If zoomed to a specific chromosome and it doesn't match the target, skip
@@ -835,22 +846,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         # Keep for compatibility when show_thresholds is FALSE (not used here)
                         p <- p
                     }
-                    # Overlay default-selection marker if available
-                    hp <- highlight_point_main()
-                    if (!is.null(hp)) {
-                        marker_df <- data.frame(x = hp$x, y = hp$y)
-                        p <- p + ggplot2::geom_point(
-                            data = marker_df,
-                            mapping = ggplot2::aes(x = x, y = y),
-                            inherit.aes = FALSE,
-                            shape = 21,
-                            size = 2.6,
-                            stroke = 0.8,
-                            color = "#2c3e50",
-                            fill = "#ffffff",
-                            alpha = 0.95
-                        )
-                    }
                     p
                 },
                 error = function(e) {
@@ -947,22 +942,6 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                                 ggplot2::geom_hline(yintercept = static_diff_threshold, linetype = "dashed", color = "grey20") +
                                 ggplot2::geom_hline(yintercept = -static_diff_threshold, linetype = "dashed", color = "grey20")
                         }
-                        # Overlay default-selection marker if available
-                        hp2 <- highlight_point_diff()
-                        if (!is.null(hp2)) {
-                            marker_df2 <- data.frame(x = hp2$x, y = hp2$y)
-                            diff_plot <- diff_plot + ggplot2::geom_point(
-                                data = marker_df2,
-                                mapping = ggplot2::aes(x = x, y = y),
-                                inherit.aes = FALSE,
-                                shape = 21,
-                                size = 2.6,
-                                stroke = 0.8,
-                                color = "#2c3e50",
-                                fill = "#ffffff",
-                                alpha = 0.95
-                            )
-                        }
                     }
 
                     return(diff_plot)
@@ -973,6 +952,170 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 }
             )
         }) %>% shiny::debounce(300)
+
+        # Update marker on main LOD plot without re-rendering the entire plot
+        shiny::observeEvent(list(selected_peak_rv(), main_par_inputs()$selected_chr()),
+            {
+                hp <- tryCatch(highlight_point_main(), error = function(e) NULL)
+                proxy <- tryCatch(plotly::plotlyProxy("render_plotly_plot", session), error = function(e) NULL)
+                if (is.null(proxy)) {
+                    return(NULL)
+                }
+                if (is.null(hp)) {
+                    # Clear shapes (remove marker)
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+                } else {
+                    # Always clear any existing shapes first to avoid multiple dots lingering
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+
+                    # Compute radii in data units from a fixed pixel radius for a visually circular marker
+                    width_px <- tryCatch(plot_width_rv(), error = function(e) 1000)
+                    height_px <- tryCatch(plot_height_rv(), error = function(e) 600)
+                    if (isTRUE(show_stacked_plots())) {
+                        height_px <- height_px / 2
+                    }
+                    d_main <- tryCatch(scan_table_chr(), error = function(e) NULL)
+                    if (!is.null(d_main) && nrow(d_main) > 0) {
+                        x_vals <- suppressWarnings(as.numeric(d_main[[hp$xvar]]))
+                        y_vals <- suppressWarnings(as.numeric(d_main$LOD))
+                        x_rng <- diff(range(x_vals, na.rm = TRUE))
+                        y_rng <- diff(range(y_vals, na.rm = TRUE))
+                    } else {
+                        x_rng <- 1
+                        y_rng <- 1
+                    }
+                    rad_px <- 12
+                    r_x <- max((rad_px / as.numeric(width_px)) * x_rng, .Machine$double.eps)
+                    r_y <- max((rad_px / as.numeric(height_px)) * y_rng, .Machine$double.eps)
+                    # Visually tighten width to avoid horizontal oval due to plot margins
+                    r_x <- r_x * 0.5
+
+                    shape <- list(
+                        type = "circle",
+                        xref = "x",
+                        yref = "y",
+                        layer = "above",
+                        x0 = hp$x - r_x,
+                        x1 = hp$x + r_x,
+                        y0 = hp$y - r_y,
+                        y1 = hp$y + r_y,
+                        line = list(color = "#2c3e50", width = 3.0),
+                        fillcolor = "rgba(255,255,255,0.98)"
+                    )
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(`shapes[0]` = shape))
+                }
+            },
+            ignoreInit = FALSE
+        )
+
+        # Ensure default marker appears when new scan data arrives and no peak is selected yet
+        shiny::observeEvent(scan_table_chr(),
+            {
+                if (!is.null(selected_peak_rv())) {
+                    return(NULL)
+                }
+                hp <- tryCatch(highlight_point_main(), error = function(e) NULL)
+                proxy <- tryCatch(plotly::plotlyProxy("render_plotly_plot", session), error = function(e) NULL)
+                if (is.null(proxy)) {
+                    return(NULL)
+                }
+                if (is.null(hp)) {
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+                } else {
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list()))
+
+                    width_px <- tryCatch(plot_width_rv(), error = function(e) 1000)
+                    height_px <- tryCatch(plot_height_rv(), error = function(e) 600)
+                    if (isTRUE(show_stacked_plots())) {
+                        height_px <- height_px / 2
+                    }
+                    d_main <- tryCatch(scan_table_chr(), error = function(e) NULL)
+                    if (!is.null(d_main) && nrow(d_main) > 0) {
+                        x_vals <- suppressWarnings(as.numeric(d_main[[hp$xvar]]))
+                        y_vals <- suppressWarnings(as.numeric(d_main$LOD))
+                        x_rng <- diff(range(x_vals, na.rm = TRUE))
+                        y_rng <- diff(range(y_vals, na.rm = TRUE))
+                    } else {
+                        x_rng <- 1
+                        y_rng <- 1
+                    }
+                    rad_px <- 12
+                    r_x <- max((rad_px / as.numeric(width_px)) * x_rng, .Machine$double.eps)
+                    r_y <- max((rad_px / as.numeric(height_px)) * y_rng, .Machine$double.eps)
+                    r_x <- r_x * 0.5
+
+                    shape <- list(
+                        type = "circle",
+                        xref = "x",
+                        yref = "y",
+                        layer = "above",
+                        x0 = hp$x - r_x,
+                        x1 = hp$x + r_x,
+                        y0 = hp$y - r_y,
+                        y1 = hp$y + r_y,
+                        line = list(color = "#2c3e50", width = 3.0),
+                        fillcolor = "rgba(255,255,255,0.98)"
+                    )
+                    plotly::plotlyProxyInvoke(proxy, "relayout", list(`shapes[0]` = shape))
+                }
+            },
+            ignoreInit = FALSE
+        )
+
+        # Update marker on difference plot without re-rendering the entire plot
+        shiny::observeEvent(list(selected_peak_rv(), main_par_inputs()$selected_chr()),
+            {
+                # Only attempt when difference plot is present (interactive modes)
+                if (!isTRUE(show_stacked_plots())) {
+                    return(NULL)
+                }
+                hp2 <- tryCatch(highlight_point_diff(), error = function(e) NULL)
+                proxy2 <- tryCatch(plotly::plotlyProxy("render_difference_plot", session), error = function(e) NULL)
+                if (is.null(proxy2)) {
+                    return(NULL)
+                }
+                if (is.null(hp2)) {
+                    plotly::plotlyProxyInvoke(proxy2, "relayout", list(shapes = list()))
+                } else {
+                    # Always clear any existing shapes first to avoid multiple dots lingering
+                    plotly::plotlyProxyInvoke(proxy2, "relayout", list(shapes = list()))
+
+                    width_px <- tryCatch(plot_width_rv(), error = function(e) 1000)
+                    height_px <- tryCatch(plot_height_rv(), error = function(e) 600)
+                    # Difference plot is always stacked (half height)
+                    height_px <- height_px / 2
+                    d_diff <- tryCatch(diff_plot_data_reactive(), error = function(e) NULL)
+                    if (!is.null(d_diff) && nrow(d_diff) > 0) {
+                        x_vals <- suppressWarnings(as.numeric(d_diff[[hp2$xvar]]))
+                        y_vals <- suppressWarnings(as.numeric(d_diff$LOD))
+                        x_rng <- diff(range(x_vals, na.rm = TRUE))
+                        y_rng <- diff(range(y_vals, na.rm = TRUE))
+                    } else {
+                        x_rng <- 1
+                        y_rng <- 1
+                    }
+                    rad_px <- 12
+                    r_x <- max((rad_px / as.numeric(width_px)) * x_rng, .Machine$double.eps)
+                    r_y <- max((rad_px / as.numeric(height_px)) * y_rng, .Machine$double.eps)
+                    r_x <- r_x * 0.5
+
+                    shape2 <- list(
+                        type = "circle",
+                        xref = "x",
+                        yref = "y",
+                        layer = "above",
+                        x0 = hp2$x - r_x,
+                        x1 = hp2$x + r_x,
+                        y0 = hp2$y - r_y,
+                        y1 = hp2$y + r_y,
+                        line = list(color = "#2c3e50", width = 3.0),
+                        fillcolor = "rgba(255,255,255,0.98)"
+                    )
+                    plotly::plotlyProxyInvoke(proxy2, "relayout", list(`shapes[0]` = shape2))
+                }
+            },
+            ignoreInit = FALSE
+        )
 
         # Simple UI state check
         show_stacked_plots <- shiny::reactive({
