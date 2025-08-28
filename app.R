@@ -1145,7 +1145,7 @@ server <- function(input, output, session) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
-                } else if (grepl("HC_HF.*Plasma.*Metabol|HC_HF.*Plasma.*plasma_metabolite", dataset_group, ignore.case = TRUE)) {
+                } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 }
 
@@ -1646,6 +1646,46 @@ server <- function(input, output, session) {
             ggplot2::theme(legend.position = if (length(present_labels) > 1) "bottom" else "none") +
             ggplot2::geom_hline(yintercept = 7.5, linetype = "dashed", color = "grey20", linewidth = 0.6)
 
+        # Highlight +/- 4 Mb window around the currently selected peak (if available)
+        sel_peak <- scan_module_outputs$selected_peak()
+        if (!is.null(sel_peak) && is.data.frame(sel_peak) && nrow(sel_peak) >= 1) {
+            chr_col <- if ("qtl_chr" %in% names(sel_peak)) "qtl_chr" else if ("chr" %in% names(sel_peak)) "chr" else NULL
+            pos_col <- if ("qtl_pos" %in% names(sel_peak)) "qtl_pos" else if ("pos" %in% names(sel_peak)) "pos" else NULL
+            if (!is.null(chr_col) && !is.null(pos_col)) {
+                target_chr <- suppressWarnings(as.numeric(sel_peak[[chr_col]][1]))
+                if (is.na(target_chr)) {
+                    chr_char <- toupper(as.character(sel_peak[[chr_col]][1]))
+                    if (chr_char == "X") target_chr <- 20
+                    if (chr_char == "Y") target_chr <- 21
+                    if (chr_char == "M") target_chr <- 22
+                    if (suppressWarnings(!is.na(as.numeric(chr_char)))) {
+                        target_chr <- as.numeric(chr_char)
+                    }
+                }
+                target_pos <- suppressWarnings(as.numeric(sel_peak[[pos_col]][1]))
+                if (!is.na(target_chr) && !is.na(target_pos)) {
+                    win_lo <- target_pos - 4
+                    win_hi <- target_pos + 4
+                    if (xvar == "BPcum") {
+                        chr_df <- tryCatch(dplyr::filter(combined, chr == target_chr), error = function(e) NULL)
+                        if (!is.null(chr_df) && nrow(chr_df) > 0) {
+                            xmin <- chr_df$BPcum[which.min(abs(chr_df$position - win_lo))]
+                            xmax <- chr_df$BPcum[which.min(abs(chr_df$position - win_hi))]
+                            if (is.finite(xmin) && is.finite(xmax) && xmax > xmin) {
+                                g <- g + ggplot2::annotate("rect", xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = "#f1c40f", alpha = 0.15)
+                            }
+                        }
+                    } else {
+                        xmin <- win_lo
+                        xmax <- win_hi
+                        if (is.finite(xmin) && is.finite(xmax) && xmax > xmin) {
+                            g <- g + ggplot2::annotate("rect", xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = "#f1c40f", alpha = 0.15)
+                        }
+                    }
+                }
+            }
+        }
+
         # Axis labeling across genome
         if (xvar == "BPcum") {
             axisdf <- dplyr::as_tibble(combined) |>
@@ -1669,6 +1709,80 @@ server <- function(input, output, session) {
             )
     })
     # --- end NEW ---
+
+    # --- NEW: Vertical highlight for split-by overlay via plotly shapes ---
+    observeEvent(list(scan_module_outputs$selected_peak(), selected_chromosome_rv(), split_by_scan_overlay_data()), {
+        proxy <- tryCatch(plotly::plotlyProxy(ns_app_controller("split_by_lod_overlay_plot"), session), error = function(e) NULL)
+        if (is.null(proxy)) {
+            return(invisible(NULL))
+        }
+        sel_peak <- scan_module_outputs$selected_peak()
+        payload <- split_by_scan_overlay_data()
+        # Clear previous shapes
+        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list())), silent = TRUE)
+        if (is.null(sel_peak) || is.null(payload)) {
+            return(invisible(NULL))
+        }
+        chr_col <- if ("qtl_chr" %in% names(sel_peak)) "qtl_chr" else if ("chr" %in% names(sel_peak)) "chr" else NULL
+        pos_col <- if ("qtl_pos" %in% names(sel_peak)) "qtl_pos" else if ("pos" %in% names(sel_peak)) "pos" else NULL
+        if (is.null(chr_col) || is.null(pos_col)) {
+            return(invisible(NULL))
+        }
+        target_chr <- suppressWarnings(as.numeric(sel_peak[[chr_col]][1]))
+        if (is.na(target_chr)) {
+            chr_char <- toupper(as.character(sel_peak[[chr_col]][1]))
+            if (chr_char == "X") target_chr <- 20
+            if (chr_char == "Y") target_chr <- 21
+            if (chr_char == "M") target_chr <- 22
+            if (suppressWarnings(!is.na(as.numeric(chr_char)))) target_chr <- as.numeric(chr_char)
+        }
+        target_pos <- suppressWarnings(as.numeric(sel_peak[[pos_col]][1]))
+        if (is.na(target_chr) || is.na(target_pos)) {
+            return(invisible(NULL))
+        }
+        sel_chr <- selected_chromosome_rv()
+        win_lo <- target_pos - 4
+        win_hi <- target_pos + 4
+        if (!is.null(sel_chr) && sel_chr != "All") {
+            x0 <- win_lo
+            x1 <- win_hi
+        } else {
+            df_map <- NULL
+            if (!is.null(payload$d1) && nrow(payload$d1) > 0) df_map <- payload$d1 else if (!is.null(payload$d2) && nrow(payload$d2) > 0) df_map <- payload$d2
+            if (is.null(df_map) || nrow(df_map) == 0) {
+                return(invisible(NULL))
+            }
+            chr_df <- tryCatch(dplyr::filter(df_map, chr == target_chr), error = function(e) NULL)
+            if (is.null(chr_df) || nrow(chr_df) == 0) {
+                return(invisible(NULL))
+            }
+            idx_lo <- which.min(abs(chr_df$position - win_lo))
+            idx_hi <- which.min(abs(chr_df$position - win_hi))
+            x0 <- chr_df$BPcum[idx_lo]
+            x1 <- chr_df$BPcum[idx_hi]
+            if (!is.finite(x0) || !is.finite(x1)) {
+                return(invisible(NULL))
+            }
+            if (x1 < x0) {
+                tmp <- x0
+                x0 <- x1
+                x1 <- tmp
+            }
+        }
+        shape <- list(
+            type = "rect",
+            xref = "x",
+            yref = "paper",
+            x0 = x0,
+            x1 = x1,
+            y0 = 0,
+            y1 = 1,
+            fillcolor = "rgba(241,196,15,0.15)",
+            line = list(width = 0)
+        )
+        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(shapes = list(shape))), silent = TRUE)
+        invisible(NULL)
+    })
 
     # --- FIXED Trait Search Logic ---
     # Store a flag to prevent auto-search immediately after dataset changes
