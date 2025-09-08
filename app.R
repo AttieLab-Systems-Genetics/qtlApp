@@ -1361,6 +1361,7 @@ server <- function(input, output, session) {
             "phenotype", "phenotype_gene_symbol",
             "qtl_chr", "qtl_pos", "qtl_lod",
             "BM_log_post_odds_mediation",
+            "BM_log_post_odds_colocal",
             "mediator_type"
         )
         label_candidates <- c(
@@ -1389,10 +1390,19 @@ server <- function(input, output, session) {
         # Filter mediation rows to the selected phenotype when possible
         if (length(pheno_cols) > 0 && !is.null(trait_name) && nzchar(trait_name)) {
             trait_lower <- tolower(trait_name)
-            idx <- rep(FALSE, nrow(dt))
-            for (pc in pheno_cols) {
-                vals <- tolower(as.character(dt[[pc]]))
-                idx <- idx | (vals == trait_lower)
+            # Prefer phenotype_gene_symbol when present; fallback to phenotype where symbol is NA
+            if (all(c("phenotype_gene_symbol", "phenotype") %in% names(dt))) {
+                pg <- tolower(as.character(dt$phenotype_gene_symbol))
+                ph <- tolower(as.character(dt$phenotype))
+                pheno_key <- ifelse(!is.na(pg) & nzchar(pg), pg, ph)
+                idx <- (pheno_key == trait_lower)
+            } else {
+                # OR across whatever columns we have
+                idx <- rep(FALSE, nrow(dt))
+                for (pc in pheno_cols) {
+                    vals <- tolower(as.character(dt[[pc]]))
+                    idx <- idx | (vals == trait_lower)
+                }
             }
             if (any(idx, na.rm = TRUE)) {
                 dt <- dt[idx]
@@ -1491,7 +1501,6 @@ server <- function(input, output, session) {
 
         xlo <- unique(dt$window_lo)[1]
         xhi <- unique(dt$window_hi)[1]
-        interaction_label <- ifelse(unique(dt$interaction_type)[1] == "none", "Additive", toupper(unique(dt$interaction_type)[1]))
         peak_chr <- unique(dt$peak_chr)[1]
         peak_pos <- unique(dt$peak_pos)[1]
 
@@ -1505,7 +1514,7 @@ server <- function(input, output, session) {
             ggplot2::labs(
                 x = "Genomic position (Mb)",
                 y = "BM log posterior odds (mediation)",
-                title = paste0("Mediation near peak ", peak_chr, ":", round(peak_pos, 3), " (", interaction_label, ")")
+                title = "Complete + Partial Mediation"
             ) +
             ggplot2::scale_x_continuous(limits = c(xlo, xhi)) +
             ggplot2::scale_color_manual(
@@ -1519,6 +1528,52 @@ server <- function(input, output, session) {
             ggplot2::theme_minimal()
 
         plotly::ggplotly(g, tooltip = "text") |>
+            plotly::layout(legend = list(orientation = "h", y = -0.2))
+    })
+
+    # New: Co-local Mediation plot (same rules, different Y metric)
+    output[[ns_app_controller("mediation_colocal_plot")]] <- plotly::renderPlotly({
+        dt <- mediation_plot_data()
+        peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
+        peaks_exist <- !is.null(peaks_tbl) && is.data.frame(peaks_tbl) && nrow(peaks_tbl) > 0
+        if (is.null(dt) || nrow(dt) == 0) {
+            msg <- if (!peaks_exist) "No mediation data" else "No mediation data found for selected peak"
+            return(plotly::plot_ly(
+                type = "scatter", mode = "text",
+                x = 0, y = 0, text = msg,
+                hoverinfo = "none"
+            ) |> plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
+        }
+
+        xlo <- unique(dt$window_lo)[1]
+        xhi <- unique(dt$window_hi)[1]
+        peak_chr <- unique(dt$peak_chr)[1]
+        peak_pos <- unique(dt$peak_pos)[1]
+
+        dt$hover_text_coloc <- paste0(
+            "Chr: ", peak_chr, " Pos: ", round(dt$qtl_pos, 3), " Mb<br>",
+            "BM log odds (co-local): ", round(dt$BM_log_post_odds_colocal, 3)
+        )
+
+        g2 <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_colocal, color = mediator_type, text = hover_text_coloc)) +
+            ggplot2::geom_point(alpha = 0.8, size = 1.8) +
+            ggplot2::labs(
+                x = "Genomic position (Mb)",
+                y = "BM log posterior odds (co-local)",
+                title = "Co-local Mediation"
+            ) +
+            ggplot2::scale_x_continuous(limits = c(xlo, xhi)) +
+            ggplot2::scale_color_manual(
+                name = "Mediator Type",
+                values = c(
+                    "complete" = "#2ecc71",
+                    "partial" = "#e67e22"
+                ),
+                na.translate = FALSE
+            ) +
+            ggplot2::theme_minimal()
+
+        plotly::ggplotly(g2, tooltip = "text") |>
             plotly::layout(legend = list(orientation = "h", y = -0.2))
     })
 

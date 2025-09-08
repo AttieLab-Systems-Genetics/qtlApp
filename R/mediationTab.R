@@ -239,6 +239,12 @@ mediation_tab_ui <- function(current_category = NULL) {
             plotly::plotlyOutput(shiny::NS("app_controller", "mediation_plot"), height = "380px") %>%
                 shinycssloaders::withSpinner(type = 8, color = "#8e44ad")
         )
+        # Co-local Mediation plot placeholder (rendered in app server)
+        content[[length(content) + 1]] <- shiny::div(
+            style = "padding: 8px 12px; margin-top: 6px;",
+            plotly::plotlyOutput(shiny::NS("app_controller", "mediation_colocal_plot"), height = "380px") %>%
+                shinycssloaders::withSpinner(type = 8, color = "#8e44ad")
+        )
         do.call(shiny::tagList, content)
     }
 }
