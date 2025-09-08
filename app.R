@@ -1300,7 +1300,7 @@ server <- function(input, output, session) {
                 ),
                 shiny::tabPanel(
                     title = "Mediation",
-                    mediation_tab_ui()
+                    mediation_tab_ui(current_category = selected_dataset_category_reactive())
                 ),
                 shiny::tabPanel(
                     title = "SNP association",
@@ -1308,6 +1308,205 @@ server <- function(input, output, session) {
                 )
             )
         )
+    })
+
+    # Mediation plot logic
+    mediation_selected_file_path <- shiny::reactive({
+        interaction_type <- current_interaction_type_rv()
+        if (is.null(interaction_type)) {
+            return(NULL)
+        }
+        if (interaction_type == "sex") {
+            return(input$mediation_dataset_selector_sex %||% NULL)
+        } else if (interaction_type == "diet") {
+            return(input$mediation_dataset_selector_diet %||% NULL)
+        } else {
+            return(input$mediation_dataset_selector_additive %||% NULL)
+        }
+    })
+
+    mediation_plot_data <- shiny::reactive({
+        peak_info <- scan_module_outputs$selected_peak()
+        file_path <- mediation_selected_file_path()
+        interaction_type <- current_interaction_type_rv()
+        # Match by phenotype + (qtl_chr, qtl_pos, qtl_lod); recenter within ±4 Mb for interactive
+
+        if (is.null(peak_info) || is.null(file_path) || !nzchar(file_path)) {
+            return(NULL)
+        }
+
+        if (!file.exists(file_path)) {
+            warning(paste("Mediation file not found:", file_path))
+            return(NULL)
+        }
+
+        # Selected peak position (Mb) and chromosome
+        peak_chr <- as.character(peak_info$qtl_chr %||% peak_info$chr %||% peak_info$qtl_chr_char)
+        peak_pos <- suppressWarnings(as.numeric(peak_info$qtl_pos %||% peak_info$pos))
+        if (is.na(peak_pos) || is.null(peak_chr) || !nzchar(peak_chr)) {
+            return(NULL)
+        }
+
+        # Read header to determine available columns, then read only needed columns
+        message(sprintf("Mediation: reading header from %s", file_path))
+        header_dt <- tryCatch(data.table::fread(file_path, nrows = 0), error = function(e) {
+            message(sprintf("Mediation: header read error %s", e$message))
+            NULL
+        })
+        if (is.null(header_dt)) {
+            return(NULL)
+        }
+        available_cols <- names(header_dt)
+        base_cols <- c("phenotype", "phenotype_gene_symbol", "qtl_chr", "qtl_pos", "qtl_lod", "BM_log_post_odds_mediation")
+        label_candidates <- c(
+            "mediator_gene_symbol", "mediator", "mediator_gene_id",
+            "mediator_transcript_symbol", "mediator_transcript_id",
+            "gene_symbol", "symbol", "feature", "feature_id", "gene", "isoform"
+        )
+        select_cols <- unique(c(base_cols, intersect(label_candidates, available_cols)))
+
+        dt <- tryCatch(data.table::fread(file_path, select = intersect(select_cols, available_cols)), error = function(e) {
+            message(sprintf("Mediation: fread error %s", e$message))
+            NULL
+        })
+        if (is.null(dt) || nrow(dt) == 0) {
+            return(NULL)
+        }
+        message(sprintf("Mediation: loaded %s rows with columns: %s", nrow(dt), paste(names(dt), collapse = ", ")))
+
+        # Determine phenotype columns in mediation file
+        pheno_cols <- intersect(c("phenotype_gene_symbol", "phenotype"), names(dt))
+        # Determine trait name from selected peak (prefer symbol)
+        trait_candidates <- c("trait", "gene_symbol", "phenotype", "metabolite", "metabolite_name")
+        trait_col_in_peak <- trait_candidates[trait_candidates %in% names(peak_info)]
+        trait_name <- if (length(trait_col_in_peak) > 0) as.character(peak_info[[trait_col_in_peak[1]]][1]) else NULL
+
+        # Filter mediation rows to the selected phenotype when possible
+        if (length(pheno_cols) > 0 && !is.null(trait_name) && nzchar(trait_name)) {
+            trait_lower <- tolower(trait_name)
+            idx <- rep(FALSE, nrow(dt))
+            for (pc in pheno_cols) {
+                vals <- tolower(as.character(dt[[pc]]))
+                idx <- idx | (vals == trait_lower)
+            }
+            if (any(idx, na.rm = TRUE)) {
+                dt <- dt[idx]
+            }
+            message(sprintf("Mediation: rows after phenotype filter (%s): %s", trait_name, nrow(dt)))
+        }
+
+        # Standardize chromosome values for matching and try to locate the exact matching peak row
+        peak_chr_num <- chr_to_numeric(peak_chr)
+        dt_qtl_chr_num <- chr_to_numeric(dt$qtl_chr)
+        pos_num <- suppressWarnings(as.numeric(dt$qtl_pos))
+        lod_num <- suppressWarnings(as.numeric(dt$qtl_lod))
+        peak_lod <- suppressWarnings(as.numeric(peak_info$qtl_lod %||% peak_info$lod))
+
+        # Attempt exact match first (allow small tolerance on pos/lod)
+        tol_pos <- 1e-3
+        tol_lod <- 1e-2
+        exact_idx <- which(!is.na(dt_qtl_chr_num) & dt_qtl_chr_num == peak_chr_num &
+            !is.na(pos_num) & abs(pos_num - peak_pos) <= tol_pos &
+            !is.na(lod_num) & abs(lod_num - peak_lod) <= tol_lod)
+
+        center_pos <- NA_real_
+        if (length(exact_idx) > 0) {
+            center_pos <- as.numeric(dt$qtl_pos[exact_idx[1]])
+        } else if (isTRUE(interaction_type %in% c("sex", "diet"))) {
+            # Interactive: find any candidate within ±4 Mb on same chr for this phenotype
+            prelim_lo <- peak_pos - 4
+            prelim_hi <- peak_pos + 4
+            idx <- which(!is.na(dt_qtl_chr_num) & dt_qtl_chr_num == peak_chr_num & !is.na(pos_num) &
+                pos_num >= prelim_lo & pos_num <= prelim_hi)
+            if (length(idx) > 0) {
+                # Prefer row with LOD closest to selected peak; otherwise highest LOD
+                lod_vals <- lod_num[idx]
+                if (!is.na(peak_lod)) {
+                    pick <- idx[which.min(abs(lod_vals - peak_lod))]
+                } else {
+                    pick <- idx[which.max(lod_vals)]
+                }
+                center_pos <- pos_num[pick]
+            }
+        } else {
+            # Additive: require exact position match when possible. If not found, fall back to nearest within ±4 Mb.
+            prelim_lo <- peak_pos - 4
+            prelim_hi <- peak_pos + 4
+            idx <- which(!is.na(dt_qtl_chr_num) & dt_qtl_chr_num == peak_chr_num & !is.na(pos_num) &
+                pos_num >= prelim_lo & pos_num <= prelim_hi)
+            if (length(idx) > 0) {
+                pick <- idx[which.min(abs(pos_num[idx] - peak_pos))]
+                center_pos <- pos_num[pick]
+            }
+        }
+
+        # Define plotting window
+        if (is.finite(center_pos)) {
+            window_lo <- center_pos - 4
+            window_hi <- center_pos + 4
+        } else {
+            window_lo <- peak_pos - 4
+            window_hi <- peak_pos + 4
+        }
+
+        keep_idx <- !is.na(dt_qtl_chr_num) & (dt_qtl_chr_num == peak_chr_num) & !is.na(pos_num) &
+            pos_num >= window_lo & pos_num <= window_hi
+        dt <- dt[keep_idx]
+        message(sprintf("Mediation: rows after window filter chr=%s [%.3f, %.3f]: %s", as.character(peak_chr), window_lo, window_hi, nrow(dt)))
+        if (nrow(dt) == 0) {
+            return(NULL)
+        }
+
+        # Create mediator label column for display
+        lbl_col <- intersect(label_candidates, names(dt))
+        if (length(lbl_col) > 0) {
+            dt$mediator_label <- dt[[lbl_col[[1]]]]
+        } else {
+            dt$mediator_label <- "mediator"
+        }
+
+        dt$interaction_type <- interaction_type %||% "none"
+        dt$window_lo <- window_lo
+        dt$window_hi <- window_hi
+        dt$peak_pos <- peak_pos
+        dt$peak_chr <- peak_chr
+        dt
+    })
+
+    output[[ns_app_controller("mediation_plot")]] <- plotly::renderPlotly({
+        dt <- mediation_plot_data()
+        if (is.null(dt) || nrow(dt) == 0) {
+            return(plotly::plot_ly(
+                type = "scatter", mode = "text",
+                x = 0, y = 0, text = "No mediation data in +/- 4 Mb window",
+                hoverinfo = "none"
+            ) |> plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
+        }
+
+        xlo <- unique(dt$window_lo)[1]
+        xhi <- unique(dt$window_hi)[1]
+        interaction_label <- ifelse(unique(dt$interaction_type)[1] == "none", "Additive", toupper(unique(dt$interaction_type)[1]))
+        peak_chr <- unique(dt$peak_chr)[1]
+        peak_pos <- unique(dt$peak_pos)[1]
+
+        dt$hover_text <- paste0(
+            "Mediator: ", dt$mediator_label, "<br>",
+            "Chr: ", peak_chr, " Pos: ", round(dt$qtl_pos, 3), " Mb<br>",
+            "BM log odds: ", round(dt$BM_log_post_odds_mediation, 3)
+        )
+
+        g <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_mediation, color = mediator_label, text = hover_text)) +
+            ggplot2::geom_point(alpha = 0.75, size = 1.6) +
+            ggplot2::labs(
+                x = "Genomic position (Mb)",
+                y = "BM log posterior odds (mediation)",
+                title = paste0("Mediation near peak ", peak_chr, ":", round(peak_pos, 3), " (", interaction_label, ")")
+            ) +
+            ggplot2::scale_x_continuous(limits = c(xlo, xhi)) +
+            ggplot2::theme_minimal()
+
+        plotly::ggplotly(g, tooltip = "text") |>
+            plotly::layout(legend = list(orientation = "h", y = -0.2))
     })
 
     # Render allele effects section conditionally

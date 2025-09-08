@@ -5,10 +5,16 @@
 #' grouped by interaction type inferred from the FIRST token:
 #' Additive (All mice), Sex (Female), Sex (Male), Diet (HC), Diet (HF).
 #'
+#' @param current_category Optional string of the current dataset category
+#'   (e.g., "Liver Genes", "Liver Isoforms", "Liver Lipids", "Clinical Traits",
+#'   "Plasma Metabolites"). When provided, the dropdown will be filtered to
+#'   only show mediation datasets whose FIRST token family matches the category
+#'   (e.g., for "Liver Genes" show files starting with "liver_genes_" and
+#'   "liver_isoforms_" so users can mediate genes against isoforms too).
 #' @return Shiny UI for the Mediation tab
 #' @importFrom shiny tags div selectInput h6 conditionalPanel
 #' @export
-mediation_tab_ui <- function() {
+mediation_tab_ui <- function(current_category = NULL) {
     # Discover mediation files
     candidate_dirs <- c("/data/dev/miniViewer_3.0", file.path(getwd(), "data"))
     files <- unlist(lapply(candidate_dirs, function(d) {
@@ -56,6 +62,23 @@ mediation_tab_ui <- function() {
         stringsAsFactors = FALSE
     )
 
+    # Optionally filter by current dataset category to avoid showing unrelated families
+    if (!is.null(current_category) && nzchar(current_category)) {
+        # Map category to allowed FIRST-family prefixes
+        allowed_prefixes <- switch(current_category,
+            "Liver Genes" = c("liver_genes_", "liver_isoforms_"),
+            "Liver Isoforms" = c("liver_isoforms_", "liver_genes_"),
+            "Liver Lipids" = c("liver_lipids_", "liver_genes_", "liver_isoforms_"),
+            "Clinical Traits" = c("clinical_traits_", "liver_genes_", "liver_isoforms_"),
+            "Plasma Metabolites" = c("plasma_metabolites_", "liver_genes_", "liver_isoforms_"),
+            NULL
+        )
+        if (!is.null(allowed_prefixes)) {
+            keep <- Reduce(`|`, lapply(allowed_prefixes, function(pfx) startsWith(df$first, pfx)))
+            df <- df[keep, , drop = FALSE]
+        }
+    }
+
     # Build grouped choices using SECOND token labels, grouped by interaction from FIRST
     add_mask <- grepl("_all_mice$", df$first, ignore.case = TRUE)
     sex_f_mask <- grepl("qtlxsex_in_female_mice$", df$first, ignore.case = TRUE)
@@ -68,43 +91,48 @@ mediation_tab_ui <- function() {
     sex_choices <- list()
     diet_choices <- list()
 
-    add_seconds <- sort(unique(df$second[add_mask]))
-    if (length(add_seconds) > 0) {
+    add_rows <- df[add_mask, , drop = FALSE]
+    if (nrow(add_rows) > 0) {
+        add_rows <- add_rows[!duplicated(add_rows$second), , drop = FALSE]
         additive_choices[["Additive (All mice)"]] <- stats::setNames(
-            paste0("add_all_mice:", add_seconds),
-            add_seconds
+            add_rows$file,
+            add_rows$second
         )
     }
 
-    sex_f_seconds <- sort(unique(df$second[sex_f_mask]))
-    if (length(sex_f_seconds) > 0) {
+    sex_f_rows <- df[sex_f_mask, , drop = FALSE]
+    if (nrow(sex_f_rows) > 0) {
+        sex_f_rows <- sex_f_rows[!duplicated(sex_f_rows$second), , drop = FALSE]
         sex_choices[["Interactive - Sex (Female)"]] <- stats::setNames(
-            paste0("sex_female:", sex_f_seconds),
-            sex_f_seconds
+            sex_f_rows$file,
+            sex_f_rows$second
         )
     }
 
-    sex_m_seconds <- sort(unique(df$second[sex_m_mask]))
-    if (length(sex_m_seconds) > 0) {
+    sex_m_rows <- df[sex_m_mask, , drop = FALSE]
+    if (nrow(sex_m_rows) > 0) {
+        sex_m_rows <- sex_m_rows[!duplicated(sex_m_rows$second), , drop = FALSE]
         sex_choices[["Interactive - Sex (Male)"]] <- stats::setNames(
-            paste0("sex_male:", sex_m_seconds),
-            sex_m_seconds
+            sex_m_rows$file,
+            sex_m_rows$second
         )
     }
 
-    diet_hc_seconds <- sort(unique(df$second[diet_hc_mask]))
-    if (length(diet_hc_seconds) > 0) {
+    diet_hc_rows <- df[diet_hc_mask, , drop = FALSE]
+    if (nrow(diet_hc_rows) > 0) {
+        diet_hc_rows <- diet_hc_rows[!duplicated(diet_hc_rows$second), , drop = FALSE]
         diet_choices[["Interactive - Diet (HC)"]] <- stats::setNames(
-            paste0("diet_hc:", diet_hc_seconds),
-            diet_hc_seconds
+            diet_hc_rows$file,
+            diet_hc_rows$second
         )
     }
 
-    diet_hf_seconds <- sort(unique(df$second[diet_hf_mask]))
-    if (length(diet_hf_seconds) > 0) {
+    diet_hf_rows <- df[diet_hf_mask, , drop = FALSE]
+    if (nrow(diet_hf_rows) > 0) {
+        diet_hf_rows <- diet_hf_rows[!duplicated(diet_hf_rows$second), , drop = FALSE]
         diet_choices[["Interactive - Diet (HF)"]] <- stats::setNames(
-            paste0("diet_hf:", diet_hf_seconds),
-            diet_hf_seconds
+            diet_hf_rows$file,
+            diet_hf_rows$second
         )
     }
 
@@ -132,22 +160,14 @@ mediation_tab_ui <- function() {
 
     {
         panels <- list()
-        # Robust JS conditions that work even if the input is namespaced or missing
-        cond_find_interaction <- function(target) {
-            if (target == "none") {
-                return("(function(){var k=Object.keys(input||{}),v=null;for(var i=0;i<k.length;i++){if(k[i].endsWith('interaction_type_selector')){v=input[k[i]];break;}}return(v===null||v===undefined||v==='none');})()")
-            } else if (target == "sex") {
-                return("(function(){var k=Object.keys(input||{}),v=null;for(var i=0;i<k.length;i++){if(k[i].endsWith('interaction_type_selector')){v=input[k[i]];break;}}return(v==='sex');})()")
-            } else if (target == "diet") {
-                return("(function(){var k=Object.keys(input||{}),v=null;for(var i=0;i<k.length;i++){if(k[i].endsWith('interaction_type_selector')){v=input[k[i]];break;}}return(v==='diet');})()")
-            } else {
-                return("false")
-            }
-        }
+        # Use the known app namespace id used across the app
+        cond_add <- "input['app_controller-interaction_type_selector'] == 'none'"
+        cond_sex <- "input['app_controller-interaction_type_selector'] == 'sex'"
+        cond_diet <- "input['app_controller-interaction_type_selector'] == 'diet'"
 
         if (length(additive_choices) > 0) {
             panels[[length(panels) + 1]] <- shiny::conditionalPanel(
-                condition = cond_find_interaction("none"),
+                condition = cond_add,
                 shiny::div(
                     style = "padding: 12px;",
                     shiny::selectInput(
@@ -162,7 +182,7 @@ mediation_tab_ui <- function() {
         }
         if (length(sex_choices) > 0) {
             panels[[length(panels) + 1]] <- shiny::conditionalPanel(
-                condition = cond_find_interaction("sex"),
+                condition = cond_sex,
                 shiny::div(
                     style = "padding: 12px;",
                     shiny::selectInput(
@@ -177,7 +197,7 @@ mediation_tab_ui <- function() {
         }
         if (length(diet_choices) > 0) {
             panels[[length(panels) + 1]] <- shiny::conditionalPanel(
-                condition = cond_find_interaction("diet"),
+                condition = cond_diet,
                 shiny::div(
                     style = "padding: 12px;",
                     shiny::selectInput(
@@ -191,13 +211,21 @@ mediation_tab_ui <- function() {
             )
         }
 
+        content <- list()
         if (length(panels) == 0) {
-            shiny::div(
+            content[[length(content) + 1]] <- shiny::div(
                 style = "padding: 12px; color: #7f8c8d;",
                 shiny::tags$em("No mediation datasets available.")
             )
         } else {
-            do.call(shiny::tagList, panels)
+            content[[length(content) + 1]] <- do.call(shiny::tagList, panels)
         }
+        # Mediation plot placeholder (rendered in app server)
+        content[[length(content) + 1]] <- shiny::div(
+            style = "padding: 8px 12px;",
+            plotly::plotlyOutput(shiny::NS("app_controller", "mediation_plot"), height = "380px") %>%
+                shinycssloaders::withSpinner(type = 8, color = "#8e44ad")
+        )
+        do.call(shiny::tagList, content)
     }
 }
