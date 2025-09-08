@@ -1276,30 +1276,15 @@ server <- function(input, output, session) {
         h4(title_text, style = "font-weight: bold; margin-bottom: 0;")
     })
 
-    # Bottom tabs UI: Additive -> tabbed (Effect, Mediation, SNP association)
-    # Interactive -> preserve original layout
+    # Bottom tabs UI: Show peaks table above tabs for both additive and interactive.
+    # Effect tab contains allele effects and any interactive overlays/comparisons.
     output[[ns_app_controller("bottom_tabs_ui")]] <- shiny::renderUI({
         trait <- trait_for_lod_scan_rv()
         if (is.null(trait)) {
             return(NULL)
         }
 
-        interaction_type_now <- current_interaction_type_rv()
-        is_additive <- is.null(interaction_type_now) || interaction_type_now == "none"
-
-        if (!is_additive) {
-            # Keep existing non-tabbed layout for interactive analyses
-            return(tagList(
-                div(
-                    style = "margin-top: 15px;",
-                    div("Available Peaks", style = "font-weight: bold; margin-bottom: 8px;"),
-                    peaksTableUI(ns_app_controller("peaks_table_module"))
-                ),
-                shiny::uiOutput(ns_app_controller("allele_effects_section"))
-            ))
-        }
-
-        # Additive mode: show peaks table above tabs; tabs control the detail views
+        # Show peaks table above tabs; tabs control the detail views for all modes
         tagList(
             div(
                 style = "margin-top: 15px;",
