@@ -51,6 +51,8 @@ source("R/scanPlotModule.R") # Source our new module
 source("R/profilePlotApp.R") # Source the new profile plot module
 source("R/mainUI.R") # Source our new UI module
 source("R/peaksTableModule.R")
+source("R/mediationTab.R")
+source("R/snpAssociationTab.R")
 
 # Set maximum file upload size
 options(shiny.maxRequestSize = 20000 * 1024^2) # 20 GB
@@ -1210,12 +1212,7 @@ server <- function(input, output, session) {
             tagList(
                 interaction_analysis_ui,
                 scanOutput(ns_app_controller("scan_plot_module")),
-                div(
-                    style = "margin-top: 15px;",
-                    div("Available Peaks", style = "font-weight: bold; margin-bottom: 8px;"),
-                    peaksTableUI(ns_app_controller("peaks_table_module"))
-                ),
-                shiny::uiOutput(ns_app_controller("allele_effects_section"))
+                shiny::uiOutput(ns_app_controller("bottom_tabs_ui"))
             )
         } else {
             div(
@@ -1279,11 +1276,60 @@ server <- function(input, output, session) {
         h4(title_text, style = "font-weight: bold; margin-bottom: 0;")
     })
 
+    # Bottom tabs UI: Additive -> tabbed (Effect, Mediation, SNP association)
+    # Interactive -> preserve original layout
+    output[[ns_app_controller("bottom_tabs_ui")]] <- shiny::renderUI({
+        trait <- trait_for_lod_scan_rv()
+        if (is.null(trait)) {
+            return(NULL)
+        }
+
+        interaction_type_now <- current_interaction_type_rv()
+        is_additive <- is.null(interaction_type_now) || interaction_type_now == "none"
+
+        if (!is_additive) {
+            # Keep existing non-tabbed layout for interactive analyses
+            return(tagList(
+                div(
+                    style = "margin-top: 15px;",
+                    div("Available Peaks", style = "font-weight: bold; margin-bottom: 8px;"),
+                    peaksTableUI(ns_app_controller("peaks_table_module"))
+                ),
+                shiny::uiOutput(ns_app_controller("allele_effects_section"))
+            ))
+        }
+
+        # Additive mode: show peaks table above tabs; tabs control the detail views
+        tagList(
+            div(
+                style = "margin-top: 15px;",
+                div("Available Peaks", style = "font-weight: bold; margin-bottom: 8px;"),
+                peaksTableUI(ns_app_controller("peaks_table_module"))
+            ),
+            shiny::tabsetPanel(
+                id = ns_app_controller("bottom_tabs"),
+                type = "tabs",
+                shiny::tabPanel(
+                    title = "Effect",
+                    shiny::uiOutput(ns_app_controller("allele_effects_section"))
+                ),
+                shiny::tabPanel(
+                    title = "Mediation",
+                    mediation_tab_ui()
+                ),
+                shiny::tabPanel(
+                    title = "SNP association",
+                    snp_association_tab_ui()
+                )
+            )
+        )
+    })
+
     # Render allele effects section conditionally
     output[[ns_app_controller("allele_effects_section")]] <- shiny::renderUI({
-        additive_peak <- scan_module_outputs$selected_peak()
-        diff_peak_1 <- scan_module_outputs$diff_peak_1()
-        diff_peak_2 <- scan_module_outputs$diff_peak_2()
+        additive_peak <- shiny::isolate(scan_module_outputs$selected_peak())
+        diff_peak_1 <- shiny::isolate(scan_module_outputs$diff_peak_1())
+        diff_peak_2 <- shiny::isolate(scan_module_outputs$diff_peak_2())
 
         ui_elements <- list()
 
@@ -1317,10 +1363,7 @@ server <- function(input, output, session) {
                         style = "margin-bottom: 8px; font-weight: bold;",
                         if (interaction_type_now == "sex") "Split-by additive LOD overlay (Female vs Male)" else "Split-by additive LOD overlay (HC vs HF)"
                     ),
-                    shinycssloaders::withSpinner(
-                        plotly::plotlyOutput(ns_app_controller("split_by_lod_overlay_plot"), height = "380px"),
-                        type = 8, color = if (interaction_type_now == "sex") "#e74c3c" else "#3498db"
-                    )
+                    shiny::uiOutput(ns_app_controller("split_by_overlay_container"))
                 ))
                 overlay_included <- TRUE
             }
@@ -1391,10 +1434,7 @@ server <- function(input, output, session) {
                         style = "margin-bottom: 8px; font-weight: bold;",
                         if (interaction_type == "sex") "Split-by additive LOD overlay (Female vs Male)" else "Split-by additive LOD overlay (HC vs HF)"
                     ),
-                    shinycssloaders::withSpinner(
-                        plotly::plotlyOutput(ns_app_controller("split_by_lod_overlay_plot"), height = "380px"),
-                        type = 8, color = if (interaction_type == "sex") "#e74c3c" else "#3498db"
-                    )
+                    shiny::uiOutput(ns_app_controller("split_by_overlay_container"))
                 ))
                 overlay_included <- TRUE
             }
@@ -1496,7 +1536,7 @@ server <- function(input, output, session) {
             # Create a placeholder plot when no data
             ggplot2::ggplot() +
                 ggplot2::theme_void() +
-                ggplot2::labs(title = "No strain effects data available for this peak") +
+                ggplot2::labs(title = "No strain effects data available") +
                 ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, color = "#7f8c8d"))
         } else {
             message(paste("scanApp: Creating allele effects plot with", nrow(effects_data), "data points"))
@@ -1681,19 +1721,13 @@ server <- function(input, output, session) {
                                 xmax <- chr_df$BPcum[which.min(abs(chr_df$position - win_hi))]
                             }
                             if (is.finite(xmin) && is.finite(xmax) && xmax > xmin) {
-                                g <- g + ggplot2::annotate("rect", xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = "#f1c40f", alpha = 0.15)
                                 x0_highlight <- xmin
                                 x1_highlight <- xmax
                             }
                         }
                     } else {
-                        xmin <- win_lo
-                        xmax <- win_hi
-                        if (is.finite(xmin) && is.finite(xmax) && xmax > xmin) {
-                            g <- g + ggplot2::annotate("rect", xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = "#f1c40f", alpha = 0.15)
-                            x0_highlight <- xmin
-                            x1_highlight <- xmax
-                        }
+                        x0_highlight <- win_lo
+                        x1_highlight <- win_hi
                     }
                 }
             }
@@ -2138,6 +2172,19 @@ server <- function(input, output, session) {
         } else {
             NULL
         }
+    })
+
+    # Stable container for split-by overlay to avoid plot teardown on peak changes
+    output[[ns_app_controller("split_by_overlay_container")]] <- shiny::renderUI({
+        interaction_type <- current_interaction_type_rv()
+        if (is.null(interaction_type) || !(interaction_type %in% c("sex", "diet"))) {
+            return(NULL)
+        }
+        shinycssloaders::withSpinner(
+            plotly::plotlyOutput(ns_app_controller("split_by_lod_overlay_plot"), height = "380px"),
+            type = 8,
+            color = if (interaction_type == "sex") "#e74c3c" else "#3498db"
+        )
     })
 
     # Interactive Analysis section - show for all HC_HF datasets
