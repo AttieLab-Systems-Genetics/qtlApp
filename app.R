@@ -1357,7 +1357,12 @@ server <- function(input, output, session) {
             return(NULL)
         }
         available_cols <- names(header_dt)
-        base_cols <- c("phenotype", "phenotype_gene_symbol", "qtl_chr", "qtl_pos", "qtl_lod", "BM_log_post_odds_mediation")
+        base_cols <- c(
+            "phenotype", "phenotype_gene_symbol",
+            "qtl_chr", "qtl_pos", "qtl_lod",
+            "BM_log_post_odds_mediation",
+            "mediator_type"
+        )
         label_candidates <- c(
             "mediator_gene_symbol", "mediator", "mediator_gene_id",
             "mediator_transcript_symbol", "mediator_transcript_id",
@@ -1457,13 +1462,11 @@ server <- function(input, output, session) {
             return(NULL)
         }
 
-        # Create mediator label column for display
-        lbl_col <- intersect(label_candidates, names(dt))
-        if (length(lbl_col) > 0) {
-            dt$mediator_label <- dt[[lbl_col[[1]]]]
-        } else {
-            dt$mediator_label <- "mediator"
+        # Prepare mediator type as factor for coloring
+        if (!("mediator_type" %in% names(dt))) {
+            dt$mediator_type <- NA_character_
         }
+        dt$mediator_type <- factor(tolower(as.character(dt$mediator_type)), levels = c("complete", "partial"))
 
         dt$interaction_type <- interaction_type %||% "none"
         dt$window_lo <- window_lo
@@ -1475,10 +1478,13 @@ server <- function(input, output, session) {
 
     output[[ns_app_controller("mediation_plot")]] <- plotly::renderPlotly({
         dt <- mediation_plot_data()
+        peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
+        peaks_exist <- !is.null(peaks_tbl) && is.data.frame(peaks_tbl) && nrow(peaks_tbl) > 0
         if (is.null(dt) || nrow(dt) == 0) {
+            msg <- if (!peaks_exist) "No mediation data" else "No mediation data found for selected peak"
             return(plotly::plot_ly(
                 type = "scatter", mode = "text",
-                x = 0, y = 0, text = "No mediation data in +/- 4 Mb window",
+                x = 0, y = 0, text = msg,
                 hoverinfo = "none"
             ) |> plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
         }
@@ -1490,19 +1496,26 @@ server <- function(input, output, session) {
         peak_pos <- unique(dt$peak_pos)[1]
 
         dt$hover_text <- paste0(
-            "Mediator: ", dt$mediator_label, "<br>",
             "Chr: ", peak_chr, " Pos: ", round(dt$qtl_pos, 3), " Mb<br>",
             "BM log odds: ", round(dt$BM_log_post_odds_mediation, 3)
         )
 
-        g <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_mediation, color = mediator_label, text = hover_text)) +
-            ggplot2::geom_point(alpha = 0.75, size = 1.6) +
+        g <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_mediation, color = mediator_type, text = hover_text)) +
+            ggplot2::geom_point(alpha = 0.8, size = 1.8) +
             ggplot2::labs(
                 x = "Genomic position (Mb)",
                 y = "BM log posterior odds (mediation)",
                 title = paste0("Mediation near peak ", peak_chr, ":", round(peak_pos, 3), " (", interaction_label, ")")
             ) +
             ggplot2::scale_x_continuous(limits = c(xlo, xhi)) +
+            ggplot2::scale_color_manual(
+                name = "Mediator Type",
+                values = c(
+                    "complete" = "#2ecc71", # green
+                    "partial" = "#e67e22" # orange
+                ),
+                na.translate = FALSE
+            ) +
             ggplot2::theme_minimal()
 
         plotly::ggplotly(g, tooltip = "text") |>

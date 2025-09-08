@@ -86,6 +86,19 @@ mediation_tab_ui <- function(current_category = NULL) {
     diet_hc_mask <- grepl("qtlxdiet_in_HC_mice$", df$first, ignore.case = TRUE)
     diet_hf_mask <- grepl("qtlxdiet_in_HF_mice$", df$first, ignore.case = TRUE)
 
+    # Humanize SECOND token labels (e.g., "liver_genes" -> "Liver Genes")
+    prettify_second <- function(x) {
+        labs <- c(
+            liver_genes = "Liver Genes",
+            liver_isoforms = "Liver Isoforms",
+            liver_lipids = "Liver Lipids",
+            clinical_traits = "Clinical Traits",
+            plasma_metabolites = "Plasma Metabolites"
+        )
+        out <- labs[tolower(x)]
+        ifelse(is.na(out), x, out)
+    }
+
     # Build grouped choices separated by interaction type
     additive_choices <- list()
     sex_choices <- list()
@@ -96,7 +109,7 @@ mediation_tab_ui <- function(current_category = NULL) {
         add_rows <- add_rows[!duplicated(add_rows$second), , drop = FALSE]
         additive_choices[["Additive (All mice)"]] <- stats::setNames(
             add_rows$file,
-            add_rows$second
+            prettify_second(add_rows$second)
         )
     }
 
@@ -105,7 +118,7 @@ mediation_tab_ui <- function(current_category = NULL) {
         sex_f_rows <- sex_f_rows[!duplicated(sex_f_rows$second), , drop = FALSE]
         sex_choices[["Interactive - Sex (Female)"]] <- stats::setNames(
             sex_f_rows$file,
-            sex_f_rows$second
+            prettify_second(sex_f_rows$second)
         )
     }
 
@@ -114,7 +127,7 @@ mediation_tab_ui <- function(current_category = NULL) {
         sex_m_rows <- sex_m_rows[!duplicated(sex_m_rows$second), , drop = FALSE]
         sex_choices[["Interactive - Sex (Male)"]] <- stats::setNames(
             sex_m_rows$file,
-            sex_m_rows$second
+            prettify_second(sex_m_rows$second)
         )
     }
 
@@ -123,7 +136,7 @@ mediation_tab_ui <- function(current_category = NULL) {
         diet_hc_rows <- diet_hc_rows[!duplicated(diet_hc_rows$second), , drop = FALSE]
         diet_choices[["Interactive - Diet (HC)"]] <- stats::setNames(
             diet_hc_rows$file,
-            diet_hc_rows$second
+            prettify_second(diet_hc_rows$second)
         )
     }
 
@@ -132,7 +145,7 @@ mediation_tab_ui <- function(current_category = NULL) {
         diet_hf_rows <- diet_hf_rows[!duplicated(diet_hf_rows$second), , drop = FALSE]
         diet_choices[["Interactive - Diet (HF)"]] <- stats::setNames(
             diet_hf_rows$file,
-            diet_hf_rows$second
+            prettify_second(diet_hf_rows$second)
         )
     }
 
