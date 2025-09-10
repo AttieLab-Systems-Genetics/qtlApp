@@ -409,6 +409,75 @@ get_trait_list <- function(import_data, trait_type) {
   }
   annotation_list <- import_data$annotation_list
 
+  # Special handling: Plasma Metabolites
+  # Prefer a direct 'plasma_metabolite' table if present; otherwise, merge 13C/2H tables if available
+  if (!is.null(trait_type) && identical(trait_type, "plasma_metabolite")) {
+    if ("plasma_metabolite" %in% names(annotation_list)) {
+      return(annotation_list[["plasma_metabolite"]])
+    }
+    has_13c <- "plasma_13C_metabolite" %in% names(annotation_list)
+    has_2h <- "plasma_2H_metabolite" %in% names(annotation_list)
+    if (!has_13c && !has_2h) {
+      # Fallback: derive plasma metabolite names directly from processed row index or scan files
+      base_path <- "/data/dev/miniViewer_3.0"
+      # Prefer the lightweight *_processed_row.fst files
+      row_files <- tryCatch(
+        list.files(path = base_path, pattern = "chromosome[0-9XYM]+_plasma_metabolites_all_mice_additive_data_processed_row\\.fst$", full.names = TRUE),
+        error = function(e) character(0)
+      )
+      phenos <- character(0)
+      if (length(row_files) > 0) {
+        for (fp in row_files) {
+          vals <- tryCatch(
+            {
+              dt <- fst::read_fst(fp, columns = "Phenotype", as.data.table = TRUE)
+              if ("Phenotype" %in% names(dt)) unique(dt$Phenotype) else character(0)
+            },
+            error = function(e) character(0)
+          )
+          if (length(vals) > 0) phenos <- c(phenos, vals)
+        }
+      }
+      # If row files missing, fallback to the main processed scan files (read only the Phenotype column)
+      if (length(phenos) == 0) {
+        scan_files <- tryCatch(
+          list.files(path = base_path, pattern = "chromosome[0-9XYM]+_plasma_metabolites_all_mice_additive_data_processed\\.fst$", full.names = TRUE),
+          error = function(e) character(0)
+        )
+        if (length(scan_files) > 0) {
+          # Sample a subset of files to avoid excessive I/O
+          sample_idx <- seq(1, length(scan_files), by = max(1L, floor(length(scan_files) / 5L)))
+          for (fp in scan_files[sample_idx]) {
+            vals <- tryCatch(
+              {
+                dt <- fst::read_fst(fp, columns = "Phenotype", as.data.table = TRUE)
+                if ("Phenotype" %in% names(dt)) unique(dt$Phenotype) else character(0)
+              },
+              error = function(e) character(0)
+            )
+            if (length(vals) > 0) phenos <- c(phenos, vals)
+          }
+        }
+      }
+      phenos <- sort(unique(phenos))
+      if (length(phenos) == 0) {
+        warning("Trait type plasma_metabolite not found in annotation list and could not be derived from FST files.")
+        return(NULL)
+      }
+      return(data.frame(data_name = phenos, stringsAsFactors = FALSE))
+    }
+    dfs <- list()
+    if (has_13c) dfs[[length(dfs) + 1]] <- annotation_list[["plasma_13C_metabolite"]]
+    if (has_2h) dfs[[length(dfs) + 1]] <- annotation_list[["plasma_2H_metabolite"]]
+    common_cols <- Reduce(intersect, lapply(dfs, colnames))
+    if (length(common_cols) == 0) {
+      warning("Plasma metabolite annotation tables share no common columns; returning first available.")
+      return(dfs[[1]])
+    }
+    combined <- do.call(rbind, lapply(dfs, function(df) df[, common_cols, drop = FALSE]))
+    return(combined)
+  }
+
   # Check if requested trait type exists in annotations
   if (is.null(trait_type) || !(trait_type %in% names(annotation_list))) {
     warning("Trait type ", trait_type, " not found in annotation list.")

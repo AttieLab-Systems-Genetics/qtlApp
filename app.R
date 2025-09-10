@@ -892,6 +892,9 @@ server <- function(input, output, session) {
     # Reactive value to store the trait selected from either plot for LOD scanning
     trait_for_lod_scan_rv <- shiny::reactiveVal(NULL)
 
+    # Track last selected dataset group to refine trait preservation behavior
+    last_selected_dataset_group_rv <- shiny::reactiveVal(NULL)
+
     # Observe clicks from Manhattan plot
     shiny::observeEvent(manhattan_plot_outputs$clicked_phenotype_for_lod_scan(),
         {
@@ -922,17 +925,26 @@ server <- function(input, output, session) {
 
     # When the main selected dataset changes, clear the trait_for_lod_scan_rv
     # to prevent a scan from an old selection on a new plot type.
-    # BUT preserve trait selection when switching between HC_HF variants (additive <-> interactive)
+    # Preserve trait selection ONLY when switching within the same trait type (e.g., additive <-> interactive
+    # for the same HC_HF category), not across categories (e.g., Genes -> Plasma Metabolites).
     shiny::observeEvent(main_selected_dataset_group(),
         {
             current_dataset <- main_selected_dataset_group()
             message("scanApp: Main dataset group changed. Clearing trait_for_lod_scan_rv.")
 
-            # Check if this is just switching between HC_HF dataset variants (any HC_HF dataset type)
-            is_hc_hf_dataset_switch <- !is.null(current_dataset) &&
-                grepl("^HC_HF", current_dataset, ignore.case = TRUE)
+            # Determine whether to preserve trait based on staying within same trait type
+            previous_dataset <- last_selected_dataset_group_rv()
+            same_trait_type_switch <- FALSE
+            if (!is.null(previous_dataset) && !is.null(current_dataset)) {
+                # Both datasets are HC_HF and share the same trait_type
+                prev_type <- tryCatch(get_trait_type(import_reactives(), previous_dataset), error = function(e) NULL)
+                curr_type <- tryCatch(get_trait_type(import_reactives(), current_dataset), error = function(e) NULL)
+                same_trait_type_switch <- grepl("^HC_HF", previous_dataset, ignore.case = TRUE) &&
+                    grepl("^HC_HF", current_dataset, ignore.case = TRUE) &&
+                    !is.null(prev_type) && !is.null(curr_type) && identical(prev_type, curr_type)
+            }
 
-            if (!is_hc_hf_dataset_switch) {
+            if (!same_trait_type_switch) {
                 # Only clear trait selection for real dataset changes, not interaction type changes
                 trait_for_lod_scan_rv(NULL) # Clear any active LOD scan
                 # Clear the search input selection (choices will be updated by the other observer)
@@ -940,8 +952,11 @@ server <- function(input, output, session) {
                     selected = character(0)
                 )
             } else {
-                message("scanApp: HC_HF dataset switch detected - preserving trait selection")
+                message("scanApp: Same-trait-type HC_HF dataset switch detected - preserving trait selection")
             }
+
+            # Update the last selected dataset tracker
+            last_selected_dataset_group_rv(current_dataset)
         },
         ignoreNULL = TRUE,
         ignoreInit = TRUE
@@ -2351,6 +2366,19 @@ server <- function(input, output, session) {
                     message(paste("scanApp: Preserving trait selection:", current_trait_selection, "- found in new dataset"))
                 } else {
                     message(paste("scanApp: Previous trait selection:", current_trait_selection, "- not found in new dataset, clearing selection"))
+                }
+            }
+
+            # Default-select the first trait for Plasma Metabolites when no preserved selection exists
+            if (is.null(trait_to_select) || !nzchar(trait_to_select)) {
+                trait_type_now <- tryCatch(get_trait_type(import_reactives(), current_ds), error = function(e) NULL)
+                if (!is.null(trait_type_now) && identical(trait_type_now, "plasma_metabolite")) {
+                    if (length(choices) >= 1) {
+                        trait_to_select <- choices[1]
+                        message(paste("scanApp: Auto-selecting default Plasma Metabolite:", trait_to_select))
+                        # Trigger immediate scan for the default metabolite
+                        trait_for_lod_scan_rv(trait_to_select)
+                    }
                 }
             }
 
