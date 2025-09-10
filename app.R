@@ -1362,6 +1362,7 @@ server <- function(input, output, session) {
             "qtl_chr", "qtl_pos", "qtl_lod",
             "BM_log_post_odds_mediation",
             "BM_log_post_odds_colocal",
+            "BM_post_probs_complete", "BM_post_probs_partial", "BM_post_probs_colocal",
             "mediator_type"
         )
         label_candidates <- c(
@@ -1478,6 +1479,27 @@ server <- function(input, output, session) {
         }
         dt$mediator_type <- factor(tolower(as.character(dt$mediator_type)), levels = c("complete", "partial"))
 
+        # Build mediator_name for hover/clicks: prefer transcript symbol, then gene symbol,
+        # then transcript id, then gene id
+        get_col <- function(nm) if (nm %in% names(dt)) as.character(dt[[nm]]) else rep(NA_character_, nrow(dt))
+        sym_tx <- get_col("mediator_transcript_symbol")
+        sym_ge <- get_col("mediator_gene_symbol")
+        id_tx <- get_col("mediator_transcript_id")
+        id_ge <- get_col("mediator_gene_id")
+        pick_first <- function(a, b) {
+            res <- a
+            nullish <- is.na(res) | res == "" | tolower(res) == "na"
+            res[nullish] <- b[nullish]
+            res
+        }
+        mediator_name <- pick_first(sym_tx, sym_ge)
+        mediator_name <- pick_first(mediator_name, id_tx)
+        mediator_name <- pick_first(mediator_name, id_ge)
+        mediator_name[is.na(mediator_name) | mediator_name == "" | tolower(mediator_name) == "na"] <- "mediator"
+        dt$mediator_name <- mediator_name
+        # Row id to link click events back to data
+        dt$row_id <- seq_len(nrow(dt))
+
         dt$interaction_type <- interaction_type %||% "none"
         dt$window_lo <- window_lo
         dt$window_hi <- window_hi
@@ -1517,11 +1539,12 @@ server <- function(input, output, session) {
         peak_pos <- unique(dt$peak_pos)[1]
 
         dt$hover_text <- paste0(
+            "Mediator: ", dt$mediator_name, "<br>",
             "Chr: ", peak_chr, " Pos: ", round(dt$qtl_pos, 3), " Mb<br>",
             "BM log odds: ", round(dt$BM_log_post_odds_mediation, 3)
         )
 
-        g <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_mediation, color = mediator_type, text = hover_text)) +
+        g <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_mediation, color = mediator_type, text = hover_text, key = row_id)) +
             ggplot2::geom_point(alpha = 0.8, size = 1.8) +
             ggplot2::labs(
                 x = "Genomic position (Mb)",
@@ -1539,7 +1562,8 @@ server <- function(input, output, session) {
             ) +
             ggplot2::theme_minimal()
 
-        plotly::ggplotly(g, tooltip = "text") |>
+        plotly::ggplotly(g, tooltip = "text", source = "mediation_plot_src") |>
+            plotly::event_register("plotly_click") |>
             plotly::layout(legend = list(orientation = "h", y = -0.2))
     })
 
@@ -1574,11 +1598,12 @@ server <- function(input, output, session) {
         peak_pos <- unique(dt$peak_pos)[1]
 
         dt$hover_text_coloc <- paste0(
+            "Mediator: ", dt$mediator_name, "<br>",
             "Chr: ", peak_chr, " Pos: ", round(dt$qtl_pos, 3), " Mb<br>",
             "BM log odds (co-local): ", round(dt$BM_log_post_odds_colocal, 3)
         )
 
-        g2 <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_colocal, color = mediator_type, text = hover_text_coloc)) +
+        g2 <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_colocal, color = mediator_type, text = hover_text_coloc, key = row_id)) +
             ggplot2::geom_point(alpha = 0.8, size = 1.8) +
             ggplot2::labs(
                 x = "Genomic position (Mb)",
@@ -1596,7 +1621,8 @@ server <- function(input, output, session) {
             ) +
             ggplot2::theme_minimal()
 
-        plotly::ggplotly(g2, tooltip = "text") |>
+        plotly::ggplotly(g2, tooltip = "text", source = "mediation_colocal_plot_src") |>
+            plotly::event_register("plotly_click") |>
             plotly::layout(legend = list(orientation = "h", y = -0.2))
     })
 
@@ -2463,6 +2489,97 @@ server <- function(input, output, session) {
     })
 
     # Interactive Analysis section - show for all HC_HF datasets
+    output[[ns_app_controller("mediation_posterior_plot")]] <- plotly::renderPlotly({
+        dt <- mediation_plot_data()
+        key <- selected_mediator_row_id()
+        # If there are no mediators, render nothing (avoid taking space)
+        if (is.null(dt) || nrow(dt) == 0) {
+            return(plotly::plot_ly(
+                type = "scatter", mode = "text", x = 0, y = 0,
+                text = "No mediation data available.", hoverinfo = "none"
+            ) |>
+                plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
+        }
+        # If mediators exist but none is selected, show a small prompt
+        if (is.null(key) || !is.finite(key)) {
+            return(plotly::plot_ly(
+                type = "scatter", mode = "text", x = 0, y = 0,
+                text = "Click a mediator point to view posterior probabilities.", hoverinfo = "none"
+            ) |>
+                plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
+        }
+        row <- tryCatch(dt[dt$row_id == key, , drop = FALSE], error = function(e) NULL)
+        if (is.null(row) || nrow(row) == 0) {
+            return(plotly::plot_ly(
+                type = "scatter", mode = "text", x = 0, y = 0,
+                text = "Click a mediator point to view posterior probabilities.", hoverinfo = "none"
+            ) |>
+                plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
+        }
+        name <- as.character(row$mediator_name[1])
+        # Safe getters (treat missing/NA as 0)
+        get_prob <- function(df, col) {
+            if (!(col %in% names(df))) {
+                return(0)
+            }
+            val <- suppressWarnings(as.numeric(df[[col]][1]))
+            if (!is.finite(val)) {
+                return(0)
+            } else {
+                return(val)
+            }
+        }
+        p_complete <- get_prob(row, "BM_post_probs_complete")
+        p_partial <- get_prob(row, "BM_post_probs_partial")
+        p_colocal <- get_prob(row, "BM_post_probs_colocal")
+        sum3 <- p_complete + p_partial + p_colocal
+        other <- 1 - sum3
+        # Clamp tiny numerical issues
+        clamp01 <- function(x) pmax(0, pmin(1, x))
+        vals <- clamp01(c(p_complete, p_partial, p_colocal, other))
+        # Force exact sum to 1 by recomputing other after clamp of the first three
+        vals[4] <- clamp01(1 - sum(vals[1:3]))
+        models <- factor(c("Complete", "Partial", "Co-local", "Other (non-med)"),
+            levels = c("Complete", "Partial", "Co-local", "Other (non-med)")
+        )
+        bars <- data.frame(mediator = rep(name, 4), model = models, prob = vals, stringsAsFactors = FALSE)
+        # Aesthetic: lessening shades of red
+        red_shades <- c(
+            "Complete" = "#c0392b",
+            "Partial" = "#e74c3c",
+            "Co-local" = "#f1948a",
+            "Other (non-med)" = "#fadbd8"
+        )
+        # Leave space between bars while keeping x = mediator: use position_dodge2 with padding
+        gbar <- ggplot2::ggplot(bars, ggplot2::aes(x = mediator, y = prob, fill = model)) +
+            ggplot2::geom_col(width = 0.5, position = ggplot2::position_dodge2(width = 0.7, preserve = "single", padding = 0.3)) +
+            ggplot2::scale_y_continuous(limits = c(0, 1)) +
+            ggplot2::scale_fill_manual(values = red_shades, name = "Model") +
+            ggplot2::scale_x_discrete(expand = ggplot2::expansion(mult = c(0.2, 0.2))) +
+            ggplot2::labs(x = NULL, y = "Posterior model probability", title = NULL) +
+            ggplot2::theme_minimal()
+        plotly::ggplotly(gbar) |>
+            plotly::layout(legend = list(orientation = "h", y = -0.2))
+    })
+
+    # Selected mediator row id for posterior bar plot
+    selected_mediator_row_id <- shiny::reactiveVal(NULL)
+
+    # Capture clicks from either mediation scatter to drive posterior plot
+    shiny::observeEvent(plotly::event_data("plotly_click", source = "mediation_plot_src"),
+        {
+            ev <- plotly::event_data("plotly_click", source = "mediation_plot_src")
+            if (!is.null(ev) && !is.null(ev$key)) selected_mediator_row_id(as.integer(ev$key[1]))
+        },
+        ignoreInit = TRUE
+    )
+    shiny::observeEvent(plotly::event_data("plotly_click", source = "mediation_colocal_plot_src"),
+        {
+            ev <- plotly::event_data("plotly_click", source = "mediation_colocal_plot_src")
+            if (!is.null(ev) && !is.null(ev$key)) selected_mediator_row_id(as.integer(ev$key[1]))
+        },
+        ignoreInit = TRUE
+    )
 }
 
 # Launch the app
