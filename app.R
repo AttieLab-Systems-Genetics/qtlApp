@@ -1486,6 +1486,18 @@ server <- function(input, output, session) {
         dt
     })
 
+    # Restore container UI expected by mediationTab.R
+    output[[ns_app_controller("mediation_plot_container")]] <- shiny::renderUI({
+        dt <- mediation_plot_data()
+        peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
+        peaks_exist <- !is.null(peaks_tbl) && is.data.frame(peaks_tbl) && nrow(peaks_tbl) > 0
+        if (is.null(dt) || nrow(dt) == 0) {
+            msg <- if (!peaks_exist) "No mediation data" else "No mediation data found for selected peak"
+            return(shiny::div(style = "color:#6c757d; font-size: 13px; padding: 6px 0;", msg))
+        }
+        plotly::plotlyOutput(ns_app_controller("mediation_plot"), height = "380px")
+    })
+
     output[[ns_app_controller("mediation_plot")]] <- plotly::renderPlotly({
         dt <- mediation_plot_data()
         peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
@@ -1532,6 +1544,17 @@ server <- function(input, output, session) {
     })
 
     # New: Co-local Mediation plot (same rules, different Y metric)
+    output[[ns_app_controller("mediation_colocal_plot_container")]] <- shiny::renderUI({
+        dt <- mediation_plot_data()
+        peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
+        peaks_exist <- !is.null(peaks_tbl) && is.data.frame(peaks_tbl) && nrow(peaks_tbl) > 0
+        if (is.null(dt) || nrow(dt) == 0) {
+            msg <- if (!peaks_exist) "No mediation data" else "No mediation data found for selected peak"
+            return(shiny::div(style = "color:#6c757d; font-size: 13px; padding: 6px 0;", msg))
+        }
+        plotly::plotlyOutput(ns_app_controller("mediation_colocal_plot"), height = "380px")
+    })
+
     output[[ns_app_controller("mediation_colocal_plot")]] <- plotly::renderPlotly({
         dt <- mediation_plot_data()
         peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)

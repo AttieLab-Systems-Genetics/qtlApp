@@ -233,16 +233,20 @@ mediation_tab_ui <- function(current_category = NULL) {
         } else {
             content[[length(content) + 1]] <- do.call(shiny::tagList, panels)
         }
-        # Mediation plot placeholder (rendered in app server)
+        # Mediation plot container (server decides to render plot or small blurb)
         content[[length(content) + 1]] <- shiny::div(
             style = "padding: 8px 12px;",
-            plotly::plotlyOutput(shiny::NS("app_controller", "mediation_plot"), height = "380px") %>%
-                shinycssloaders::withSpinner(type = 8, color = "#8e44ad")
+            shiny::uiOutput(shiny::NS("app_controller", "mediation_plot_container"))
         )
-        # Co-local Mediation plot placeholder (rendered in app server)
+        # Co-local Mediation plot container (server decides to render plot or small blurb)
         content[[length(content) + 1]] <- shiny::div(
             style = "padding: 8px 12px; margin-top: 6px;",
-            plotly::plotlyOutput(shiny::NS("app_controller", "mediation_colocal_plot"), height = "380px") %>%
+            shiny::uiOutput(shiny::NS("app_controller", "mediation_colocal_plot_container"))
+        )
+        # Posterior probabilities bar plot for clicked mediator
+        content[[length(content) + 1]] <- shiny::div(
+            style = "padding: 8px 12px; margin-top: 6px;",
+            plotly::plotlyOutput(shiny::NS("app_controller", "mediation_posterior_plot"), height = "320px") %>%
                 shinycssloaders::withSpinner(type = 8, color = "#8e44ad")
         )
         do.call(shiny::tagList, content)
