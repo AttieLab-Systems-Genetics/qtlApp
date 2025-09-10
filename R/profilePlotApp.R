@@ -302,6 +302,13 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
 
             req(nrow(plot_data_clean) > 0)
 
+            # Rank-based inverse normal transform (RankZ) for statistical testing only
+            # This does not alter the plotted values; it is used solely for p-value calculations
+            n_non_na <- sum(!is.na(plot_data_clean$Value))
+            plot_data_clean[, Value_rankz := stats::qnorm(
+                (rank(Value, na.last = "keep", ties.method = "average") - 0.5) / (n_non_na + 1)
+            )]
+
             # Create a combined grouping variable if more than one is selected (x axis)
             if (length(grouping_vars) > 1) {
                 # Special handling whenever both Generation and Litter are present (alone or with others)
@@ -422,9 +429,9 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                         pvals[i] <- tryCatch(
                             {
                                 if (identical(test_method, "wilcox")) {
-                                    stats::wilcox.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], exact = FALSE)$p.value
+                                    stats::wilcox.test(plot_data_clean$Value_rankz[in_group], plot_data_clean$Value_rankz[!in_group], exact = FALSE)$p.value
                                 } else {
-                                    stats::t.test(plot_data_clean$Value[in_group], plot_data_clean$Value[!in_group], var.equal = FALSE)$p.value
+                                    stats::t.test(plot_data_clean$Value_rankz[in_group], plot_data_clean$Value_rankz[!in_group], var.equal = FALSE)$p.value
                                 }
                             },
                             error = function(e) NA_real_
@@ -683,9 +690,9 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                     p_pair <- tryCatch(
                         {
                             if (identical(test_method, "wilcox")) {
-                                stats::wilcox.test(plot_data_clean$Value[in_a], plot_data_clean$Value[in_b], exact = FALSE)$p.value
+                                stats::wilcox.test(plot_data_clean$Value_rankz[in_a], plot_data_clean$Value_rankz[in_b], exact = FALSE)$p.value
                             } else {
-                                stats::t.test(plot_data_clean$Value[in_a], plot_data_clean$Value[in_b], var.equal = FALSE)$p.value
+                                stats::t.test(plot_data_clean$Value_rankz[in_a], plot_data_clean$Value_rankz[in_b], var.equal = FALSE)$p.value
                             }
                         },
                         error = function(e) NA_real_
