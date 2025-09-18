@@ -1520,6 +1520,11 @@ server <- function(input, output, session) {
         dt$window_hi <- window_hi
         dt$peak_pos <- peak_pos
         dt$peak_chr <- peak_chr
+        # Optional filter: show only complete mediators when toggle is on
+        complete_only <- isTRUE(input$mediation_complete_only)
+        if (complete_only) {
+            dt <- tryCatch(dt[dt$mediator_type == "complete", , drop = FALSE], error = function(e) dt)
+        }
         dt
     })
 
@@ -1582,70 +1587,12 @@ server <- function(input, output, session) {
             plotly::layout(legend = list(orientation = "h", y = -0.2))
     })
 
-    # New: Co-local Mediation plot (same rules, different Y metric)
-    output[[ns_app_controller("mediation_colocal_plot_container")]] <- shiny::renderUI({
-        dt <- mediation_plot_data()
-        peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
-        peaks_exist <- !is.null(peaks_tbl) && is.data.frame(peaks_tbl) && nrow(peaks_tbl) > 0
-        if (is.null(dt) || nrow(dt) == 0) {
-            msg <- if (!peaks_exist) "No mediation data" else "No mediation data found for selected peak"
-            return(shiny::div(style = "color:#6c757d; font-size: 13px; padding: 6px 0;", msg))
-        }
-        plotly::plotlyOutput(ns_app_controller("mediation_colocal_plot"), height = "380px")
-    })
-
-    output[[ns_app_controller("mediation_colocal_plot")]] <- plotly::renderPlotly({
-        dt <- mediation_plot_data()
-        peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
-        peaks_exist <- !is.null(peaks_tbl) && is.data.frame(peaks_tbl) && nrow(peaks_tbl) > 0
-        if (is.null(dt) || nrow(dt) == 0) {
-            msg <- if (!peaks_exist) "No mediation data" else "No mediation data found for selected peak"
-            return(plotly::plot_ly(
-                type = "scatter", mode = "text",
-                x = 0, y = 0, text = msg,
-                hoverinfo = "none"
-            ) |> plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
-        }
-
-        xlo <- unique(dt$window_lo)[1]
-        xhi <- unique(dt$window_hi)[1]
-        peak_chr <- unique(dt$peak_chr)[1]
-        peak_pos <- unique(dt$peak_pos)[1]
-
-        dt$hover_text_coloc <- paste0(
-            "Mediator: ", dt$mediator_name, "<br>",
-            "Chr: ", peak_chr, " Pos: ", round(dt$qtl_pos, 3), " Mb<br>",
-            "BM log odds (co-local): ", round(dt$BM_log_post_odds_colocal, 3)
-        )
-
-        g2 <- ggplot2::ggplot(dt, ggplot2::aes(x = qtl_pos, y = BM_log_post_odds_colocal, color = mediator_type, text = hover_text_coloc, key = row_id)) +
-            ggplot2::geom_point(alpha = 0.8, size = 1.8) +
-            ggplot2::labs(
-                x = "Genomic position (Mb)",
-                y = "BM log posterior odds (co-local)",
-                title = "Co-local Mediation"
-            ) +
-            ggplot2::scale_x_continuous(limits = c(xlo, xhi)) +
-            ggplot2::scale_color_manual(
-                name = "Mediator Type",
-                values = c(
-                    "complete" = "#2ecc71",
-                    "partial" = "#e67e22"
-                ),
-                na.translate = FALSE
-            ) +
-            ggplot2::theme_minimal()
-
-        plotly::ggplotly(g2, tooltip = "text", source = "mediation_colocal_plot_src") |>
-            plotly::event_register("plotly_click") |>
-            plotly::layout(legend = list(orientation = "h", y = -0.2))
-    })
-
     # Render allele effects section conditionally
     output[[ns_app_controller("allele_effects_section")]] <- shiny::renderUI({
-        additive_peak <- shiny::isolate(scan_module_outputs$selected_peak())
-        diff_peak_1 <- shiny::isolate(scan_module_outputs$diff_peak_1())
-        diff_peak_2 <- shiny::isolate(scan_module_outputs$diff_peak_2())
+        # Depend directly on selected/diff peaks so the UI updates when they change
+        additive_peak <- scan_module_outputs$selected_peak()
+        diff_peak_1 <- scan_module_outputs$diff_peak_1()
+        diff_peak_2 <- scan_module_outputs$diff_peak_2()
 
         ui_elements <- list()
 
@@ -1827,7 +1774,10 @@ server <- function(input, output, session) {
         } # end interactive-only split-by block
 
         if (length(ui_elements) == 0) {
-            return(NULL)
+            return(div(
+                style = "padding: 12px; color: #6c757d;",
+                "Select a peak in the LOD scan to view allele effects."
+            ))
         }
         do.call(tagList, ui_elements)
     })
@@ -2597,13 +2547,6 @@ server <- function(input, output, session) {
     shiny::observeEvent(plotly::event_data("plotly_click", source = "mediation_plot_src"),
         {
             ev <- plotly::event_data("plotly_click", source = "mediation_plot_src")
-            if (!is.null(ev) && !is.null(ev$key)) selected_mediator_row_id(as.integer(ev$key[1]))
-        },
-        ignoreInit = TRUE
-    )
-    shiny::observeEvent(plotly::event_data("plotly_click", source = "mediation_colocal_plot_src"),
-        {
-            ev <- plotly::event_data("plotly_click", source = "mediation_colocal_plot_src")
             if (!is.null(ev) && !is.null(ev$key)) selected_mediator_row_id(as.integer(ev$key[1]))
         },
         ignoreInit = TRUE

@@ -233,15 +233,20 @@ mediation_tab_ui <- function(current_category = NULL) {
         } else {
             content[[length(content) + 1]] <- do.call(shiny::tagList, panels)
         }
+        # Toggle to show only complete mediators
+        content[[length(content) + 1]] <- shiny::div(
+            style = "padding: 0 12px 6px;",
+            shiny::checkboxInput(
+                inputId = "mediation_complete_only",
+                label = "Show only complete mediators",
+                value = FALSE,
+                width = "auto"
+            )
+        )
         # Mediation plot container (server decides to render plot or small blurb)
         content[[length(content) + 1]] <- shiny::div(
             style = "padding: 8px 12px;",
             shiny::uiOutput(shiny::NS("app_controller", "mediation_plot_container"))
-        )
-        # Co-local Mediation plot container (server decides to render plot or small blurb)
-        content[[length(content) + 1]] <- shiny::div(
-            style = "padding: 8px 12px; margin-top: 6px;",
-            shiny::uiOutput(shiny::NS("app_controller", "mediation_colocal_plot_container"))
         )
         # Posterior probabilities bar plot for clicked mediator
         content[[length(content) + 1]] <- shiny::div(
