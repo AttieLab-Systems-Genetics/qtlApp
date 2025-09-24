@@ -1483,7 +1483,9 @@ server <- function(input, output, session) {
             "mediator_transcript_symbol", "mediator_transcript_id",
             "gene_symbol", "symbol", "feature", "feature_id", "gene", "isoform"
         )
-        select_cols <- unique(c(base_cols, intersect(label_candidates, available_cols)))
+        # Include mediator QTL location columns to aid allele-effect lookup
+        mediator_loc_cols <- c("mediator_qtl_chr", "mediator_qtl_pos", "mediator_qtl_lod")
+        select_cols <- unique(c(base_cols, intersect(label_candidates, available_cols), intersect(mediator_loc_cols, available_cols)))
 
         dt <- tryCatch(data.table::fread(file_path, select = intersect(select_cols, available_cols)), error = function(e) {
             message(sprintf("Mediation: fread error %s", e$message))
@@ -2669,6 +2671,217 @@ server <- function(input, output, session) {
         },
         ignoreInit = TRUE
     )
+
+    # ---- NEW: Mediator allele effects plot ----
+    # Helper: map phenotype class/second token to peaks file path (DO1200_*)
+    # Supports subgroup-specific additive files for diet/sex (HC/HF/female/male)
+    mediator_peaks_file_for <- function(second_token, interaction_type, first_token = NULL) {
+        # second_token values we see: liver_genes, liver_isoforms, liver_lipids, clinical_traits, plasma_metabolites
+        prefix <- NULL
+        if (identical(second_token, "liver_genes")) prefix <- "DO1200_liver_genes"
+        if (identical(second_token, "liver_isoforms")) prefix <- "DO1200_liver_isoforms"
+        if (identical(second_token, "liver_lipids")) prefix <- "DO1200_liver_lipids"
+        if (identical(second_token, "clinical_traits")) prefix <- "DO1200_clinical_traits"
+        if (identical(second_token, "plasma_metabolites")) prefix <- "DO1200_plasma_metabolites"
+        if (is.null(prefix)) {
+            return(NULL)
+        }
+
+        # Determine subgroup (all_mice by default; HC/HF for diet; female/male for sex)
+        subgroup <- "all_mice"
+        if (!is.null(first_token) && nzchar(first_token)) {
+            ft <- tolower(first_token)
+            if (identical(interaction_type, "diet")) {
+                if (grepl("_hc_mice$", ft)) subgroup <- "HC_mice"
+                if (grepl("_hf_mice$", ft)) subgroup <- "HF_mice"
+            } else if (identical(interaction_type, "sex")) {
+                if (grepl("_female_mice$", ft)) subgroup <- "female_mice"
+                if (grepl("_male_mice$", ft)) subgroup <- "male_mice"
+            }
+        }
+
+        # Always use additive peaks for allele-effects visualization
+        suffix <- "additive_peaks.csv"
+        chosen <- file.path("/data/dev/miniViewer_3.0", paste0(prefix, "_", subgroup, "_", suffix))
+        message(sprintf("Mediator AE: peaks file selection -> prefix=%s subgroup=%s file=%s", prefix, subgroup, basename(chosen)))
+        chosen
+    }
+
+    # Build a reactive with allele-effect data for the clicked mediator (selected_mediator_row_id)
+    mediator_allele_effects_data <- shiny::reactive({
+        dt <- mediation_plot_data()
+        key <- selected_mediator_row_id()
+        if (is.null(dt) || nrow(dt) == 0 || is.null(key) || !is.finite(key)) {
+            return(NULL)
+        }
+        row <- tryCatch(dt[dt$row_id == key, , drop = FALSE], error = function(e) NULL)
+        if (is.null(row) || nrow(row) == 0) {
+            return(NULL)
+        }
+
+        # Determine mediator family (SECOND token) and subgroup (FIRST token) from the mediation file name
+        med_fp <- mediation_selected_file_path()
+        if (is.null(med_fp) || !nzchar(med_fp)) {
+            return(NULL)
+        }
+        nm <- basename(med_fp)
+        m <- regexec("^(.+?)_additive_(.+?)_mediator_all_mediators\\.csv$", nm)
+        grp <- regmatches(nm, m)[[1]]
+        med_first <- if (length(grp) == 3) grp[2] else NA_character_
+        med_second <- if (length(grp) == 3) grp[3] else NA_character_
+
+        # Choose peaks file for the mediator domain and current interaction type
+        interaction_type <- current_interaction_type_rv() %||% "none"
+        peaks_csv <- mediator_peaks_file_for(med_second, interaction_type, first_token = med_first)
+        if (is.null(peaks_csv) || !file.exists(peaks_csv)) {
+            message(sprintf("Mediator AE: peaks file not found for '%s' interaction=%s -> %s", as.character(med_second), interaction_type, as.character(peaks_csv)))
+            return(NULL)
+        }
+        message(sprintf("Mediator AE: using peaks file %s", basename(peaks_csv)))
+
+        # Mediator QTL position: prefer mediator_qtl_chr/pos when present; fallback to selected peak chr/pos
+        chr_col <- if ("mediator_qtl_chr" %in% names(row)) "mediator_qtl_chr" else "qtl_chr"
+        pos_col <- if ("mediator_qtl_pos" %in% names(row)) "mediator_qtl_pos" else "qtl_pos"
+        med_chr <- as.character(row[[chr_col]][1])
+        med_pos <- suppressWarnings(as.numeric(row[[pos_col]][1]))
+        if (!nzchar(med_chr) || !is.finite(med_pos)) {
+            return(NULL)
+        }
+        message(sprintf("Mediator AE: mediator locus chr=%s pos=%.3f (columns used: %s/%s)", as.character(med_chr), med_pos, chr_col, pos_col))
+
+        # Read peaks CSV and filter by mediator symbol (when available) then by ±4 Mb window
+        cols_needed <- c(
+            "qtl_chr", "qtl_pos", "chr", "pos", "marker", "phenotype",
+            "gene_symbol", "gene_id", "transcript_symbol", "transcript_id",
+            "qtl_lod",
+            "A", "B", "C", "D", "E", "F", "G", "H"
+        )
+        pk_header <- tryCatch(data.table::fread(peaks_csv, nrows = 0), error = function(e) NULL)
+        if (is.null(pk_header)) {
+            message("Mediator AE: failed to read peaks header")
+            return(NULL)
+        }
+        pk <- tryCatch(data.table::fread(peaks_csv, select = intersect(cols_needed, names(pk_header))), error = function(e) NULL)
+        if (is.null(pk) || nrow(pk) == 0) {
+            return(NULL)
+        }
+        message(sprintf("Mediator AE: peaks header columns = [%s]", paste(names(pk), collapse = ", ")))
+
+        # Optional symbol match to narrow set: isoforms by transcript symbol/id, genes by gene symbol/id
+        pk_symbol_col <- NULL
+        target_symbol <- NULL
+        if (!is.na(med_second) && identical(med_second, "liver_isoforms")) {
+            if ("transcript_symbol" %in% names(pk)) pk_symbol_col <- "transcript_symbol"
+            if (is.null(pk_symbol_col) && "transcript_id" %in% names(pk)) pk_symbol_col <- "transcript_id"
+            # Prefer transcript symbol from mediation data; fallback to transcript id
+            target_symbol <- as.character(row$mediator_transcript_symbol[1] %||% row$mediator_transcript_id[1] %||% NA_character_)
+        } else if (!is.na(med_second) && identical(med_second, "liver_genes")) {
+            if ("gene_symbol" %in% names(pk)) pk_symbol_col <- "gene_symbol"
+            if (is.null(pk_symbol_col) && "gene_id" %in% names(pk)) pk_symbol_col <- "gene_id"
+            target_symbol <- as.character(row$mediator_gene_symbol[1] %||% row$mediator_gene_id[1] %||% NA_character_)
+        }
+        if (!is.null(pk_symbol_col) && !is.null(target_symbol) && nzchar(target_symbol)) {
+            pk_sym_vals <- tolower(trimws(as.character(pk[[pk_symbol_col]])))
+            tsym <- tolower(trimws(as.character(target_symbol)))
+            sym_keep <- which(!is.na(pk_sym_vals) & nzchar(pk_sym_vals) & pk_sym_vals == tsym)
+            message(sprintf("Mediator AE: symbol filter %s == '%s' matched %d rows", pk_symbol_col, target_symbol, length(sym_keep)))
+            if (length(sym_keep) > 0) {
+                pk <- pk[sym_keep, , drop = FALSE]
+            } else {
+                message("Mediator AE: symbol filter yielded zero matches; continuing without symbol restriction")
+            }
+        } else {
+            message(sprintf("Mediator AE: symbol filter skipped (family=%s pk_symbol_col=%s target=%s)", as.character(med_second), as.character(pk_symbol_col %||% "<none>"), as.character(target_symbol %||% "<none>")))
+        }
+        # Coerce chromosome for comparison
+        sel_chr_col <- if ("qtl_chr" %in% names(pk)) "qtl_chr" else if ("chr" %in% names(pk)) "chr" else NULL
+        sel_pos_col <- if ("qtl_pos" %in% names(pk)) "qtl_pos" else if ("pos" %in% names(pk)) "pos" else NULL
+        if (is.null(sel_chr_col) || is.null(sel_pos_col)) {
+            message("Mediator AE: peaks file missing chr/pos columns")
+            return(NULL)
+        }
+        chr_num <- suppressWarnings(as.numeric(pk[[sel_chr_col]]))
+        if (all(is.na(chr_num))) {
+            chr_char <- toupper(as.character(pk[[sel_chr_col]]))
+            chr_num <- suppressWarnings(as.numeric(chr_char))
+            chr_num[is.na(chr_num) & chr_char == "X"] <- 20
+            chr_num[is.na(chr_num) & chr_char == "Y"] <- 21
+            chr_num[is.na(chr_num) & chr_char == "M"] <- 22
+        }
+        med_chr_num <- suppressWarnings(as.numeric(med_chr))
+        if (is.na(med_chr_num)) {
+            mch <- toupper(as.character(med_chr))
+            if (mch == "X") med_chr_num <- 20
+            if (mch == "Y") med_chr_num <- 21
+            if (mch == "M") med_chr_num <- 22
+            if (suppressWarnings(!is.na(as.numeric(mch)))) med_chr_num <- as.numeric(mch)
+        }
+        pk[[sel_pos_col]] <- suppressWarnings(as.numeric(pk[[sel_pos_col]]))
+        if (!is.finite(med_chr_num)) {
+            return(NULL)
+        }
+        win_lo <- med_pos - 4
+        win_hi <- med_pos + 4
+        keep <- (!is.na(chr_num) & !is.na(pk[[sel_pos_col]]) & chr_num == med_chr_num & pk[[sel_pos_col]] >= win_lo & pk[[sel_pos_col]] <= win_hi)
+        pk_win <- pk[keep, , drop = FALSE]
+        message(sprintf("Mediator AE: window filter [%0.3f, %0.3f] matched %d rows (chr col=%s pos col=%s)", win_lo, win_hi, nrow(pk_win), sel_chr_col, sel_pos_col))
+        if (nrow(pk_win) == 0) {
+            return(NULL)
+        }
+
+        # Choose the top LOD row and reshape A-H into long format compatible with ggplot_alleles
+        pk_win <- pk_win[order(-pk_win$qtl_lod), ]
+        top <- pk_win[1, , drop = FALSE]
+        message(sprintf(
+            "Mediator AE: top match marker=%s at chr=%s pos=%s LOD=%.3f",
+            as.character(top$marker[1] %||% "<NA>"), as.character(top[[sel_chr_col]][1] %||% "<NA>"), as.character(top[[sel_pos_col]][1] %||% "<NA>"), suppressWarnings(as.numeric(top$qtl_lod[1] %||% NA))
+        ))
+        # Build a minimal peak_info-like frame for pivot_peaks
+        which_marker <- as.character(top$marker[1] %||% NA_character_)
+        ae <- tryCatch(pivot_peaks(top, which_marker), error = function(e) NULL)
+        if (is.null(ae) || nrow(ae) == 0) {
+            # Fallback: manual reshape if pivot_peaks returned nothing
+            allele_cols <- c("A", "B", "C", "D", "E", "F", "G", "H")
+            top_df <- as.data.frame(top)
+            have_cols <- allele_cols[allele_cols %in% names(top_df)]
+            message(sprintf("Mediator AE: pivot_peaks returned no data; allele columns present: %s", paste(have_cols, collapse = ", ")))
+            if (length(have_cols) == length(allele_cols) && !is.na(which_marker)) {
+                # Ensure we have a data.frame and select columns by name safely
+                if (!("marker" %in% names(top_df))) {
+                    top_df$marker <- which_marker
+                }
+                mat <- top_df[, c("marker", allele_cols), drop = FALSE]
+                # Rename to strain names per pivot_peaks convention
+                strain_names <- c("AJ", "B6", "129", "NOD", "NZO", "CAST", "PWK", "WSB")
+                idxs <- match(allele_cols, colnames(mat))
+                colnames(mat)[idxs] <- strain_names
+                ae <- reshape2::melt(mat,
+                    id.vars = "marker",
+                    measure.vars = strain_names,
+                    variable.name = "variable",
+                    value.name = "value"
+                )
+            } else {
+                return(NULL)
+            }
+        }
+        # Label with mediator name for the plot title
+        ae$trait <- as.character(row$mediator_name[1] %||% row$mediator_gene_symbol[1] %||% row$mediator[1])
+        return(ae)
+    })
+
+    output[[ns_app_controller("mediation_allele_effects_plot")]] <- shiny::renderPlot({
+        ae <- mediator_allele_effects_data()
+        if (is.null(ae) || nrow(ae) == 0) {
+            message("Mediator AE: no allele-effects data to plot")
+            ggplot2::ggplot() +
+                ggplot2::theme_void() +
+                ggplot2::labs(title = "Select a mediator point to view allele effects")
+        } else {
+            message(sprintf("Mediator AE: rendering allele-effects plot with %d rows", nrow(ae)))
+            ggplot_alleles(ae)
+        }
+    })
 }
 
 # Launch the app

@@ -344,11 +344,22 @@ mediation_tab_ui <- function(current_category = NULL) {
             style = "padding: 8px 12px;",
             shiny::uiOutput(shiny::NS("app_controller", "mediation_plot_container"))
         )
-        # Posterior probabilities bar plot for clicked mediator
+        # Posterior probabilities bar plot + Allele effects (side-by-side)
         content[[length(content) + 1]] <- shiny::div(
             style = "padding: 8px 12px; margin-top: 6px;",
-            plotly::plotlyOutput(shiny::NS("app_controller", "mediation_posterior_plot"), height = "320px") %>%
-                shinycssloaders::withSpinner(type = 8, color = "#8e44ad")
+            shiny::div(
+                style = "display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap;",
+                shiny::div(
+                    style = "flex: 1 1 380px; min-width: 320px;",
+                    plotly::plotlyOutput(shiny::NS("app_controller", "mediation_posterior_plot"), height = "340px") %>%
+                        shinycssloaders::withSpinner(type = 8, color = "#8e44ad")
+                ),
+                shiny::div(
+                    style = "flex: 1 1 380px; min-width: 320px;",
+                    shiny::plotOutput(shiny::NS("app_controller", "mediation_allele_effects_plot"), height = "340px") %>%
+                        shinycssloaders::withSpinner(type = 8, color = "#3498db")
+                )
+            )
         )
         do.call(shiny::tagList, content)
     }
