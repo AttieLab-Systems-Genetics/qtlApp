@@ -15,6 +15,8 @@
 #' @importFrom shiny tags div selectInput h6 conditionalPanel
 #' @export
 mediation_tab_ui <- function(current_category = NULL) {
+    # Debug: entering UI builder
+    message(sprintf("MediationTab UI: init (current_category = %s)", as.character(current_category %||% "<NULL>")))
     # Discover mediation files
     candidate_dirs <- c("/data/dev/miniViewer_3.0", file.path(getwd(), "data"))
     files <- unlist(lapply(candidate_dirs, function(d) {
@@ -23,6 +25,17 @@ mediation_tab_ui <- function(current_category = NULL) {
         }
         list.files(d, pattern = "_mediator_all_mediators\\.csv$", full.names = TRUE, recursive = TRUE)
     }))
+
+    message(sprintf("MediationTab UI: discovered %d mediation files", length(files)))
+    if (length(files) > 0) {
+        # Log a small sample to keep logs readable
+        sample_files <- utils::head(basename(files), 5)
+        message(sprintf(
+            "MediationTab UI: sample files: %s%s",
+            paste(sample_files, collapse = "; "),
+            if (length(files) > 5) "; ..." else ""
+        ))
+    }
 
     if (length(files) == 0) {
         return(
@@ -40,6 +53,8 @@ mediation_tab_ui <- function(current_category = NULL) {
         if (length(grp) == 3) list(first = grp[2], second = grp[3], file = f) else NULL
     })
     parsed <- Filter(Negate(is.null), parsed)
+
+    message(sprintf("MediationTab UI: parsed %d mediation entries (regex matched)", length(parsed)))
 
     if (length(parsed) == 0) {
         return(
@@ -74,7 +89,12 @@ mediation_tab_ui <- function(current_category = NULL) {
             NULL
         )
         if (!is.null(allowed_prefixes)) {
+            message(sprintf(
+                "MediationTab UI: applying category filter for '%s' with prefixes: %s",
+                current_category, paste(allowed_prefixes, collapse = ", ")
+            ))
             keep <- Reduce(`|`, lapply(allowed_prefixes, function(pfx) startsWith(df$first, pfx)))
+            message(sprintf("MediationTab UI: kept %d/%d rows after category filter", sum(keep), nrow(df)))
             df <- df[keep, , drop = FALSE]
         }
     }
@@ -85,6 +105,11 @@ mediation_tab_ui <- function(current_category = NULL) {
     sex_m_mask <- grepl("qtlxsex_in_male_mice$", df$first, ignore.case = TRUE)
     diet_hc_mask <- grepl("qtlxdiet_in_HC_mice$", df$first, ignore.case = TRUE)
     diet_hf_mask <- grepl("qtlxdiet_in_HF_mice$", df$first, ignore.case = TRUE)
+
+    message(sprintf(
+        "MediationTab UI: masks -> additive:%d, sex(F):%d, sex(M):%d, diet(HC):%d, diet(HF):%d",
+        sum(add_mask), sum(sex_f_mask), sum(sex_m_mask), sum(diet_hc_mask), sum(diet_hf_mask)
+    ))
 
     # Humanize SECOND token labels (e.g., "liver_genes" -> "Liver Genes")
     prettify_second <- function(x) {
@@ -111,6 +136,10 @@ mediation_tab_ui <- function(current_category = NULL) {
             add_rows$file,
             prettify_second(add_rows$second)
         )
+        message(sprintf(
+            "MediationTab UI: additive choices = [%s]",
+            paste(sprintf("%s -> %s", names(additive_choices[[1]]), basename(additive_choices[[1]])), collapse = "; ")
+        ))
     }
 
     sex_f_rows <- df[sex_f_mask, , drop = FALSE]
@@ -120,6 +149,10 @@ mediation_tab_ui <- function(current_category = NULL) {
             sex_f_rows$file,
             prettify_second(sex_f_rows$second)
         )
+        message(sprintf(
+            "MediationTab UI: sex(F) choices = [%s]",
+            paste(sprintf("%s -> %s", names(sex_choices[[1]]), basename(sex_choices[[1]])), collapse = "; ")
+        ))
     }
 
     sex_m_rows <- df[sex_m_mask, , drop = FALSE]
@@ -129,6 +162,8 @@ mediation_tab_ui <- function(current_category = NULL) {
             sex_m_rows$file,
             prettify_second(sex_m_rows$second)
         )
+        # Log only count to avoid excessive logging
+        message(sprintf("MediationTab UI: sex(M) choices count = %d", length(sex_choices[["Interactive - Sex (Male)"]])))
     }
 
     diet_hc_rows <- df[diet_hc_mask, , drop = FALSE]
@@ -138,6 +173,7 @@ mediation_tab_ui <- function(current_category = NULL) {
             diet_hc_rows$file,
             prettify_second(diet_hc_rows$second)
         )
+        message(sprintf("MediationTab UI: diet(HC) choices count = %d", length(diet_choices[["Interactive - Diet (HC)"]])))
     }
 
     diet_hf_rows <- df[diet_hf_mask, , drop = FALSE]
@@ -147,6 +183,7 @@ mediation_tab_ui <- function(current_category = NULL) {
             diet_hf_rows$file,
             prettify_second(diet_hf_rows$second)
         )
+        message(sprintf("MediationTab UI: diet(HF) choices count = %d", length(diet_choices[["Interactive - Diet (HF)"]])))
     }
 
     if (length(additive_choices) == 0 && length(sex_choices) == 0 && length(diet_choices) == 0) {
@@ -158,18 +195,74 @@ mediation_tab_ui <- function(current_category = NULL) {
         )
     }
 
-    # Defaults per panel
+    # Defaults per panel with preference for FIRST-token matching the current category
+    pick_preferred_default <- function(choice_vector, prefer_first_prefix = NULL, prefer_second_exact = NULL) {
+        # choice_vector: named vector, values=full file paths, names=labels
+        if (is.null(choice_vector) || length(choice_vector) == 0) {
+            return(NULL)
+        }
+        files <- as.character(unname(choice_vector))
+        labels <- names(choice_vector)
+        # Parse first/second from filename
+        nm <- basename(files)
+        m <- regexec("^(.+?)_additive_(.+?)_mediator_all_mediators\\.csv$", nm)
+        grp <- regmatches(nm, m)
+        first <- vapply(grp, function(g) if (length(g) == 3) g[2] else NA_character_, character(1))
+        second <- vapply(grp, function(g) if (length(g) == 3) g[3] else NA_character_, character(1))
+        idx <- seq_along(files)
+        # Step 1: filter to preferred FIRST prefix if provided
+        if (!is.null(prefer_first_prefix) && nzchar(prefer_first_prefix)) {
+            keep <- startsWith(tolower(first), tolower(prefer_first_prefix))
+            if (any(keep, na.rm = TRUE)) {
+                idx <- which(keep)
+            }
+        }
+        # Step 2: within remaining, prefer an exact SECOND token if provided
+        if (!is.null(prefer_second_exact) && nzchar(prefer_second_exact)) {
+            match_second <- which(tolower(second[idx]) == tolower(prefer_second_exact))
+            if (length(match_second) > 0) {
+                idx <- idx[match_second]
+            }
+        }
+        # Pick the first remaining
+        files[idx[1]]
+    }
+
+    preferred_first_by_category <- function(cat) {
+        if (is.null(cat) || !nzchar(cat)) {
+            return(NULL)
+        }
+        switch(cat,
+            "Liver Genes" = "liver_genes_",
+            "Liver Isoforms" = "liver_isoforms_",
+            "Liver Lipids" = "liver_lipids_",
+            "Clinical Traits" = "clinical_traits_",
+            "Plasma Metabolites" = "plasma_metabolites_",
+            NULL
+        )
+    }
+
+    pref_first <- preferred_first_by_category(current_category)
+
     default_add <- {
-        if (!is.null(additive_choices[["Additive (All mice)"]])) additive_choices[["Additive (All mice)"]][[1]] else NULL
+        vec <- additive_choices[["Additive (All mice)"]]
+        # For Liver Lipids, prefer SECOND == liver_genes by default
+        prefer_second <- if (!is.null(current_category) && identical(current_category, "Liver Lipids")) "liver_genes" else NULL
+        pick_preferred_default(vec, prefer_first_prefix = pref_first, prefer_second_exact = prefer_second)
     }
     default_sex <- {
-        avail <- unlist(sex_choices, use.names = FALSE)
-        if (length(avail) > 0) avail[[1]] else NULL
+        vec <- unlist(sex_choices, use.names = FALSE)
+        if (length(vec) == 0) NULL else pick_preferred_default(vec, prefer_first_prefix = pref_first)
     }
     default_diet <- {
-        avail <- unlist(diet_choices, use.names = FALSE)
-        if (length(avail) > 0) avail[[1]] else NULL
+        vec <- unlist(diet_choices, use.names = FALSE)
+        if (length(vec) == 0) NULL else pick_preferred_default(vec, prefer_first_prefix = pref_first)
     }
+
+    message(sprintf(
+        "MediationTab UI: defaults -> additive:%s, sex:%s, diet:%s",
+        basename(default_add %||% "<none>"), basename(default_sex %||% "<none>"), basename(default_diet %||% "<none>")
+    ))
 
     {
         panels <- list()
@@ -192,6 +285,7 @@ mediation_tab_ui <- function(current_category = NULL) {
                     )
                 )
             )
+            message(sprintf("MediationTab UI: rendering additive panel with %d choice group(s)", length(additive_choices)))
         }
         if (length(sex_choices) > 0) {
             panels[[length(panels) + 1]] <- shiny::conditionalPanel(
@@ -207,6 +301,7 @@ mediation_tab_ui <- function(current_category = NULL) {
                     )
                 )
             )
+            message(sprintf("MediationTab UI: rendering sex panel with %d choice group(s)", length(sex_choices)))
         }
         if (length(diet_choices) > 0) {
             panels[[length(panels) + 1]] <- shiny::conditionalPanel(
@@ -222,6 +317,7 @@ mediation_tab_ui <- function(current_category = NULL) {
                     )
                 )
             )
+            message(sprintf("MediationTab UI: rendering diet panel with %d choice group(s)", length(diet_choices)))
         }
 
         content <- list()

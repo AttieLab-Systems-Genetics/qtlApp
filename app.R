@@ -1331,13 +1331,101 @@ server <- function(input, output, session) {
         if (is.null(interaction_type)) {
             return(NULL)
         }
-        if (interaction_type == "sex") {
-            return(input$mediation_dataset_selector_sex %||% NULL)
+        # Debug: log current state and incoming selector values
+        current_category <- tryCatch(selected_dataset_category_reactive(), error = function(e) NULL)
+        add_val <- input$mediation_dataset_selector_additive %||% NULL
+        sex_val <- input$mediation_dataset_selector_sex %||% NULL
+        diet_val <- input$mediation_dataset_selector_diet %||% NULL
+        message(sprintf(
+            "Mediation select: interaction_type=%s, category=%s, selectors(add=%s, sex=%s, diet=%s)",
+            as.character(interaction_type), as.character(current_category %||% "<NULL>"),
+            basename(add_val %||% "<none>"), basename(sex_val %||% "<none>"), basename(diet_val %||% "<none>")
+        ))
+
+        chosen <- if (interaction_type == "sex") {
+            sex_val
         } else if (interaction_type == "diet") {
-            return(input$mediation_dataset_selector_diet %||% NULL)
+            diet_val
         } else {
-            return(input$mediation_dataset_selector_additive %||% NULL)
+            add_val
         }
+
+        if (!is.null(chosen) && nzchar(chosen)) {
+            nm <- basename(chosen)
+            m <- regexec("^(.+?)_additive_(.+?)_mediator_all_mediators\\.csv$", nm)
+            grp <- regmatches(nm, m)[[1]]
+            first_tok <- if (length(grp) == 3) grp[2] else NA_character_
+            second_tok <- if (length(grp) == 3) grp[3] else NA_character_
+            message(sprintf(
+                "Mediation select: chosen file=%s (exists=%s), first=%s, second=%s",
+                nm, file.exists(chosen), as.character(first_tok), as.character(second_tok)
+            ))
+
+            # Warn if SECOND token family appears incompatible with the current category
+            if (!is.null(current_category) && nzchar(current_category) && nzchar(second_tok)) {
+                allowed_seconds <- switch(current_category,
+                    "Liver Genes" = c("liver_genes", "liver_isoforms"),
+                    "Liver Isoforms" = c("liver_isoforms", "liver_genes"),
+                    "Liver Lipids" = c("liver_lipids", "liver_genes", "liver_isoforms"),
+                    "Clinical Traits" = c("clinical_traits", "liver_genes", "liver_isoforms"),
+                    "Plasma Metabolites" = c("plasma_metabolites", "liver_genes", "liver_isoforms"),
+                    character(0)
+                )
+                if (length(allowed_seconds) && !(tolower(second_tok) %in% tolower(allowed_seconds))) {
+                    warning(sprintf(
+                        "Mediation select: WARNING second token '%s' not in allowed set for category '%s' [%s]",
+                        second_tok, current_category, paste(allowed_seconds, collapse = ", ")
+                    ))
+                }
+            }
+
+            # Auto-correct FIRST token to match current category when possible
+            preferred_first_base <- switch(current_category,
+                "Liver Genes" = "liver_genes",
+                "Liver Isoforms" = "liver_isoforms",
+                "Liver Lipids" = "liver_lipids",
+                "Clinical Traits" = "clinical_traits",
+                "Plasma Metabolites" = "plasma_metabolites",
+                NA_character_
+            )
+            if (!is.na(preferred_first_base) && nzchar(first_tok) && !startsWith(tolower(first_tok), tolower(preferred_first_base))) {
+                new_first_tok <- sub("^(liver_genes|liver_isoforms|liver_lipids|clinical_traits|plasma_metabolites)", preferred_first_base, first_tok)
+                candidate_name <- paste0(new_first_tok, "_additive_", second_tok, "_mediator_all_mediators.csv")
+                candidate_dirs <- c("/data/dev/miniViewer_3.0", file.path(getwd(), "data"))
+                found <- NULL
+                for (d in candidate_dirs) {
+                    p1 <- file.path(d, candidate_name)
+                    if (file.exists(p1)) {
+                        found <- p1
+                        break
+                    }
+                    hits <- list.files(d, pattern = paste0("^", utils::glob2rx(candidate_name), "$"), full.names = TRUE, recursive = TRUE)
+                    if (length(hits) > 0) {
+                        found <- hits[[1]]
+                        break
+                    }
+                }
+                if (!is.null(found)) {
+                    message(sprintf("Mediation select: correcting FIRST token '%s' -> '%s'; switching to %s", first_tok, new_first_tok, basename(found)))
+                    chosen <- found
+                    # Reflect correction in UI to avoid future confusion
+                    input_id <- if (identical(interaction_type, "sex")) {
+                        "mediation_dataset_selector_sex"
+                    } else if (identical(interaction_type, "diet")) {
+                        "mediation_dataset_selector_diet"
+                    } else {
+                        "mediation_dataset_selector_additive"
+                    }
+                    try(shiny::updateSelectInput(session, input_id, selected = chosen), silent = TRUE)
+                } else {
+                    message(sprintf("Mediation select: attempted correction to '%s' but no matching file found", candidate_name))
+                }
+            }
+        } else {
+            message("Mediation select: no file chosen (NULL or empty)")
+        }
+
+        chosen %||% NULL
     })
 
     mediation_plot_data <- shiny::reactive({
@@ -1354,6 +1442,15 @@ server <- function(input, output, session) {
             warning(paste("Mediation file not found:", file_path))
             return(NULL)
         }
+
+        # Debug: summarize selected peak trait info and file
+        peak_trait_candidates <- c("trait", "gene_symbol", "phenotype", "metabolite", "metabolite_name")
+        trait_col_in_peak <- peak_trait_candidates[peak_trait_candidates %in% names(peak_info)]
+        trait_name_dbg <- if (length(trait_col_in_peak) > 0) as.character(peak_info[[trait_col_in_peak[1]]][1]) else NA_character_
+        message(sprintf(
+            "Mediation: begin load for trait='%s' using file='%s' (interaction=%s)",
+            as.character(trait_name_dbg), basename(file_path), as.character(interaction_type %||% "none")
+        ))
 
         # Selected peak position (Mb) and chromosome
         peak_chr <- as.character(peak_info$qtl_chr %||% peak_info$chr %||% peak_info$qtl_chr_char)
@@ -1372,6 +1469,7 @@ server <- function(input, output, session) {
             return(NULL)
         }
         available_cols <- names(header_dt)
+        message(sprintf("Mediation: header columns = [%s]", paste(available_cols, collapse = ", ")))
         base_cols <- c(
             "phenotype", "phenotype_gene_symbol",
             "qtl_chr", "qtl_pos", "qtl_lod",
@@ -1398,10 +1496,15 @@ server <- function(input, output, session) {
 
         # Determine phenotype columns in mediation file
         pheno_cols <- intersect(c("phenotype_gene_symbol", "phenotype"), names(dt))
+        message(sprintf("Mediation: phenotype columns detected = [%s]", paste(pheno_cols, collapse = ", ")))
         # Determine trait name from selected peak (prefer symbol)
         trait_candidates <- c("trait", "gene_symbol", "phenotype", "metabolite", "metabolite_name")
         trait_col_in_peak <- trait_candidates[trait_candidates %in% names(peak_info)]
         trait_name <- if (length(trait_col_in_peak) > 0) as.character(peak_info[[trait_col_in_peak[1]]][1]) else NULL
+        message(sprintf(
+            "Mediation: trait for filtering resolved to '%s' (from peak column '%s')",
+            as.character(trait_name %||% "<NULL>"), if (length(trait_col_in_peak) > 0) trait_col_in_peak[1] else "<none>"
+        ))
 
         # Filter mediation rows to the selected phenotype when possible
         if (length(pheno_cols) > 0 && !is.null(trait_name) && nzchar(trait_name)) {
@@ -1424,6 +1527,8 @@ server <- function(input, output, session) {
                 dt <- dt[idx]
             }
             message(sprintf("Mediation: rows after phenotype filter (%s): %s", trait_name, nrow(dt)))
+        } else {
+            message("Mediation: phenotype filter skipped (no trait or phenotype columns)")
         }
 
         # Standardize chromosome values for matching and try to locate the exact matching peak row
@@ -1439,6 +1544,7 @@ server <- function(input, output, session) {
         exact_idx <- which(!is.na(dt_qtl_chr_num) & dt_qtl_chr_num == peak_chr_num &
             !is.na(pos_num) & abs(pos_num - peak_pos) <= tol_pos &
             !is.na(lod_num) & abs(lod_num - peak_lod) <= tol_lod)
+        message(sprintf("Mediation: exact peak row matches found = %d", length(exact_idx)))
 
         center_pos <- NA_real_
         if (length(exact_idx) > 0) {
@@ -1449,6 +1555,7 @@ server <- function(input, output, session) {
             prelim_hi <- peak_pos + 4
             idx <- which(!is.na(dt_qtl_chr_num) & dt_qtl_chr_num == peak_chr_num & !is.na(pos_num) &
                 pos_num >= prelim_lo & pos_num <= prelim_hi)
+            message(sprintf("Mediation: interactive center search candidates in window [%0.3f, %0.3f] = %d", prelim_lo, prelim_hi, length(idx)))
             if (length(idx) > 0) {
                 # Prefer row with LOD closest to selected peak; otherwise highest LOD
                 lod_vals <- lod_num[idx]
@@ -1458,6 +1565,7 @@ server <- function(input, output, session) {
                     pick <- idx[which.max(lod_vals)]
                 }
                 center_pos <- pos_num[pick]
+                message(sprintf("Mediation: interactive center_pos chosen = %0.3f", center_pos))
             }
         } else {
             # Additive: require exact position match when possible. If not found, fall back to nearest within ±4 Mb.
@@ -1468,6 +1576,7 @@ server <- function(input, output, session) {
             if (length(idx) > 0) {
                 pick <- idx[which.min(abs(pos_num[idx] - peak_pos))]
                 center_pos <- pos_num[pick]
+                message(sprintf("Mediation: additive fallback center_pos chosen = %0.3f", center_pos))
             }
         }
 
@@ -1515,6 +1624,13 @@ server <- function(input, output, session) {
         # Row id to link click events back to data
         dt$row_id <- seq_len(nrow(dt))
 
+        # Debug: summarize mediator names
+        uniq_meds <- unique(dt$mediator_name)
+        message(sprintf(
+            "Mediation: mediator_name unique count = %d; sample = [%s]",
+            length(uniq_meds), paste(utils::head(uniq_meds, 6), collapse = "; ")
+        ))
+
         dt$interaction_type <- interaction_type %||% "none"
         dt$window_lo <- window_lo
         dt$window_hi <- window_hi
@@ -1523,7 +1639,9 @@ server <- function(input, output, session) {
         # Optional filter: show only complete mediators when toggle is on
         complete_only <- isTRUE(input$mediation_complete_only)
         if (complete_only) {
+            before_n <- nrow(dt)
             dt <- tryCatch(dt[dt$mediator_type == "complete", , drop = FALSE], error = function(e) dt)
+            message(sprintf("Mediation: applied 'complete_only' filter -> %d -> %d rows", before_n, nrow(dt)))
         }
         dt
     })
