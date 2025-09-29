@@ -1155,6 +1155,176 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             plt
         })
 
+        # Zoom-aware x-axis relabeling for main scan plot (restart Mb within each chromosome in All view)
+        shiny::observeEvent(plotly::event_data("plotly_relayout", source = ns("qtl_scan_plotly")),
+            {
+                ev <- plotly::event_data("plotly_relayout", source = ns("qtl_scan_plotly"))
+                main_par_list <- tryCatch(main_par_inputs(), error = function(e) NULL)
+                if (is.null(main_par_list) || is.null(main_par_list$selected_chr) || is.null(main_par_list$selected_chr())) {
+                    return(invisible(NULL))
+                }
+                # Only act in All-chromosome view; single-chr view already shows Mb positions
+                if (!identical(main_par_list$selected_chr(), "All")) {
+                    return(invisible(NULL))
+                }
+
+                proxy <- tryCatch(plotly::plotlyProxy(ns("render_plotly_plot"), session), error = function(e) NULL)
+                if (is.null(proxy)) {
+                    return(invisible(NULL))
+                }
+
+                # If autorange triggered, restore chromosome centers and labels
+                if (!is.null(ev[["xaxis.autorange"]]) && isTRUE(ev[["xaxis.autorange"]])) {
+                    df_full <- tryCatch(scan_table_chr(), error = function(e) NULL)
+                    if (!is.null(df_full) && nrow(df_full) > 0) {
+                        axisdf <- tryCatch(
+                            {
+                                dplyr::as_tibble(df_full) |>
+                                    dplyr::group_by(chr) |>
+                                    dplyr::summarise(center = (max(BPcum, na.rm = TRUE) + min(BPcum, na.rm = TRUE)) / 2, .groups = "drop")
+                            },
+                            error = function(e) NULL
+                        )
+                        if (!is.null(axisdf) && nrow(axisdf) > 0) {
+                            axisdf$chr <- chr_XYM(axisdf$chr)
+                            try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                                `xaxis.tickmode` = "array",
+                                `xaxis.tickvals` = axisdf$center,
+                                `xaxis.ticktext` = axisdf$chr
+                            )), silent = TRUE)
+                            return(invisible(NULL))
+                        }
+                    }
+                    try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                        `xaxis.tickmode` = "auto",
+                        `xaxis.tickvals` = NULL,
+                        `xaxis.ticktext` = NULL
+                    )), silent = TRUE)
+                    return(invisible(NULL))
+                }
+
+                x0 <- ev[["xaxis.range[0]"]]
+                x1 <- ev[["xaxis.range[1]"]]
+                if (is.null(x0) || is.null(x1) || !is.finite(x0) || !is.finite(x1)) {
+                    return(invisible(NULL))
+                }
+
+                df_map <- tryCatch(scan_table_chr(), error = function(e) NULL)
+                if (is.null(df_map) || nrow(df_map) == 0) {
+                    return(invisible(NULL))
+                }
+                # Detect full-range zoom and restore chromosome centers and labels
+                min_bp <- suppressWarnings(min(df_map$BPcum, na.rm = TRUE))
+                max_bp <- suppressWarnings(max(df_map$BPcum, na.rm = TRUE))
+                if (is.finite(min_bp) && is.finite(max_bp) && max_bp > min_bp) {
+                    tol <- (max_bp - min_bp) * 0.01
+                    if (x0 <= (min_bp + tol) && x1 >= (max_bp - tol)) {
+                        axisdf <- tryCatch(
+                            {
+                                dplyr::as_tibble(df_map) |>
+                                    dplyr::group_by(chr) |>
+                                    dplyr::summarise(center = (max(BPcum, na.rm = TRUE) + min(BPcum, na.rm = TRUE)) / 2, .groups = "drop")
+                            },
+                            error = function(e) NULL
+                        )
+                        if (!is.null(axisdf) && nrow(axisdf) > 0) {
+                            axisdf$chr <- chr_XYM(axisdf$chr)
+                            try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                                `xaxis.tickmode` = "array",
+                                `xaxis.tickvals` = axisdf$center,
+                                `xaxis.ticktext` = axisdf$chr
+                            )), silent = TRUE)
+                        } else {
+                            try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                                `xaxis.tickmode` = "auto",
+                                `xaxis.tickvals` = NULL,
+                                `xaxis.ticktext` = NULL
+                            )), silent = TRUE)
+                        }
+                        return(invisible(NULL))
+                    }
+                }
+
+                # Focus on points within the zoomed x-range (BPcum space)
+                df_win <- tryCatch(dplyr::filter(df_map, BPcum >= x0, BPcum <= x1), error = function(e) NULL)
+                if (is.null(df_win) || nrow(df_win) == 0) {
+                    return(invisible(NULL))
+                }
+                chrs_in_view <- tryCatch(unique(df_win$chr), error = function(e) integer(0))
+
+                if (length(chrs_in_view) == 1) {
+                    chr_now <- chrs_in_view[1]
+                    df_chr <- tryCatch(dplyr::filter(df_win, chr == chr_now), error = function(e) NULL)
+                    if (is.null(df_chr) || nrow(df_chr) == 0) {
+                        return(invisible(NULL))
+                    }
+                    offset_vals <- suppressWarnings(df_chr$BPcum - df_chr$position)
+                    offset <- suppressWarnings(stats::median(offset_vals[is.finite(offset_vals)], na.rm = TRUE))
+                    if (!is.finite(offset)) {
+                        return(invisible(NULL))
+                    }
+                    mb_lo <- suppressWarnings(min(df_chr$position, na.rm = TRUE))
+                    mb_hi <- suppressWarnings(max(df_chr$position, na.rm = TRUE))
+                    if (!is.finite(mb_lo) || !is.finite(mb_hi) || mb_hi <= mb_lo) {
+                        return(invisible(NULL))
+                    }
+                    ticks_mbp <- tryCatch(pretty(c(mb_lo, mb_hi), n = 6), error = function(e) seq(mb_lo, mb_hi, length.out = 6))
+                    ticks_mbp <- ticks_mbp[ticks_mbp >= mb_lo & ticks_mbp <= mb_hi]
+                    tickvals <- offset + ticks_mbp
+                    ticktext <- paste0(round(ticks_mbp, 1), " Mb")
+                    try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                        `xaxis.tickmode` = "array",
+                        `xaxis.tickvals` = tickvals,
+                        `xaxis.ticktext` = ticktext
+                    )), silent = TRUE)
+                } else {
+                    # Multiple chromosomes in view: generate Mb ticks per chromosome and merge
+                    tickvals_all <- c()
+                    ticktext_all <- c()
+                    chrs_ordered <- sort(unique(as.numeric(chrs_in_view)))
+                    for (cnow in chrs_ordered) {
+                        df_chr <- tryCatch(dplyr::filter(df_win, chr == cnow), error = function(e) NULL)
+                        if (is.null(df_chr) || nrow(df_chr) == 0) next
+                        offset_vals <- suppressWarnings(df_chr$BPcum - df_chr$position)
+                        offset <- suppressWarnings(stats::median(offset_vals[is.finite(offset_vals)], na.rm = TRUE))
+                        if (!is.finite(offset)) next
+                        mb_lo <- suppressWarnings(min(df_chr$position, na.rm = TRUE))
+                        mb_hi <- suppressWarnings(max(df_chr$position, na.rm = TRUE))
+                        if (!is.finite(mb_lo) || !is.finite(mb_hi) || mb_hi <= mb_lo) next
+                        ticks_mbp <- tryCatch(pretty(c(mb_lo, mb_hi), n = 4), error = function(e) seq(mb_lo, mb_hi, length.out = 4))
+                        ticks_mbp <- ticks_mbp[ticks_mbp >= mb_lo & ticks_mbp <= mb_hi]
+                        tickvals_chr <- offset + ticks_mbp
+                        chr_label <- tryCatch(chr_XYM(cnow), error = function(e) as.character(cnow))
+                        ticktext_chr <- paste0("Chr", chr_label, " ", round(ticks_mbp, 1), " Mb")
+                        tickvals_all <- c(tickvals_all, tickvals_chr)
+                        ticktext_all <- c(ticktext_all, ticktext_chr)
+                    }
+                    max_ticks <- 14
+                    if (length(tickvals_all) > max_ticks) {
+                        idx <- seq(1, length(tickvals_all), length.out = max_ticks)
+                        idx <- unique(round(idx))
+                        tickvals_all <- tickvals_all[idx]
+                        ticktext_all <- ticktext_all[idx]
+                    }
+                    if (length(tickvals_all) > 0) {
+                        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                            `xaxis.tickmode` = "array",
+                            `xaxis.tickvals` = tickvals_all,
+                            `xaxis.ticktext` = ticktext_all
+                        )), silent = TRUE)
+                    } else {
+                        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                            `xaxis.tickmode` = "auto",
+                            `xaxis.tickvals` = NULL,
+                            `xaxis.ticktext` = NULL
+                        )), silent = TRUE)
+                    }
+                }
+                invisible(NULL)
+            },
+            ignoreInit = TRUE
+        )
+
         # NEW: Click handler for the difference plot
         shiny::observeEvent(plotly::event_data("plotly_click", source = ns("difference_plotly")), {
             ev_data <- plotly::event_data("plotly_click", source = ns("difference_plotly"))
@@ -1282,6 +1452,172 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 ) %>%
                 plotly::event_register("plotly_click")
         })
+
+        # Zoom-aware x-axis relabeling for difference plot (restart Mb within each chromosome in All view)
+        shiny::observeEvent(plotly::event_data("plotly_relayout", source = ns("difference_plotly")),
+            {
+                ev <- plotly::event_data("plotly_relayout", source = ns("difference_plotly"))
+                main_par_list <- tryCatch(main_par_inputs(), error = function(e) NULL)
+                if (is.null(main_par_list) || is.null(main_par_list$selected_chr) || is.null(main_par_list$selected_chr())) {
+                    return(invisible(NULL))
+                }
+                if (!identical(main_par_list$selected_chr(), "All")) {
+                    return(invisible(NULL))
+                }
+
+                proxy <- tryCatch(plotly::plotlyProxy(ns("render_difference_plot"), session), error = function(e) NULL)
+                if (is.null(proxy)) {
+                    return(invisible(NULL))
+                }
+
+                if (!is.null(ev[["xaxis.autorange"]]) && isTRUE(ev[["xaxis.autorange"]])) {
+                    df_full <- tryCatch(diff_plot_data_reactive(), error = function(e) NULL)
+                    if (!is.null(df_full) && nrow(df_full) > 0) {
+                        axisdf <- tryCatch(
+                            {
+                                dplyr::as_tibble(df_full) |>
+                                    dplyr::group_by(chr) |>
+                                    dplyr::summarise(center = (max(BPcum, na.rm = TRUE) + min(BPcum, na.rm = TRUE)) / 2, .groups = "drop")
+                            },
+                            error = function(e) NULL
+                        )
+                        if (!is.null(axisdf) && nrow(axisdf) > 0) {
+                            axisdf$chr <- chr_XYM(axisdf$chr)
+                            try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                                `xaxis.tickmode` = "array",
+                                `xaxis.tickvals` = axisdf$center,
+                                `xaxis.ticktext` = axisdf$chr
+                            )), silent = TRUE)
+                            return(invisible(NULL))
+                        }
+                    }
+                    try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                        `xaxis.tickmode` = "auto",
+                        `xaxis.tickvals` = NULL,
+                        `xaxis.ticktext` = NULL
+                    )), silent = TRUE)
+                    return(invisible(NULL))
+                }
+
+                x0 <- ev[["xaxis.range[0]"]]
+                x1 <- ev[["xaxis.range[1]"]]
+                if (is.null(x0) || is.null(x1) || !is.finite(x0) || !is.finite(x1)) {
+                    return(invisible(NULL))
+                }
+
+                df_map <- tryCatch(diff_plot_data_reactive(), error = function(e) NULL)
+                if (is.null(df_map) || nrow(df_map) == 0) {
+                    return(invisible(NULL))
+                }
+                # Detect full-range zoom and restore chromosome centers and labels
+                min_bp <- suppressWarnings(min(df_map$BPcum, na.rm = TRUE))
+                max_bp <- suppressWarnings(max(df_map$BPcum, na.rm = TRUE))
+                if (is.finite(min_bp) && is.finite(max_bp) && max_bp > min_bp) {
+                    tol <- (max_bp - min_bp) * 0.01
+                    if (x0 <= (min_bp + tol) && x1 >= (max_bp - tol)) {
+                        axisdf <- tryCatch(
+                            {
+                                dplyr::as_tibble(df_map) |>
+                                    dplyr::group_by(chr) |>
+                                    dplyr::summarise(center = (max(BPcum, na.rm = TRUE) + min(BPcum, na.rm = TRUE)) / 2, .groups = "drop")
+                            },
+                            error = function(e) NULL
+                        )
+                        if (!is.null(axisdf) && nrow(axisdf) > 0) {
+                            axisdf$chr <- chr_XYM(axisdf$chr)
+                            try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                                `xaxis.tickmode` = "array",
+                                `xaxis.tickvals` = axisdf$center,
+                                `xaxis.ticktext` = axisdf$chr
+                            )), silent = TRUE)
+                        } else {
+                            try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                                `xaxis.tickmode` = "auto",
+                                `xaxis.tickvals` = NULL,
+                                `xaxis.ticktext` = NULL
+                            )), silent = TRUE)
+                        }
+                        return(invisible(NULL))
+                    }
+                }
+
+                df_win <- tryCatch(dplyr::filter(df_map, BPcum >= x0, BPcum <= x1), error = function(e) NULL)
+                if (is.null(df_win) || nrow(df_win) == 0) {
+                    return(invisible(NULL))
+                }
+                chrs_in_view <- tryCatch(unique(df_win$chr), error = function(e) integer(0))
+
+                if (length(chrs_in_view) == 1) {
+                    chr_now <- chrs_in_view[1]
+                    df_chr <- tryCatch(dplyr::filter(df_win, chr == chr_now), error = function(e) NULL)
+                    if (is.null(df_chr) || nrow(df_chr) == 0) {
+                        return(invisible(NULL))
+                    }
+                    offset_vals <- suppressWarnings(df_chr$BPcum - df_chr$position)
+                    offset <- suppressWarnings(stats::median(offset_vals[is.finite(offset_vals)], na.rm = TRUE))
+                    if (!is.finite(offset)) {
+                        return(invisible(NULL))
+                    }
+                    mb_lo <- suppressWarnings(min(df_chr$position, na.rm = TRUE))
+                    mb_hi <- suppressWarnings(max(df_chr$position, na.rm = TRUE))
+                    if (!is.finite(mb_lo) || !is.finite(mb_hi) || mb_hi <= mb_lo) {
+                        return(invisible(NULL))
+                    }
+                    ticks_mbp <- tryCatch(pretty(c(mb_lo, mb_hi), n = 6), error = function(e) seq(mb_lo, mb_hi, length.out = 6))
+                    ticks_mbp <- ticks_mbp[ticks_mbp >= mb_lo & ticks_mbp <= mb_hi]
+                    tickvals <- offset + ticks_mbp
+                    ticktext <- paste0(round(ticks_mbp, 1), " Mb")
+                    try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                        `xaxis.tickmode` = "array",
+                        `xaxis.tickvals` = tickvals,
+                        `xaxis.ticktext` = ticktext
+                    )), silent = TRUE)
+                } else {
+                    tickvals_all <- c()
+                    ticktext_all <- c()
+                    chrs_ordered <- sort(unique(as.numeric(chrs_in_view)))
+                    for (cnow in chrs_ordered) {
+                        df_chr <- tryCatch(dplyr::filter(df_win, chr == cnow), error = function(e) NULL)
+                        if (is.null(df_chr) || nrow(df_chr) == 0) next
+                        offset_vals <- suppressWarnings(df_chr$BPcum - df_chr$position)
+                        offset <- suppressWarnings(stats::median(offset_vals[is.finite(offset_vals)], na.rm = TRUE))
+                        if (!is.finite(offset)) next
+                        mb_lo <- suppressWarnings(min(df_chr$position, na.rm = TRUE))
+                        mb_hi <- suppressWarnings(max(df_chr$position, na.rm = TRUE))
+                        if (!is.finite(mb_lo) || !is.finite(mb_hi) || mb_hi <= mb_lo) next
+                        ticks_mbp <- tryCatch(pretty(c(mb_lo, mb_hi), n = 4), error = function(e) seq(mb_lo, mb_hi, length.out = 4))
+                        ticks_mbp <- ticks_mbp[ticks_mbp >= mb_lo & ticks_mbp <= mb_hi]
+                        tickvals_chr <- offset + ticks_mbp
+                        chr_label <- tryCatch(chr_XYM(cnow), error = function(e) as.character(cnow))
+                        ticktext_chr <- paste0("Chr", chr_label, " ", round(ticks_mbp, 1), " Mb")
+                        tickvals_all <- c(tickvals_all, tickvals_chr)
+                        ticktext_all <- c(ticktext_all, ticktext_chr)
+                    }
+                    max_ticks <- 14
+                    if (length(tickvals_all) > max_ticks) {
+                        idx <- seq(1, length(tickvals_all), length.out = max_ticks)
+                        idx <- unique(round(idx))
+                        tickvals_all <- tickvals_all[idx]
+                        ticktext_all <- ticktext_all[idx]
+                    }
+                    if (length(tickvals_all) > 0) {
+                        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                            `xaxis.tickmode` = "array",
+                            `xaxis.tickvals` = tickvals_all,
+                            `xaxis.ticktext` = ticktext_all
+                        )), silent = TRUE)
+                    } else {
+                        try(plotly::plotlyProxyInvoke(proxy, "relayout", list(
+                            `xaxis.tickmode` = "auto",
+                            `xaxis.tickvals` = NULL,
+                            `xaxis.ticktext` = NULL
+                        )), silent = TRUE)
+                    }
+                }
+                invisible(NULL)
+            },
+            ignoreInit = TRUE
+        )
 
         # Simple click handler using distance-based approach (like the old app)
         shiny::observeEvent(plotly::event_data("plotly_click", source = ns("qtl_scan_plotly")), {
