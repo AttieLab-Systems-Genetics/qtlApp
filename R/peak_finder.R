@@ -134,7 +134,8 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
         essentials <- c(essentials, "phenotype")
 
         # Add gene-specific essentials for cis/trans plots
-        if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
+        # Include splice_junctions so cis/trans plot can access gene location
+        if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms", "splice_junctions")) {
           essentials <- c(essentials, "gene_symbol", "gene_id", "gene_chr", "gene_start", "cis")
         }
 
@@ -145,8 +146,8 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
             rename_vec[key] <- src
           }
         }
-        # Resolve gene candidates if applicable
-        if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) {
+        # Resolve gene candidates if applicable (also for splice_junctions)
+        if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms", "splice_junctions")) {
           for (key in names(gene_candidates)) {
             src <- find_first_col(gene_candidates[[key]], current_colnames)
             if (!is.na(src)) {
@@ -191,6 +192,10 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
         }
         if ("qtl_lod" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$qtl_lod)) {
           all_peaks_for_dataset$qtl_lod <- suppressWarnings(as.numeric(all_peaks_for_dataset$qtl_lod))
+        }
+        # Ensure gene_start is numeric for cis/trans arithmetic
+        if ("gene_start" %in% colnames(all_peaks_for_dataset) && !is.numeric(all_peaks_for_dataset$gene_start)) {
+          all_peaks_for_dataset$gene_start <- suppressWarnings(as.numeric(all_peaks_for_dataset$gene_start))
         }
         allele_cols_to_check <- c("A", "B", "C", "D", "E", "F", "G", "H")
         for (ac in allele_cols_to_check) {

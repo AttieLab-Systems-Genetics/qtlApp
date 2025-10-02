@@ -8,6 +8,15 @@ library(ggplot2)
 library(dplyr)
 library(stringr)
 
+# Silence data.table NSE notes for CRAN/R CMD check
+utils::globalVariables(c(
+  ":=", ".", "pos", "chr", "chr_num", "tot", "chr_len", "center",
+  "qtl_chr_char", "qtl_chr", "gene_chr_char", "gene_chr", "qtl_BPcum",
+  "qtl_pos", "i.tot", "gene_BPcum", "gene_start", "gene_label",
+  "gene_symbol", "gene_id", "trait", "hover_text", "cis", "data_name_norm",
+  "junction_id", "phenotype", "display_label", "qtl_lod"
+))
+
 # Source the helpers file to make get_qtlxcovar_file_paths available
 if (file.exists("R/helpers.R")) {
   source("R/helpers.R")
@@ -90,7 +99,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
     peaks_data <- shiny::reactive({
       shiny::req(import_reactives(), selected_dataset(), trait_type())
 
-      interaction_type <- if (is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
+      interaction_type <- if (shiny::is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
       base_dataset <- selected_dataset()
       use_qtlxcovar <- !is.null(interaction_type) && interaction_type != "none" && grepl("^HC_HF", base_dataset, ignore.case = TRUE)
 
@@ -129,7 +138,9 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       df <- peaks_data()
       shiny::req(main_par(), main_par()$LOD_thr)
       lod_threshold <- main_par()$LOD_thr()
-      interaction_type <- if (is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
+      interaction_type <- if (shiny::is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
+      # Determine trait type for downstream labeling logic
+      trait_type_val <- trait_type()
 
       if (is.null(df) || nrow(df) == 0) {
         return(NULL)
@@ -162,9 +173,9 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       }
 
       markers_data <- shiny::req(import_reactives()$markers)
-      interaction_type <- if (is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
+      interaction_type <- if (shiny::is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
 
-      chr_summary <- as.data.table(markers_data)[, .(chr_len = max(pos)), by = chr][
+      chr_summary <- data.table::as.data.table(markers_data)[, .(chr_len = max(pos)), by = chr][
         , chr_num := chr_to_numeric(chr)
       ][
         order(chr_num)
@@ -180,7 +191,42 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       plot_data_dt[chr_summary, on = .(qtl_chr_char = chr), qtl_BPcum := qtl_pos + i.tot]
       plot_data_dt[chr_summary, on = .(gene_chr_char = chr), gene_BPcum := gene_start + i.tot]
 
-      list(plot_data = plot_data_dt, chr_summary = chr_summary, interaction_type = interaction_type)
+      # Enrich labels for splice junctions: prefer junction_id (e.g., Gnai2_junc1)
+      if (identical(trait_type_val, "splice_junctions")) {
+        trait_map_df <- tryCatch(get_trait_list(import_reactives(), trait_type_val), error = function(e) NULL)
+        if (!is.null(trait_map_df) && all(c("data_name", "junction_id") %in% colnames(trait_map_df))) {
+          # Build normalized key from peaks
+          key_in_peaks <- if ("data_name" %in% names(plot_data_dt)) {
+            as.character(plot_data_dt[["data_name"]])
+          } else if ("junc_id" %in% names(plot_data_dt)) {
+            as.character(plot_data_dt[["junc_id"]])
+          } else if ("phenotype" %in% names(plot_data_dt)) {
+            as.character(plot_data_dt[["phenotype"]])
+          } else {
+            rep(NA_character_, nrow(plot_data_dt))
+          }
+          key_norm <- tolower(sub("^liver_", "", key_in_peaks))
+
+          # Map to junction_id via annotation list
+          map_key <- tolower(as.character(trait_map_df[["data_name"]]))
+          match_idx <- match(key_norm, map_key)
+          junction_id_vec <- ifelse(!is.na(match_idx), as.character(trait_map_df[["junction_id"]][match_idx]), NA_character_)
+
+          # Build display label vector
+          gene_symbol_vec <- if ("gene_symbol" %in% names(plot_data_dt)) as.character(plot_data_dt[["gene_symbol"]]) else rep(NA_character_, nrow(plot_data_dt))
+          phenotype_vec <- if ("phenotype" %in% names(plot_data_dt)) as.character(plot_data_dt[["phenotype"]]) else rep(NA_character_, nrow(plot_data_dt))
+          display_label_vec <- ifelse(!is.na(junction_id_vec) & nzchar(junction_id_vec),
+            junction_id_vec,
+            ifelse(!is.na(gene_symbol_vec) & nzchar(gene_symbol_vec) & gene_symbol_vec != "N/A",
+              gene_symbol_vec,
+              phenotype_vec
+            )
+          )
+          plot_data_dt$display_label <- display_label_vec
+        }
+      }
+
+      list(plot_data = plot_data_dt, chr_summary = chr_summary, interaction_type = interaction_type, trait_type = trait_type_val)
     })
 
     clicked_phenotype <- shiny::reactiveVal(NULL)
@@ -195,8 +241,10 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       chr_summary <- plot_data_list$chr_summary
       interaction_type <- plot_data_list$interaction_type
 
-      # Create a robust gene label for display/clicks: prefer symbol, else gene_id, else trait
-      if ("gene_id" %in% names(plot_data_dt)) {
+      # Create a robust label for display/clicks
+      if ("display_label" %in% names(plot_data_dt)) {
+        plot_data_dt[, gene_label := display_label]
+      } else if ("gene_id" %in% names(plot_data_dt)) {
         plot_data_dt[, gene_label := ifelse(!is.na(gene_symbol) & gene_symbol != "" & gene_symbol != "N/A", gene_symbol, gene_id)]
       } else if ("trait" %in% names(plot_data_dt)) {
         plot_data_dt[, gene_label := ifelse(!is.na(gene_symbol) & gene_symbol != "" & gene_symbol != "N/A", gene_symbol, trait)]

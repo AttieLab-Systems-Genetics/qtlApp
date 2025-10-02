@@ -842,7 +842,7 @@ server <- function(input, output, session) {
             tagList(
                 manhattanPlotUI(ns_app_controller("manhattan_plot_module"))
             )
-        } else if (category %in% c("Liver Genes", "Liver Isoforms")) {
+        } else if (category %in% c("Liver Genes", "Liver Isoforms", "Liver Splice Junctions")) {
             tagList(
                 cisTransPlotInput(ns_app_controller("cistrans_plot_module")),
                 cisTransPlotUI(ns_app_controller("cistrans_plot_module"))
