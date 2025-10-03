@@ -50,6 +50,12 @@ get_interactive_dataset_name <- function(base_dataset, interaction_type) {
             return("HC_HF Plasma plasma_metabolite, interactive (Sex_Diet)")
         }
     }
+    # HC_HF Liver Splice Junctions (supports Diet interaction)
+    else if (grepl("HC_HF.*Liver.*Splice.*Junction", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "diet") {
+            return("HC_HF Liver Splice Junctions, interactive (Diet)")
+        }
+    }
 
     # Fallback to original dataset if no mapping found
     return(base_dataset)

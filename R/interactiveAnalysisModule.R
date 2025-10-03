@@ -25,6 +25,10 @@ interactiveAnalysisServer <- function(id, selected_dataset_reactive) {
         get_interactive_dataset_name <- function(base_dataset, interaction_type) {
             if (is.null(interaction_type) || interaction_type == "none") {
                 return(base_dataset)
+            } else if (grepl("HC_HF.*Liver.*Splice.*Junction", base_dataset, ignore.case = TRUE)) {
+                if (interaction_type == "diet") {
+                    return("HC_HF Liver Splice Junctions, interactive (Diet)")
+                }
             }
 
             # HC_HF Liver Genes (supports both Sex and Diet interactions)

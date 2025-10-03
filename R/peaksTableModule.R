@@ -157,6 +157,8 @@ peaksTableServer <- function(
                 dataset_component <- "clinical_traits"
             } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
                 dataset_component <- "plasma_metabolites"
+            } else if (grepl("Liver.*Splice.*Junction", base_name, ignore.case = TRUE)) {
+                dataset_component <- "liver_splice_juncs"
             } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
                 dataset_component <- "liver_isoforms"
             } else {
@@ -196,6 +198,8 @@ peaksTableServer <- function(
                 dataset_component <- "clinical_traits"
             } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
                 dataset_component <- "plasma_metabolites"
+            } else if (grepl("Liver.*Splice.*Junction", base_name, ignore.case = TRUE)) {
+                dataset_component <- "liver_splice_juncs"
             } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
                 dataset_component <- "liver_isoforms"
             } else {
@@ -260,14 +264,55 @@ peaksTableServer <- function(
                 qtlx_file <- get_qtlx_summary_filepath(dataset_group, interaction_type)
                 if (!is.null(qtlx_file) && file.exists(qtlx_file)) {
                     dfs <- data.table::fread(qtlx_file)
-                    trait_col_s <- if ("gene_symbol" %in% colnames(dfs)) "gene_symbol" else if ("phenotype" %in% colnames(dfs)) "phenotype" else if ("metabolite" %in% colnames(dfs)) "metabolite" else if ("metabolite_name" %in% colnames(dfs)) "metabolite_name" else NULL
-                    if (!is.null(trait_col_s)) {
-                        dts <- data.table::as.data.table(dfs)[get(trait_col_s) == trait]
-                        if (nrow(dts) > 0) {
-                            label <- if (interaction_type == "sex") "QTLx Sex" else if (interaction_type == "diet") "QTLx Diet" else "QTLx Sex×Diet"
-                            dts[, Source := label]
-                            pieces[[length(pieces) + 1]] <- dts
+                    dta <- data.table::as.data.table(dfs)
+
+                    # Build candidate trait keys (normalized)
+                    ir_now <- tryCatch(resolve_import(), error = function(e) NULL)
+                    trait_raw <- trait
+                    # Attempt to resolve aliases in both interactive and additive contexts
+                    alias_int <- tryCatch(resolve_trait_aliases_for_peaks(ir_now, dataset_group, trait_raw), error = function(e) NULL)
+                    # Remove any trailing ", interactive (...)" without needing escaped parentheses
+                    base_name_ctx <- gsub(",[[:space:]]*interactive.*$", "", dataset_group, ignore.case = TRUE)
+                    additive_ctx <- paste0(trimws(base_name_ctx), ", additive")
+                    alias_add <- tryCatch(resolve_trait_aliases_for_peaks(ir_now, additive_ctx, trait_raw), error = function(e) NULL)
+
+                    # Extract junction id pattern (e.g., Gene_juncN or juncNNNN)
+                    trait_keys <- unique(na.omit(c(trait_raw, alias_int, alias_add)))
+                    trait_keys <- tolower(trimws(trait_keys))
+                    # also add a version with 'liver_' stripped
+                    trait_keys <- unique(c(trait_keys, sub("^liver_", "", trait_keys)))
+                    # if pattern contains _juncN, add gene_symbol prefix
+                    gene_pref <- tolower(sub("_junc[0-9]+$", "", trait_raw))
+                    if (!identical(gene_pref, tolower(trait_raw))) {
+                        trait_keys <- unique(c(trait_keys, gene_pref))
+                    }
+                    # if raw contains juncNNNN then add that token
+                    m <- regexpr("junc[0-9]+", tolower(trait_raw))
+                    if (m[1] > 0) {
+                        jtok <- substr(tolower(trait_raw), m[1], m[1] + attr(m, "match.length") - 1)
+                        trait_keys <- unique(c(trait_keys, jtok))
+                    }
+
+                    # Column set we can match against
+                    match_cols <- intersect(c("gene_symbol", "phenotype", "metabolite", "metabolite_name", "junction_id", "junc_id", "data_name"), names(dta))
+                    matches <- rep(FALSE, nrow(dta))
+                    for (mc in match_cols) {
+                        col_vals <- tolower(trimws(as.character(dta[[mc]])))
+                        # normalize values
+                        col_vals <- sub("^liver_", "", col_vals)
+                        # For gene_symbol also compare with gene prefix
+                        if (identical(mc, "gene_symbol") && !is.null(gene_pref) && nzchar(gene_pref)) {
+                            matches <- matches | (col_vals %in% c(trait_keys, gene_pref))
+                        } else {
+                            matches <- matches | (col_vals %in% trait_keys)
                         }
+                    }
+
+                    dts <- if (any(matches)) dta[matches] else NULL
+                    if (!is.null(dts) && nrow(dts) > 0) {
+                        label <- if (interaction_type == "sex") "QTLx Sex" else if (interaction_type == "diet") "QTLx Diet" else "QTLx Sex×Diet"
+                        dts[, Source := label]
+                        pieces[[length(pieces) + 1]] <- dts
                     }
                 }
 
@@ -281,7 +326,7 @@ peaksTableServer <- function(
                 display <- as.data.frame(combined)
 
                 # Build display columns
-                trait_cols <- intersect(colnames(display), c("gene_symbol", "phenotype"))
+                trait_cols <- intersect(colnames(display), c("gene_symbol", "phenotype", "junction_id", "junc_id", "metabolite", "metabolite_name", "data_name"))
                 lod_diff_candidates <- intersect(colnames(display), c("lod_diff", "qtl_lod_diff"))
                 selected_cols <- c(
                     "Source",
@@ -299,6 +344,16 @@ peaksTableServer <- function(
                     colnames(display)[match("gene_symbol", colnames(display))] <- "trait"
                 } else if ("phenotype" %in% colnames(display)) {
                     colnames(display)[match("phenotype", colnames(display))] <- "trait"
+                } else if ("junction_id" %in% colnames(display)) {
+                    colnames(display)[match("junction_id", colnames(display))] <- "trait"
+                } else if ("junc_id" %in% colnames(display)) {
+                    colnames(display)[match("junc_id", colnames(display))] <- "trait"
+                } else if ("metabolite" %in% colnames(display)) {
+                    colnames(display)[match("metabolite", colnames(display))] <- "trait"
+                } else if ("metabolite_name" %in% colnames(display)) {
+                    colnames(display)[match("metabolite_name", colnames(display))] <- "trait"
+                } else if ("data_name" %in% colnames(display)) {
+                    colnames(display)[match("data_name", colnames(display))] <- "trait"
                 }
                 return(display)
             }
@@ -560,9 +615,25 @@ peaksTableServer <- function(
                     return(NULL)
                 }
 
+                # Helper to translate selected row index through DT's current order
+                translate_selected_to_disp_index <- function(sel_idx_one) {
+                    # rows_current is a vector of original row indices of disp in current table order
+                    rows_current <- input$peaks_table_rows_current
+                    if (!is.null(rows_current) && length(rows_current) >= sel_idx_one) {
+                        # Map the 1-based selection to the corresponding original disp index
+                        idx <- suppressWarnings(as.integer(rows_current[sel_idx_one]))
+                        if (is.finite(idx) && idx >= 1 && idx <= nrow(disp)) {
+                            return(idx)
+                        }
+                    }
+                    # Fallback: assume no reordering
+                    return(sel_idx_one)
+                }
+
                 # Helper to map one display row index to the corresponding full row
                 map_one <- function(sel_idx) {
-                    selected_row <- disp[sel_idx, , drop = FALSE]
+                    disp_idx <- translate_selected_to_disp_index(sel_idx)
+                    selected_row <- disp[disp_idx, , drop = FALSE]
                     marker_val <- if ("marker" %in% colnames(selected_row)) selected_row$marker else NA
                     idx <- integer(0)
                     if (!is.na(marker_val) && "marker" %in% colnames(full)) {
@@ -575,8 +646,8 @@ peaksTableServer <- function(
                         if (!is.null(chr_col) && !is.null(pos_col) && !is.null(lod_col)) {
                             idx <- which(
                                 as.character(full[[chr_col]]) == as.character(selected_row$chr) &
-                                    abs(full[[pos_col]] - as.numeric(selected_row$pos)) < 1e-6 &
-                                    abs(full[[lod_col]] - as.numeric(selected_row$lod)) < 1e-6
+                                    abs(as.numeric(full[[pos_col]]) - as.numeric(selected_row$pos)) < 1e-6 &
+                                    abs(as.numeric(full[[lod_col]]) - as.numeric(selected_row$lod)) < 1e-6
                             )
                         }
                     }

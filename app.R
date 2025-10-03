@@ -992,7 +992,7 @@ server <- function(input, output, session) {
     output[[ns_app_controller("interactive_analysis_section")]] <- shiny::renderUI({
         dataset_group <- main_selected_dataset_group()
 
-        # Show interactive analysis controls for all HC_HF datasets (Genes, Lipids, Clinical Traits, Metabolites)
+        # Show interactive analysis controls for all HC_HF datasets (Genes, Lipids, Clinical Traits, Metabolites, Splice Junctions)
         if (!is.null(dataset_group) && grepl("^HC_HF", dataset_group, ignore.case = TRUE)) {
             # Preserve the current selection when re-rendering
             current_selection <- current_interaction_type_rv()
@@ -1023,6 +1023,11 @@ server <- function(input, output, session) {
                     "Sex interaction" = "sex",
                     "Diet interaction" = "diet",
                     "Sex x Diet interaction" = "sex_diet"
+                )
+            } else if (grepl("HC_HF.*Liver.*Splice.*Junction", dataset_group, ignore.case = TRUE)) {
+                # Splice Junctions: diet-interactive only (currently supported)
+                available_interactions <- c(available_interactions,
+                    "Diet interaction" = "diet"
                 )
             }
 
@@ -1164,6 +1169,8 @@ server <- function(input, output, session) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
                 } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
                     available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+                } else if (grepl("HC_HF.*Liver.*Splice.*Junction", dataset_group, ignore.case = TRUE)) {
+                    available_interactions <- c(available_interactions, "Diet interaction" = "diet")
                 }
 
                 interaction_analysis_ui <- tagList(
@@ -1249,8 +1256,8 @@ server <- function(input, output, session) {
         }
 
         toggles <- list()
-        # Check for Diet interaction availability (Genes, Lipids, Clinical, Plasma Metabolites)
-        if (any(grepl("Genes|Lipid|Clinical|Metabol", dataset_group, ignore.case = TRUE))) {
+        # Check for Diet interaction availability (Genes, Lipids, Clinical, Plasma Metabolites, Splice Junctions)
+        if (any(grepl("Genes|Lipid|Clinical|Metabol|Splice.*Junction", dataset_group, ignore.case = TRUE))) {
             toggles <- c(toggles, list(
                 shiny::checkboxInput(ns_app_controller("overlay_diet"), "Overlay Diet", FALSE, width = "auto")
             ))
@@ -2757,6 +2764,10 @@ server <- function(input, output, session) {
                     "Sex interaction" = "sex",
                     "Diet interaction" = "diet",
                     "Sex x Diet interaction" = "sex_diet"
+                )
+            } else if (grepl("HC_HF.*Liver.*Splice.*Junction", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions,
+                    "Diet interaction" = "diet"
                 )
             }
 

@@ -8,15 +8,6 @@ library(ggplot2)
 library(dplyr)
 library(stringr)
 
-# Silence data.table NSE notes for CRAN/R CMD check
-utils::globalVariables(c(
-  ":=", ".", "pos", "chr", "chr_num", "tot", "chr_len", "center",
-  "qtl_chr_char", "qtl_chr", "gene_chr_char", "gene_chr", "qtl_BPcum",
-  "qtl_pos", "i.tot", "gene_BPcum", "gene_start", "gene_label",
-  "gene_symbol", "gene_id", "trait", "hover_text", "cis", "data_name_norm",
-  "junction_id", "phenotype", "display_label", "qtl_lod"
-))
-
 # Source the helpers file to make get_qtlxcovar_file_paths available
 if (file.exists("R/helpers.R")) {
   source("R/helpers.R")
@@ -54,6 +45,9 @@ get_qtlxcovar_file_paths <- function(base_dataset, interaction_type) {
   file_prefix <- NULL
   if (grepl("Liver.*Genes", base_dataset, ignore.case = TRUE)) {
     file_prefix <- "DO1200_liver_genes_all_mice"
+  } else if (grepl("Liver.*Splice.*Junction", base_dataset, ignore.case = TRUE)) {
+    # Support Liver Splice Junctions interactive (Diet) qtlxcovar files (use 'juncs' token)
+    file_prefix <- "DO1200_liver_splice_juncs_all_mice"
   } else if (grepl("Clinical", base_dataset, ignore.case = TRUE)) {
     file_prefix <- "DO1200_clinical_traits_all_mice"
   } else {
@@ -150,7 +144,17 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       use_lod_diff <- is_qtlxcovar_data && !is.null(interaction_type) && interaction_type != "none"
       lod_column <- if (use_lod_diff) "lod_diff" else "qtl_lod"
 
-      req_cols <- c("qtl_chr", "qtl_pos", "cis", "gene_chr", "gene_start", lod_column)
+      # Determine y-axis (phenotype/gene/junction) chromosome and position columns
+      y_chr_candidates <- c("gene_chr", "junction_chr", "junc_chr")
+      y_pos_candidates <- c("gene_start", "junction_start", "junc_start", "gene_pos", "start")
+      y_chr_col <- y_chr_candidates[y_chr_candidates %in% colnames(df)][1]
+      y_pos_col <- y_pos_candidates[y_pos_candidates %in% colnames(df)][1]
+
+      # Required minimal columns with dynamic y-axis mapping
+      req_cols <- c("qtl_chr", "qtl_pos", "cis", lod_column)
+      if (is.na(y_chr_col) || is.na(y_pos_col)) {
+        return(NULL)
+      }
       if (!all(req_cols %in% colnames(df))) {
         return(NULL)
       }
@@ -160,6 +164,14 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
 
       # Filter NAs based on required columns
       plot_data_dt <- na.omit(plot_data_dt, cols = req_cols)
+
+      # If 'cis' column is missing, derive it from qtl_chr vs y-axis chr
+      if (!("cis" %in% colnames(plot_data_dt))) {
+        # Standardize chromosomes numerically for robust comparison
+        qtl_chr_num <- chr_to_numeric(plot_data_dt$qtl_chr)
+        y_chr_num <- chr_to_numeric(plot_data_dt[[y_chr_col]])
+        plot_data_dt[, cis := qtl_chr_num == y_chr_num]
+      }
 
       if (use_lod_diff) {
         plot_data_dt <- plot_data_dt[abs(get(lod_column)) >= lod_threshold]
@@ -173,7 +185,6 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       }
 
       markers_data <- shiny::req(import_reactives()$markers)
-      interaction_type <- if (shiny::is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
 
       chr_summary <- data.table::as.data.table(markers_data)[, .(chr_len = max(pos)), by = chr][
         , chr_num := chr_to_numeric(chr)
@@ -186,6 +197,9 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       ]
 
       plot_data_dt[, qtl_chr_char := chr_XYM(qtl_chr)]
+      # Standardize y chr/pos columns for downstream code
+      plot_data_dt[, gene_chr := get(y_chr_col)]
+      plot_data_dt[, gene_start := suppressWarnings(as.numeric(get(y_pos_col)))]
       plot_data_dt[, gene_chr_char := chr_XYM(gene_chr)]
 
       plot_data_dt[chr_summary, on = .(qtl_chr_char = chr), qtl_BPcum := qtl_pos + i.tot]

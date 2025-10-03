@@ -117,6 +117,49 @@ correct_file_path <- function(original_path, trait_type) {
     }
   }
 
+  # If the corrected path does not exist, add robust fallbacks for splice junctions
+  if (!file.exists(corrected_path)) {
+    tt <- tolower(processed_trait_type)
+    if (grepl("splice|junction", tt)) {
+      # Try toggling between 'splice_juncs' and 'splice_junctions'
+      alt1 <- sub("splice_juncs", "splice_junctions", corrected_path, ignore.case = TRUE)
+      if (!identical(alt1, corrected_path) && file.exists(alt1)) {
+        return(alt1)
+      }
+      alt2 <- sub("splice_junctions", "splice_juncs", corrected_path, ignore.case = TRUE)
+      if (!identical(alt2, corrected_path) && file.exists(alt2)) {
+        return(alt2)
+      }
+
+      # Directory scan fallback: search for a file matching chromosome token and expected keywords
+      dirpath <- dirname(corrected_path)
+      # Extract chromosome token from original path (e.g., 'chromosome1', 'chromosomeX')
+      chr_token_match <- regexpr("chromosome[0-9XYxy]+", basename(original_path), perl = TRUE)
+      chr_token <- if (chr_token_match[1] > 0) substr(basename(original_path), chr_token_match[1], chr_token_match[1] + attr(chr_token_match, "match.length") - 1) else NULL
+      if (!is.null(dirpath) && nzchar(dirpath) && !is.null(chr_token) && nzchar(chr_token) && dir.exists(dirpath)) {
+        # Build a permissive pattern: chromosomeN .* splice .* junc .* diet .* interactive .* (fst|csv)
+        # Prefer fst
+        patt_fst <- paste0("^", chr_token, ".*splice.*junc.*diet.*interactive.*\\.fst$")
+        candidates <- tryCatch(list.files(dirpath, pattern = patt_fst, ignore.case = TRUE, full.names = TRUE), error = function(e) character(0))
+        # Exclude index files ("_rows.fst" or "_row.fst"); we want the data file
+        if (length(candidates) > 0) {
+          candidates <- candidates[!grepl("(_rows|_row)\\.fst$", basename(candidates), ignore.case = TRUE)]
+        }
+        if (length(candidates) == 0) {
+          patt_csv <- paste0("^", chr_token, ".*splice.*junc.*diet.*interactive.*\\.csv$")
+          candidates <- tryCatch(list.files(dirpath, pattern = patt_csv, ignore.case = TRUE, full.names = TRUE), error = function(e) character(0))
+        }
+        if (length(candidates) > 0) {
+          # Prefer files that contain 'data_with_symbols' or 'data_processed'
+          pref <- candidates[grepl("data_with_symbols\\.fst$", candidates, ignore.case = TRUE)]
+          if (length(pref) == 0) pref <- candidates[grepl("data_processed\\.fst$", candidates, ignore.case = TRUE)]
+          chosen <- if (length(pref) > 0) pref[[1]] else candidates[[1]]
+          return(chosen)
+        }
+      }
+    }
+  }
+
   return(corrected_path)
 }
 
