@@ -142,46 +142,7 @@ peaksTableServer <- function(
             return(ir)
         }
 
-        # Helper to map interactive split-by peak files
-        get_interactive_peak_filepaths <- function(dataset_group, interaction_type) {
-            base_path <- "/data/dev/miniViewer_3.0/"
-            base_name <- gsub(",[[:space:]]*(interactive|additive).*$", "", dataset_group, ignore.case = TRUE)
-            base_name <- trimws(base_name)
-
-            dataset_component <- NULL
-            if (grepl("Liver Genes", base_name, ignore.case = TRUE)) {
-                dataset_component <- "liver_genes"
-            } else if (grepl("Liver Lipids", base_name, ignore.case = TRUE)) {
-                dataset_component <- "liver_lipids"
-            } else if (grepl("Clinical Traits", base_name, ignore.case = TRUE)) {
-                dataset_component <- "clinical_traits"
-            } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
-                dataset_component <- "plasma_metabolites"
-            } else if (grepl("Liver.*Splice.*Junction", base_name, ignore.case = TRUE)) {
-                dataset_component <- "liver_splice_juncs"
-            } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
-                dataset_component <- "liver_isoforms"
-            } else {
-                return(NULL)
-            }
-
-            if (interaction_type == "sex") {
-                return(list(
-                    file1 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_female_mice_additive.csv")),
-                    file2 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxsex_peaks_in_male_mice_additive.csv")),
-                    labels = c("Female", "Male")
-                ))
-            } else if (interaction_type == "diet") {
-                return(list(
-                    file1 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HC_mice_additive.csv")),
-                    file2 = file.path(base_path, paste0("DO1200_", dataset_component, "_qtlxdiet_peaks_in_HF_mice_additive.csv")),
-                    labels = c("HC Diet", "HF Diet")
-                ))
-            } else if (interaction_type == "sex_diet") {
-                return(NULL)
-            }
-            return(NULL)
-        }
+        # (removed) Unused helper for split-by peak filepaths
 
         # Helper to map QTLx summary peaks file (single file for interaction)
         get_qtlx_summary_filepath <- function(dataset_group, interaction_type) {
@@ -311,7 +272,7 @@ peaksTableServer <- function(
                     dts <- if (any(matches)) dta[matches] else NULL
                     if (!is.null(dts) && nrow(dts) > 0) {
                         label <- if (interaction_type == "sex") "QTLx Sex" else if (interaction_type == "diet") "QTLx Diet" else "QTLx Sex×Diet"
-                        dts[, Source := label]
+                        dts$Source <- label
                         pieces[[length(pieces) + 1]] <- dts
                     }
                 }
