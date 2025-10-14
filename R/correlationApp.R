@@ -26,6 +26,14 @@ correlationInput <- function(id) {
                 label = NULL,
                 placeholder = "Search trait...",
                 width = "280px"
+            ),
+            shiny::div(
+                style = "display: flex; align-items: center; gap: 6px;",
+                shiny::checkboxInput(
+                    inputId = ns("use_adjusted"),
+                    label = "Covariate-Adjusted",
+                    value = FALSE
+                )
             )
         )
     )
@@ -73,9 +81,22 @@ correlationServer <- function(id, import_reactives, main_par) {
     shiny::moduleServer(id, function(input, output, session) {
         ns <- session$ns
 
-        # Prefer Docker-mounted correlation dir(s)
-        correlations_dir <- "/data/dev/miniViewer_3.0"
+        # Use local qtlApp data directory for correlations (mounted in Docker)
+        correlations_dir <- "/data/correlations"
 
+        # Helper function to convert file path to adjusted version
+        get_adjusted_file_path <- function(file_path, use_adjusted = FALSE) {
+            if (!use_adjusted) {
+                return(file_path)
+            }
+            # Replace _corr.csv with _genlitsexbydiet_adj_corr.csv
+            # Replace _pval.csv with _genlitsexbydiet_adj_pval.csv
+            # Replace _num_mice.csv with _genlitsexbydiet_adj_num_mice.csv
+            file_path <- sub("_corr\\.csv$", "_genlitsexbydiet_adj_corr.csv", file_path)
+            file_path <- sub("_pval\\.csv$", "_genlitsexbydiet_adj_pval.csv", file_path)
+            file_path <- sub("_num_mice\\.csv$", "_genlitsexbydiet_adj_num_mice.csv", file_path)
+            return(file_path)
+        }
 
         # Map internal trait type to correlation file tokens and labels
         trait_type_to_token <- function(trait_type_char) {
@@ -97,6 +118,9 @@ correlationServer <- function(id, import_reactives, main_par) {
             if (grepl("clinical", trait_type_char, ignore.case = TRUE)) {
                 return("clinical_traits")
             }
+            if (grepl("splice.*junc", trait_type_char, ignore.case = TRUE)) {
+                return("liver_splice_juncs")
+            }
             return(NULL)
         }
 
@@ -107,6 +131,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 liver_lipids = "Liver Lipids",
                 plasma_metabolites = "Plasma Metabolites",
                 clinical_traits = "Clinical Traits",
+                liver_splice_juncs = "Liver Splice Junctions",
                 token
             )
         }
@@ -179,7 +204,9 @@ correlationServer <- function(id, import_reactives, main_par) {
 
             files <- character(0)
             if (dir.exists(correlations_dir)) {
-                files <- list.files(correlations_dir, pattern = "_corr\\.csv$", full.names = TRUE)
+                all_files <- list.files(correlations_dir, pattern = "_corr\\.csv$", full.names = TRUE)
+                # Exclude adjusted correlation files - they should only appear when checkbox is clicked
+                files <- all_files[!grepl("_adj_corr\\.csv$", all_files)]
             } else {
                 warning("correlationServer: correlations_dir not found: ", correlations_dir)
             }
@@ -329,16 +356,26 @@ correlationServer <- function(id, import_reactives, main_par) {
             trait <- current_trait_reactive()
             shiny::req(trait)
 
-            file_path <- input$correlation_dataset_selector
+            # Get the appropriate file path based on adjusted toggle
+            use_adjusted <- isTRUE(input$use_adjusted)
+            file_path <- get_adjusted_file_path(input$correlation_dataset_selector, use_adjusted)
+
             if (!file.exists(file_path)) {
-                shiny::showNotification(paste("Correlation file not found:", basename(file_path)), type = "error", duration = 4)
+                msg <- if (use_adjusted) {
+                    paste("Covariate-adjusted correlation file not found:", basename(file_path))
+                } else {
+                    paste("Correlation file not found:", basename(file_path))
+                }
+                shiny::showNotification(msg, type = "error", duration = 4)
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
             # Determine which side (source/target) corresponds to the current trait type
             pairs_dt <- list_available_pairs()
             shiny::req(nrow(pairs_dt) > 0)
             token <- current_type_token()
-            row <- pairs_dt[file == file_path]
+            # Use the base (unadjusted) path to look up in pairs_dt
+            base_file_path <- input$correlation_dataset_selector
+            row <- pairs_dt[file == base_file_path]
             shiny::req(nrow(row) == 1)
 
             side_token <- if (row$source[1] == token) row$source[1] else if (row$target[1] == token) row$target[1] else token
@@ -361,7 +398,8 @@ correlationServer <- function(id, import_reactives, main_par) {
                 out <- dt[, .(trait = phenotype, correlation_value = .SD[[1]]), .SDcols = key_info$key]
 
                 # Add p-values from companion file if available
-                pval_path <- sub("_corr\\.csv$", "_pval.csv", file_path)
+                pval_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_pval.csv", file_path)
+                pval_path <- sub("_corr\\.csv$", "_pval.csv", pval_path)
                 if (file.exists(pval_path)) {
                     psel <- c("phenotype", "Phenotype", key_info$key)
                     psel <- psel[psel %in% names(data.table::fread(pval_path, nrows = 0))]
@@ -374,7 +412,8 @@ correlationServer <- function(id, import_reactives, main_par) {
                     out[, p_value := as.numeric(NA)]
                 }
                 # Add num_mice from companion file if available
-                nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", file_path)
+                nmouse_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_num_mice.csv", file_path)
+                nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", nmouse_path)
                 if (file.exists(nmouse_path)) {
                     nsel <- c("phenotype", "Phenotype", key_info$key)
                     nsel <- nsel[nsel %in% names(data.table::fread(nmouse_path, nrows = 0))]
@@ -409,7 +448,8 @@ correlationServer <- function(id, import_reactives, main_par) {
                 out <- long_dt[, .(trait, correlation_value)]
 
                 # Add p-values from companion pval file (same row)
-                pval_path <- sub("_corr\\.csv$", "_pval.csv", file_path)
+                pval_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_pval.csv", file_path)
+                pval_path <- sub("_corr\\.csv$", "_pval.csv", pval_path)
                 if (file.exists(pval_path)) {
                     pdt_full <- data.table::fread(pval_path)
                     if ("Phenotype" %in% names(pdt_full)) data.table::setnames(pdt_full, "Phenotype", "phenotype")
@@ -434,7 +474,8 @@ correlationServer <- function(id, import_reactives, main_par) {
                 }
 
                 # Add num_mice from companion num_mice file (same row)
-                nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", file_path)
+                nmouse_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_num_mice.csv", file_path)
+                nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", nmouse_path)
                 if (file.exists(nmouse_path)) {
                     nfull <- data.table::fread(nmouse_path)
                     if ("Phenotype" %in% names(nfull)) data.table::setnames(nfull, "Phenotype", "phenotype")

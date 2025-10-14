@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY install_packages.R /tmp/install_packages.R
 RUN Rscript /tmp/install_packages.R && rm /tmp/install_packages.R
 
+VOLUME ["/mnt/rdrive/mkeller3/General/main_directory/correlations"]
 # Force app logs to stderr
 ENV SHINY_LOG_STDERR=1
 
@@ -33,12 +34,12 @@ COPY app.R /srv/shiny-server/
 COPY R /srv/shiny-server/R/
 
 # Set ownership of the app directory
-RUN chown -R shiny:shiny /srv/shiny-server
+RUN chown -R shiny:shiny /srv/shiny-server && \
+    chmod -R 755 /srv/shiny-server
 
 # Expose the port Shiny Server runs on
 EXPOSE 3838
 
-USER shiny
-
+# Stay as root to access mounted directories, but shiny-server will drop to shiny user
 # Run the Shiny server
 CMD ["/usr/bin/shiny-server"]

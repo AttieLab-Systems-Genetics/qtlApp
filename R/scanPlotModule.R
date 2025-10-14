@@ -363,8 +363,24 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     # Do not preselect a peak by default; wait for explicit user click
                     selected_peak_rv(NULL)
                 } else {
-                    selected_peak_rv(NULL)
-                    message("scanServer: No peaks found for this trait, clearing selected peak.")
+                    # In interactive modes (sex/diet), we may be using QTLx peaks from the table.
+                    # Preserve any existing selection to allow table clicks to control allele effects.
+                    preserve_for_interactive <- FALSE
+                    if (!is.null(interaction_type_reactive)) {
+                        preserve_for_interactive <- tryCatch(
+                            {
+                                it <- interaction_type_reactive()
+                                !is.null(it) && it != "none"
+                            },
+                            error = function(e) FALSE
+                        )
+                    }
+                    if (isTRUE(preserve_for_interactive)) {
+                        message("scanServer: No additive peaks; preserving selected peak for interactive mode.")
+                    } else {
+                        selected_peak_rv(NULL)
+                        message("scanServer: No peaks found for this trait, clearing selected peak.")
+                    }
                 }
             },
             ignoreNULL = TRUE,
