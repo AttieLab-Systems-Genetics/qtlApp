@@ -1,3 +1,10 @@
+# Suppress data.table NSE warnings
+utils::globalVariables(c(
+    "phenotype", "correlation_value", "p_value", "num_mice",
+    "abs_correlation", "abs_corr_temp", ".N", ".SD", "target",
+    ".", ":="
+))
+
 #' Correlation Module Inputs
 #'
 #' @param id Module ID.
@@ -73,9 +80,10 @@ correlationUI <- function(id) {
 #' @param import_reactives Reactive that returns a list containing file_directory and annotation_list.
 #' @param main_par Reactive that returns a list containing selected_dataset and which_trait.
 #' @return Invisibly returns NULL. UI is rendered via outputs.
-#' @importFrom data.table fread as.data.table melt setDT setnames
-#' @importFrom DT DTOutput renderDT datatable
-#' @importFrom shiny moduleServer NS reactive req validate need observeEvent updateSelectInput updateSelectizeInput
+#' @importFrom data.table fread as.data.table melt setDT setnames setorder
+#' @importFrom DT DTOutput renderDT datatable formatRound formatStyle
+#' @importFrom shiny moduleServer NS reactive req validate need observeEvent updateSelectInput updateSelectizeInput debounce showNotification
+#' @importFrom htmlwidgets JS
 #' @export
 correlationServer <- function(id, import_reactives, main_par) {
     shiny::moduleServer(id, function(input, output, session) {
@@ -154,6 +162,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                     try(
                         {
                             ann <- readRDS(p)
+                            message("correlationApp: Loaded annotation from ", p)
                         },
                         silent = TRUE
                     )
@@ -162,9 +171,13 @@ correlationServer <- function(id, import_reactives, main_par) {
             }
             if (is.null(ann)) {
                 imp <- import_reactives()
-                if (!is.null(imp) && !is.null(imp$annotation_list)) ann <- imp$annotation_list
+                if (!is.null(imp) && !is.null(imp$annotation_list)) {
+                    ann <- imp$annotation_list
+                    message("correlationApp: Loaded annotation from import_reactives")
+                }
             }
             if (is.null(ann) || is.null(ann$genes)) {
+                message("correlationApp: No annotation data available for gene mapping")
                 return(NULL)
             }
             genes_dt <- ann$genes
@@ -174,8 +187,10 @@ correlationServer <- function(id, import_reactives, main_par) {
             id_col <- id_candidates[id_candidates %in% colnames(genes_dt)][1]
             sym_col <- sym_candidates[sym_candidates %in% colnames(genes_dt)][1]
             if (is.na(id_col) || is.na(sym_col) || is.null(id_col) || is.null(sym_col)) {
+                message("correlationApp: Could not find ID or symbol columns in annotation. Columns: ", paste(colnames(genes_dt), collapse = ", "))
                 return(NULL)
             }
+            message("correlationApp: Using ID column '", id_col, "' and symbol column '", sym_col, "'")
             # Build a named vector: names = gene ids, values = symbols
             valid_rows <- !is.na(genes_dt[[id_col]]) & nzchar(as.character(genes_dt[[id_col]]))
             ids <- as.character(genes_dt[[id_col]][valid_rows])
@@ -183,6 +198,7 @@ correlationServer <- function(id, import_reactives, main_par) {
             syms[is.na(syms)] <- ""
             out_map <- syms
             names(out_map) <- ids
+            message("correlationApp: Created gene symbol map with ", length(out_map), " entries")
             annotation_map_rv(out_map)
             out_map
         }
@@ -193,6 +209,7 @@ correlationServer <- function(id, import_reactives, main_par) {
             expected_files <- c(
                 file.path(correlations_dir, "clinical_traits_vs_clinical_traits_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_clinical_traits_corr.csv"),
+                file.path(correlations_dir, "liver_genes_vs_liver_genes_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_liver_lipids_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_plasma_metabolites_corr.csv"),
                 file.path(correlations_dir, "liver_lipids_vs_liver_lipids_corr.csv"),
@@ -205,7 +222,7 @@ correlationServer <- function(id, import_reactives, main_par) {
             files <- character(0)
             if (dir.exists(correlations_dir)) {
                 all_files <- list.files(correlations_dir, pattern = "_corr\\.csv$", full.names = TRUE)
-                # Exclude adjusted correlation files - they should only appear when checkbox is clicked
+                # Only include base (unadjusted) files; adjusted versions are accessed via checkbox
                 files <- all_files[!grepl("_adj_corr\\.csv$", all_files)]
             } else {
                 warning("correlationServer: correlations_dir not found: ", correlations_dir)
@@ -293,6 +310,9 @@ correlationServer <- function(id, import_reactives, main_par) {
             ignoreInit = FALSE
         )
 
+        # Maximum number of correlations to return (for memory/performance optimization)
+        MAX_CORRELATIONS <- 500
+
         # Resolve the proper column or row key for the current trait in a given file
         # For gene traits, correlation files typically use columns like "liver_<gene_id>"
         resolve_trait_keys <- function(trait_string, token_side, corr_file, import) {
@@ -352,13 +372,29 @@ correlationServer <- function(id, import_reactives, main_par) {
 
         # Build the correlation table for display
         correlation_table <- shiny::reactive({
+            message("correlationApp: correlation_table reactive triggered")
             shiny::req(input$correlation_dataset_selector)
+            message("correlationApp: Dataset selector = ", input$correlation_dataset_selector)
             trait <- current_trait_reactive()
+            message("correlationApp: Current trait = ", if (is.null(trait)) "NULL" else trait)
             shiny::req(trait)
+            message("correlationApp: Trait req passed, proceeding with trait: ", trait)
 
             # Get the appropriate file path based on adjusted toggle
             use_adjusted <- isTRUE(input$use_adjusted)
             file_path <- get_adjusted_file_path(input$correlation_dataset_selector, use_adjusted)
+
+            # If file doesn't exist, try adjusted version (for genes-vs-genes case)
+            if (!file.exists(file_path) && !use_adjusted) {
+                adjusted_path <- get_adjusted_file_path(input$correlation_dataset_selector, TRUE)
+                if (file.exists(adjusted_path)) {
+                    file_path <- adjusted_path
+                    shiny::showNotification(
+                        "Only covariate-adjusted version available for this dataset. Using adjusted correlations.",
+                        type = "message", duration = 4
+                    )
+                }
+            }
 
             if (!file.exists(file_path)) {
                 msg <- if (use_adjusted) {
@@ -366,9 +402,11 @@ correlationServer <- function(id, import_reactives, main_par) {
                 } else {
                     paste("Correlation file not found:", basename(file_path))
                 }
+                message("correlationApp: File not found: ", file_path)
                 shiny::showNotification(msg, type = "error", duration = 4)
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
+            message("correlationApp: File found: ", file_path, " (size: ", round(file.info(file_path)$size / (1024^2), 0), " MB)")
             # Determine which side (source/target) corresponds to the current trait type
             pairs_dt <- list_available_pairs()
             shiny::req(nrow(pairs_dt) > 0)
@@ -380,12 +418,15 @@ correlationServer <- function(id, import_reactives, main_par) {
 
             side_token <- if (row$source[1] == token) row$source[1] else if (row$target[1] == token) row$target[1] else token
 
+            message("correlationApp: Resolving trait keys for trait=", trait, ", side_token=", side_token)
             key_info <- resolve_trait_keys(trait, side_token, file_path, import_reactives())
+            message("correlationApp: key_info mode = ", if (is.null(key_info)) "NULL" else key_info$mode)
             if (is.null(key_info)) {
                 shiny::showNotification(paste("Trait not found in correlation file:", trait), type = "warning", duration = 4)
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
 
+            message("correlationApp: Using ", key_info$mode, " mode for trait access")
             if (key_info$mode == "column") {
                 # Read only phenotype and the specific column for efficiency
                 select_cols <- c("phenotype", "Phenotype", key_info$key)
@@ -397,7 +438,18 @@ correlationServer <- function(id, import_reactives, main_par) {
                 # Build output table
                 out <- dt[, .(trait = phenotype, correlation_value = .SD[[1]]), .SDcols = key_info$key]
 
-                # Add p-values from companion file if available
+                # For large datasets (genes-vs-genes), filter to top N by absolute correlation
+                total_rows <- nrow(out)
+                truncated <- FALSE
+                if (total_rows > MAX_CORRELATIONS) {
+                    out[, abs_corr_temp := abs(correlation_value)]
+                    data.table::setorder(out, -abs_corr_temp)
+                    out <- out[1:MAX_CORRELATIONS]
+                    out[, abs_corr_temp := NULL]
+                    truncated <- TRUE
+                }
+
+                # Add p-values from companion file if available (only for filtered traits)
                 pval_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_pval.csv", file_path)
                 pval_path <- sub("_corr\\.csv$", "_pval.csv", pval_path)
                 if (file.exists(pval_path)) {
@@ -411,7 +463,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 } else {
                     out[, p_value := as.numeric(NA)]
                 }
-                # Add num_mice from companion file if available
+                # Add num_mice from companion file if available (only for filtered traits)
                 nmouse_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_num_mice.csv", file_path)
                 nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", nmouse_path)
                 if (file.exists(nmouse_path)) {
@@ -425,9 +477,32 @@ correlationServer <- function(id, import_reactives, main_par) {
                 } else {
                     out[, num_mice := as.numeric(NA)]
                 }
+
+                # Notify user if results were truncated
+                if (truncated) {
+                    shiny::showNotification(
+                        paste0("Showing top ", MAX_CORRELATIONS, " of ", total_rows, " correlations (filtered by absolute correlation)"),
+                        type = "message",
+                        duration = 5
+                    )
+                }
             } else {
                 # Row mode: read entire file, find the row, and transpose to long format
-                dt_full <- data.table::fread(file_path)
+                # For large files (genes-vs-genes), show progress notification
+                file_size_mb <- file.info(file_path)$size / (1024^2)
+                if (file_size_mb > 100) {
+                    shiny::showNotification(
+                        paste0("Loading large correlation file (", round(file_size_mb, 0), " MB). This may take 30-60 seconds..."),
+                        type = "message", duration = NULL, id = "loading_corr"
+                    )
+                }
+
+                dt_full <- data.table::fread(file_path, showProgress = FALSE)
+
+                if (file_size_mb > 100) {
+                    shiny::removeNotification(id = "loading_corr")
+                }
+
                 # Normalize phenotype column name
                 if ("Phenotype" %in% names(dt_full)) data.table::setnames(dt_full, "Phenotype", "phenotype")
                 if (!"phenotype" %in% names(dt_full)) {
@@ -447,11 +522,27 @@ correlationServer <- function(id, import_reactives, main_par) {
                 )
                 out <- long_dt[, .(trait, correlation_value)]
 
-                # Add p-values from companion pval file (same row)
+                # For large datasets (genes-vs-genes), filter to top N by absolute correlation
+                total_rows <- nrow(out)
+                truncated <- FALSE
+                if (total_rows > MAX_CORRELATIONS) {
+                    out[, abs_corr_temp := abs(correlation_value)]
+                    data.table::setorder(out, -abs_corr_temp)
+                    out <- out[1:MAX_CORRELATIONS]
+                    out[, abs_corr_temp := NULL]
+                    truncated <- TRUE
+                }
+
+                # Get the trait names we kept for efficient companion file reading
+                kept_traits <- out$trait
+
+                # Add p-values from companion pval file (same row, filtered columns)
                 pval_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_pval.csv", file_path)
                 pval_path <- sub("_corr\\.csv$", "_pval.csv", pval_path)
                 if (file.exists(pval_path)) {
-                    pdt_full <- data.table::fread(pval_path)
+                    # Only read phenotype column + kept trait columns for efficiency
+                    select_cols <- c("phenotype", as.character(kept_traits))
+                    pdt_full <- data.table::fread(pval_path, select = select_cols)
                     if ("Phenotype" %in% names(pdt_full)) data.table::setnames(pdt_full, "Phenotype", "phenotype")
                     if ("phenotype" %in% names(pdt_full)) {
                         prow <- pdt_full[phenotype == key_info$key]
@@ -473,11 +564,13 @@ correlationServer <- function(id, import_reactives, main_par) {
                     out[, p_value := as.numeric(NA)]
                 }
 
-                # Add num_mice from companion num_mice file (same row)
+                # Add num_mice from companion num_mice file (same row, filtered columns)
                 nmouse_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_num_mice.csv", file_path)
                 nmouse_path <- sub("_corr\\.csv$", "_num_mice.csv", nmouse_path)
                 if (file.exists(nmouse_path)) {
-                    nfull <- data.table::fread(nmouse_path)
+                    # Only read phenotype column + kept trait columns for efficiency
+                    select_cols <- c("phenotype", as.character(kept_traits))
+                    nfull <- data.table::fread(nmouse_path, select = select_cols)
                     if ("Phenotype" %in% names(nfull)) data.table::setnames(nfull, "Phenotype", "phenotype")
                     if ("phenotype" %in% names(nfull)) {
                         nrow_dt <- nfull[phenotype == key_info$key]
@@ -499,31 +592,86 @@ correlationServer <- function(id, import_reactives, main_par) {
                     out[, num_mice := as.numeric(NA)]
                 }
 
-                # Map gene ids -> symbols when the other side is genes (columns), i.e., when traits look like 'liver_<gene_id>'
-                has_liver_prefix <- any(grepl("^liver_ENSMUSG", out$trait, perl = TRUE))
-                if (has_liver_prefix) {
-                    id_to_symbol <- get_gene_symbol_map()
-                    gene_ids <- sub("^liver_", "", out$trait)
-                    if (!is.null(id_to_symbol)) {
+                # Notify user if results were truncated
+                if (truncated) {
+                    shiny::showNotification(
+                        paste0("Showing top ", MAX_CORRELATIONS, " of ", total_rows, " correlations (filtered by absolute correlation)"),
+                        type = "message",
+                        duration = 5
+                    )
+                }
+
+                # Gene mapping happens after both column and row mode complete
+            }
+
+            # Map gene ids -> symbols for ALL genes-vs-genes correlations (applies to both column and row mode)
+            message("correlationApp: After row/column processing. Rows: ", nrow(out), ", Columns: ", paste(colnames(out), collapse = ", "))
+            message("correlationApp: Sample traits before gene mapping: ", paste(head(out$trait, 3), collapse = ", "))
+            has_liver_prefix <- any(grepl("^liver_ENSMUSG", out$trait, perl = TRUE))
+            message("correlationApp: has_liver_prefix = ", has_liver_prefix)
+
+            if (has_liver_prefix) {
+                out$trait <- as.character(out$trait)
+                gene_ids <- sub("^liver_", "", out$trait)
+
+                message("correlationApp: Attempting to map ", length(gene_ids), " gene IDs to symbols")
+
+                # Use the same annotation source as resolve_trait_keys
+                imp <- import_reactives()
+                ann <- NULL
+                if (!is.null(imp) && !is.null(imp$annotation_list)) {
+                    ann <- imp$annotation_list
+                }
+
+                if (!is.null(ann) && !is.null(ann$genes)) {
+                    genes_dt <- ann$genes
+                    id_col <- if ("gene.id" %in% colnames(genes_dt)) "gene.id" else if ("gene_id" %in% colnames(genes_dt)) "gene_id" else NULL
+                    sym_col <- if ("symbol" %in% colnames(genes_dt)) "symbol" else NULL
+
+                    if (!is.null(id_col) && !is.null(sym_col)) {
+                        message("correlationApp: Using annotation with ", nrow(genes_dt), " genes. ID col: ", id_col, ", Symbol col: ", sym_col)
+
+                        # Create lookup: gene_id -> symbol
+                        id_to_symbol <- stats::setNames(genes_dt[[sym_col]], genes_dt[[id_col]])
+
+                        # Map gene IDs to symbols
                         mapped <- id_to_symbol[gene_ids]
+                        display <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, gene_ids)
+                        out$trait <- display
+
+                        n_mapped <- sum(!is.na(mapped) & nzchar(mapped))
+                        message("correlationApp: Successfully mapped ", n_mapped, " / ", length(gene_ids), " genes to symbols")
                     } else {
-                        mapped <- rep(NA_character_, length(gene_ids))
+                        message("correlationApp: Could not find gene.id or symbol columns")
+                        out$trait <- gene_ids
                     }
-                    # Display symbol when available; otherwise show bare gene id (no liver_ prefix)
-                    display <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, gene_ids)
-                    out$trait <- display
+                } else {
+                    message("correlationApp: Annotation data not available")
+                    out$trait <- gene_ids
                 }
             }
 
+            message("correlationApp: After gene mapping. Sample traits: ", paste(head(out$trait, 3), collapse = ", "))
+
+            # Remove any rows with NA correlation values
+            if ("correlation_value" %in% names(out)) {
+                out <- out[!is.na(correlation_value)]
+            }
+
+            message("correlationApp: After NA removal. Rows: ", nrow(out))
+
             # Prepare display formatting and default sort by absolute correlation
             if ("p_value" %in% names(out)) {
-                out[, p_value := ifelse(is.na(p_value), NA_character_, format(p_value, digits = 3, scientific = TRUE))]
+                # For self-correlation (r ≈ 1.0), p-value may be missing (NA) from source data
+                # This is expected because p-value calculation for perfect correlation is undefined
+                out[, p_value := ifelse(is.na(p_value), "—", format(p_value, digits = 3, scientific = TRUE))]
             }
             out[, abs_correlation := abs(correlation_value)]
             out <- out[order(-abs_correlation, -correlation_value)]
             out <- data.table::as.data.table(out)
+            message("correlationApp: Returning correlation table with ", nrow(out), " rows. Sample traits: ", paste(head(out$trait, 3), collapse = ", "))
             out
-        }) %>% shiny::debounce(150)
+        }) |> shiny::debounce(150)
 
         # Debounced search query
         search_query <- shiny::reactive({
