@@ -1,7 +1,7 @@
 # Suppress data.table NSE warnings
 utils::globalVariables(c(
     "phenotype", "correlation_value", "p_value", "num_mice",
-    "abs_correlation", "abs_corr_temp", ".N", ".SD", "target",
+    "abs_correlation", "abs_corr_temp", ".N", ".SD", "target", "source",
     ".", ":="
 ))
 
@@ -70,11 +70,13 @@ correlationUI <- function(id) {
 #' Correlation Module Server
 #'
 #' Displays a table of correlations for the currently selected trait against
-#' a chosen dataset. The table includes columns: trait, correlation_value, p_value.
+#' a chosen dataset. The table includes columns: trait, correlation_value, p_value, num_mice.
 #'
 #' Correlation CSV files are expected in the directory:
-#'   /mnt/rdrive/mkeller3/General/main_directory/correlations
-#' and named like: "liver_genes_vs_clinical_traits_corr.csv".
+#'   data/correlations (relative to app working directory)
+#' and named like: "liver_genes_vs_clinical_traits_corr.csv" for unadjusted correlations
+#' or "liver_genes_vs_clinical_traits_genlitsexbydiet_adj_corr.csv" for covariate-adjusted.
+#' Some correlation pairs (e.g., genes-vs-other datasets) only exist in adjusted form.
 #'
 #' @param id Module ID.
 #' @param import_reactives Reactive that returns a list containing file_directory and annotation_list.
@@ -89,21 +91,66 @@ correlationServer <- function(id, import_reactives, main_par) {
     shiny::moduleServer(id, function(input, output, session) {
         ns <- session$ns
 
-        # Use local qtlApp data directory for correlations (mounted in Docker)
-        correlations_dir <- "/data/correlations"
+        # Use the local data directory for correlations
+        # Check multiple possible locations (Docker mount first!)
+        possible_paths <- c(
+            "/data/correlations", # Docker mount path (FIRST - this is where it's mounted!)
+            "/home/khwillis@ad.wisc.edu/qtlApp/data/correlations", # Development local path
+            file.path(getwd(), "data/correlations"), # Relative to working directory
+            "/mnt/rdrive/mkeller3/General/main_directory/correlations" # Rdrive fallback
+        )
+
+        correlations_dir <- NULL
+        for (path in possible_paths) {
+            # Check if directory exists AND has files
+            if (dir.exists(path)) {
+                test_files <- list.files(path, pattern = "_corr\\.csv$")
+                if (length(test_files) > 0) {
+                    correlations_dir <- path
+                    message("correlationServer: ✓ Found correlations directory with ", length(test_files), " files at: ", path)
+                    break
+                } else {
+                    message("correlationServer: Directory exists but is empty: ", path)
+                }
+            }
+        }
+
+        if (is.null(correlations_dir)) {
+            correlations_dir <- "/data/correlations" # Fallback to Docker mount path
+            warning("correlationServer: No correlations directory with files found. Using fallback: ", correlations_dir)
+        }
 
         # Helper function to convert file path to adjusted version
+        # Handles both same-ordering and reversed-ordering adjusted files
         get_adjusted_file_path <- function(file_path, use_adjusted = FALSE) {
             if (!use_adjusted) {
                 return(file_path)
             }
-            # Replace _corr.csv with _genlitsexbydiet_adj_corr.csv
-            # Replace _pval.csv with _genlitsexbydiet_adj_pval.csv
-            # Replace _num_mice.csv with _genlitsexbydiet_adj_num_mice.csv
-            file_path <- sub("_corr\\.csv$", "_genlitsexbydiet_adj_corr.csv", file_path)
-            file_path <- sub("_pval\\.csv$", "_genlitsexbydiet_adj_pval.csv", file_path)
-            file_path <- sub("_num_mice\\.csv$", "_genlitsexbydiet_adj_num_mice.csv", file_path)
-            return(file_path)
+
+            # First try same-ordering adjusted file
+            same_order <- sub("_corr\\.csv$", "_genlitsexbydiet_adj_corr.csv", file_path)
+            if (file.exists(same_order)) {
+                return(same_order)
+            }
+
+            # Try reversed-ordering adjusted file
+            bn <- basename(file_path)
+            m <- regexec("^([a-z0-9_]+)_vs_([a-z0-9_]+)_corr\\.csv$", tolower(bn))
+            r <- regmatches(tolower(bn), m)[[1]]
+            if (length(r) == 3) {
+                source <- r[2]
+                target <- r[3]
+                reversed_adj <- file.path(
+                    dirname(file_path),
+                    paste0(target, "_vs_", source, "_genlitsexbydiet_adj_corr.csv")
+                )
+                if (file.exists(reversed_adj)) {
+                    return(reversed_adj)
+                }
+            }
+
+            # Fallback to same-ordering pattern even if it doesn't exist
+            return(same_order)
         }
 
         # Map internal trait type to correlation file tokens and labels
@@ -157,14 +204,28 @@ correlationServer <- function(id, import_reactives, main_par) {
                 file.path(correlations_dir, "plasma_metabolites_vs_plasma_metabolites_corr.csv"),
                 file.path(correlations_dir, "clinical_traits_vs_liver_lipids_corr.csv"),
                 file.path(correlations_dir, "clinical_traits_vs_plasma_metabolites_corr.csv"),
-                file.path(correlations_dir, "liver_lipids_vs_plasma_metabolites_corr.csv")
+                file.path(correlations_dir, "liver_lipids_vs_plasma_metabolites_corr.csv"),
+                # Add adjusted-only files that don't have base versions
+                file.path(correlations_dir, "clinical_traits_vs_liver_genes_genlitsexbydiet_adj_corr.csv"),
+                file.path(correlations_dir, "liver_lipids_vs_liver_genes_genlitsexbydiet_adj_corr.csv"),
+                file.path(correlations_dir, "plasma_metabolites_vs_liver_genes_genlitsexbydiet_adj_corr.csv")
             )
 
             files <- character(0)
+            message("correlationServer: Checking directory: ", correlations_dir)
+            message("correlationServer: Directory exists: ", dir.exists(correlations_dir))
             if (dir.exists(correlations_dir)) {
                 all_files <- list.files(correlations_dir, pattern = "_corr\\.csv$", full.names = TRUE)
-                # Only include base (unadjusted) files; adjusted versions are accessed via checkbox
-                files <- all_files[!grepl("_adj_corr\\.csv$", all_files)]
+                message("correlationServer: Found ", length(all_files), " total _corr.csv files")
+                # Include base (unadjusted) files
+                base_files <- all_files[!grepl("_adj_corr\\.csv$", all_files)]
+                message("correlationServer: Found ", length(base_files), " base (unadjusted) files")
+                # Include ALL adjusted files (both same-ordering and reversed-ordering)
+                adj_files <- all_files[grepl("_adj_corr\\.csv$", all_files)]
+                message("correlationServer: Found ", length(adj_files), " adjusted files")
+                # Include all adjusted files (we'll determine adjusted-only status later)
+                files <- c(base_files, adj_files)
+                message("correlationServer: Total files to process: ", length(files))
             } else {
                 warning("correlationServer: correlations_dir not found: ", correlations_dir)
             }
@@ -172,25 +233,66 @@ correlationServer <- function(id, import_reactives, main_par) {
             # Include expected files regardless of current presence; parsing will still work
             files <- unique(c(files, expected_files))
             if (length(files) == 0) {
-                return(data.frame(file = character(0), source = character(0), target = character(0)))
+                return(data.frame(file = character(0), source = character(0), target = character(0), is_adj_only = logical(0)))
             }
 
-            # Parse names like foo_vs_bar_corr.csv
+            # Parse names like foo_vs_bar_corr.csv (including adjusted versions)
             parse_one <- function(fp) {
                 bn <- basename(fp)
-                m <- regexec("^([a-z0-9_]+)_vs_([a-z0-9_]+)_corr\\.csv$", tolower(bn))
-                r <- regmatches(tolower(bn), m)[[1]]
+                # Normalize filename by removing adjustment suffix for parsing
+                # Convert: foo_vs_bar_genlitsexbydiet_adj_corr.csv -> foo_vs_bar_corr.csv
+                normalized_bn <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_corr.csv", tolower(bn))
+
+                # Parse the normalized filename
+                m <- regexec("^([a-z0-9_]+)_vs_([a-z0-9_]+)_corr\\.csv$", normalized_bn)
+                r <- regmatches(normalized_bn, m)[[1]]
                 if (length(r) == 3) {
-                    return(data.frame(file = fp, source = r[2], target = r[3]))
+                    return(data.frame(file = fp, source = r[2], target = r[3], stringsAsFactors = FALSE))
                 }
                 return(NULL)
             }
             parsed <- lapply(files, parse_one)
             parsed <- parsed[!vapply(parsed, is.null, logical(1))]
             if (length(parsed) == 0) {
-                return(data.frame(file = character(0), source = character(0), target = character(0)))
+                warning("correlationServer: No correlation files could be parsed")
+                return(data.frame(file = character(0), source = character(0), target = character(0), is_adj_only = logical(0)))
             }
-            data.table::as.data.table(do.call(rbind, parsed))
+
+            # Combine all parsed results
+            result_df <- do.call(rbind, parsed)
+            result_dt <- data.table::as.data.table(result_df)
+
+            # Determine which files are adjusted-only by checking for corresponding base files
+            # Need to check BOTH same-ordering and reversed-ordering base versions
+            result_dt$is_adj_only <- vapply(result_dt$file, function(fp) {
+                # If it's already a base file, it's not adjusted-only
+                if (!grepl("_adj_corr\\.csv$", fp)) {
+                    return(FALSE)
+                }
+                # If it's an adjusted file, check if base version exists (same ordering)
+                base_version <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_corr.csv", fp)
+                if (file.exists(base_version)) {
+                    return(FALSE) # Base version exists with same ordering
+                }
+                # Also check reversed ordering (e.g., clinical_traits_vs_liver_genes -> liver_genes_vs_clinical_traits)
+                bn <- basename(fp)
+                # Parse the adjusted filename
+                m <- regexec("^([a-z0-9_]+)_vs_([a-z0-9_]+)_genlitsexbydiet_adj_corr\\.csv$", tolower(bn))
+                r <- regmatches(tolower(bn), m)[[1]]
+                if (length(r) == 3) {
+                    source <- r[2]
+                    target <- r[3]
+                    # Check reversed ordering
+                    reversed_base <- file.path(dirname(fp), paste0(target, "_vs_", source, "_corr.csv"))
+                    if (file.exists(reversed_base)) {
+                        return(FALSE) # Base version exists with reversed ordering
+                    }
+                }
+                return(TRUE) # No base version found in either ordering
+            }, logical(1))
+
+            message("correlationServer: Found ", nrow(result_dt), " correlation file pairs")
+            result_dt
         })
 
         # Determine current trait and its tokenized type
@@ -225,14 +327,20 @@ correlationServer <- function(id, import_reactives, main_par) {
                     return()
                 }
                 token <- current_type_token()
-                # Files where current type is on either side
-                subset_dt <- pairs_dt[(source == token) | (target == token)]
+                message("correlationServer: Current token = ", token)
+                message("correlationServer: Available pairs with sources: ", paste(unique(pairs_dt$source), collapse = ", "))
+                message("correlationServer: Available pairs with targets: ", paste(unique(pairs_dt$target), collapse = ", "))
+
+                # Files where current type is on either side (using standard R subsetting)
+                subset_dt <- pairs_dt[pairs_dt$source == token | pairs_dt$target == token, ]
                 if (nrow(subset_dt) == 0) {
+                    message("correlationServer: No matching pairs found for token: ", token)
                     shiny::updateSelectInput(session, "correlation_dataset_selector",
                         choices = character(0), selected = character(0)
                     )
                     return()
                 }
+                message("correlationServer: Found ", nrow(subset_dt), " matching pairs")
                 # Build choices mapping to only show the target dataset label (the "other side")
                 other_tokens <- ifelse(subset_dt$source == token, subset_dt$target, subset_dt$source)
                 labels <- vapply(other_tokens, token_to_label, character(1))
@@ -305,7 +413,25 @@ correlationServer <- function(id, import_reactives, main_par) {
             # Otherwise, attempt row mode via Phenotype/phenotype column
             pheno_col <- if ("phenotype" %in% tolower(headers)) headers[which(tolower(headers) == "phenotype")[1]] else NULL
             if (!is.null(pheno_col)) {
-                return(list(mode = "row", key = trait_string, phenotype_col = pheno_col))
+                # For liver_genes in row mode, try gene symbol -> gene ID mapping
+                row_key <- trait_string
+                if (token_side == "liver_genes") {
+                    ann <- import$annotation_list
+                    if (!is.null(ann) && !is.null(ann$genes)) {
+                        genes_dt <- ann$genes
+                        id_col <- if ("gene.id" %in% colnames(genes_dt)) "gene.id" else if ("gene_id" %in% colnames(genes_dt)) "gene_id" else NULL
+                        sym_col <- if ("symbol" %in% colnames(genes_dt)) "symbol" else NULL
+                        if (!is.null(id_col) && !is.null(sym_col)) {
+                            match_row <- genes_dt[genes_dt[[sym_col]] == trait_string, , drop = FALSE]
+                            if (nrow(match_row) > 0) {
+                                gene_id <- match_row[[id_col]][1]
+                                # Try with liver_ prefix (adjusted files use this format)
+                                row_key <- paste0("liver_", gene_id)
+                            }
+                        }
+                    }
+                }
+                return(list(mode = "row", key = row_key, phenotype_col = pheno_col))
             }
 
             return(NULL)
@@ -319,17 +445,28 @@ correlationServer <- function(id, import_reactives, main_par) {
 
             # Get the appropriate file path based on adjusted toggle
             use_adjusted <- isTRUE(input$use_adjusted)
-            file_path <- get_adjusted_file_path(input$correlation_dataset_selector, use_adjusted)
 
-            # If file doesn't exist, try adjusted version (for genes-vs-genes case)
-            if (!file.exists(file_path) && !use_adjusted) {
-                adjusted_path <- get_adjusted_file_path(input$correlation_dataset_selector, TRUE)
-                if (file.exists(adjusted_path)) {
-                    file_path <- adjusted_path
-                    shiny::showNotification(
-                        "Only covariate-adjusted version available for this dataset. Using adjusted correlations.",
-                        type = "message", duration = 4
-                    )
+            # Check if the selected file is adjusted-only
+            pairs_dt <- list_available_pairs()
+            shiny::req(nrow(pairs_dt) > 0)
+            base_file_path <- input$correlation_dataset_selector
+            row <- pairs_dt[file == base_file_path]
+            shiny::req(nrow(row) == 1)
+
+            is_adj_only <- isTRUE(row$is_adj_only[1])
+
+            # For adjusted-only files, always use the file as-is
+            # For files with both versions, apply the toggle
+            if (is_adj_only) {
+                file_path <- base_file_path
+            } else {
+                file_path <- get_adjusted_file_path(base_file_path, use_adjusted)
+                # If file doesn't exist, try adjusted version
+                if (!file.exists(file_path) && !use_adjusted) {
+                    adjusted_path <- get_adjusted_file_path(base_file_path, TRUE)
+                    if (file.exists(adjusted_path)) {
+                        file_path <- adjusted_path
+                    }
                 }
             }
 
@@ -342,18 +479,18 @@ correlationServer <- function(id, import_reactives, main_par) {
                 shiny::showNotification(msg, type = "error", duration = 4)
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
+
+            message("correlationServer: Loading correlation file: ", basename(file_path))
+            message("correlationServer: Is adjusted: ", use_adjusted, ", Is adjusted-only: ", is_adj_only)
+
             # Determine which side (source/target) corresponds to the current trait type
-            pairs_dt <- list_available_pairs()
-            shiny::req(nrow(pairs_dt) > 0)
             token <- current_type_token()
-            # Use the base (unadjusted) path to look up in pairs_dt
-            base_file_path <- input$correlation_dataset_selector
-            row <- pairs_dt[file == base_file_path]
-            shiny::req(nrow(row) == 1)
 
             side_token <- if (row$source[1] == token) row$source[1] else if (row$target[1] == token) row$target[1] else token
 
+            message("correlationServer: Resolving trait keys for trait='", trait, "', side_token='", side_token, "'")
             key_info <- resolve_trait_keys(trait, side_token, file_path, import_reactives())
+            message("correlationServer: key_info result: ", if (is.null(key_info)) "NULL" else paste("mode=", key_info$mode, ", key=", key_info$key))
             if (is.null(key_info)) {
                 shiny::showNotification(paste("Trait not found in correlation file:", trait), type = "warning", duration = 4)
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
@@ -468,7 +605,10 @@ correlationServer <- function(id, import_reactives, main_par) {
                     shiny::showNotification("Correlation file missing 'phenotype' column.", type = "error", duration = NULL)
                     return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
                 }
+                message("correlationServer: Row mode - looking for phenotype='", key_info$key, "' in file with ", nrow(dt_full), " rows")
+                message("correlationServer: Row mode - first 5 phenotypes: ", paste(head(dt_full$phenotype, 5), collapse = ", "))
                 row_dt <- dt_full[phenotype == key_info$key]
+                message("correlationServer: Row mode - found ", nrow(row_dt), " matching rows")
                 if (nrow(row_dt) == 0) {
                     shiny::showNotification(paste("Trait not found in 'phenotype' column:", trait), type = "warning", duration = 4)
                     return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
@@ -617,6 +757,12 @@ correlationServer <- function(id, import_reactives, main_par) {
                 out <- out[!is.na(correlation_value)]
             }
 
+            message("correlationServer: Correlation table prepared with ", nrow(out), " rows")
+            message("correlationServer: Columns: ", paste(names(out), collapse = ", "))
+            if (nrow(out) > 0) {
+                message("correlationServer: First 3 traits: ", paste(head(out$trait, 3), collapse = ", "))
+            }
+
             # Prepare display formatting and default sort by absolute correlation
             if ("p_value" %in% names(out)) {
                 # For self-correlation (r ≈ 1.0), p-value may be missing (NA) from source data
@@ -626,6 +772,8 @@ correlationServer <- function(id, import_reactives, main_par) {
             out[, abs_correlation := abs(correlation_value)]
             out <- out[order(-abs_correlation, -correlation_value)]
             out <- data.table::as.data.table(out)
+
+            message("correlationServer: Returning table with ", nrow(out), " rows")
             out
         }) |> shiny::debounce(150)
 
@@ -638,13 +786,16 @@ correlationServer <- function(id, import_reactives, main_par) {
         # Filtered table by trait search; preserves ordering by absolute correlation
         filtered_table <- shiny::reactive({
             tbl <- correlation_table()
+            message("correlationServer: filtered_table reactive - received ", nrow(tbl), " rows from correlation_table()")
             q <- search_query()
             if (!is.null(tbl) && nrow(tbl) > 0 && nzchar(q)) {
                 keep <- tryCatch(grepl(q, tbl$trait, ignore.case = TRUE, perl = TRUE),
                     error = function(e) grepl(q, tbl$trait, ignore.case = TRUE, fixed = TRUE)
                 )
                 tbl <- tbl[keep]
+                message("correlationServer: After search filter (query='", q, "'): ", nrow(tbl), " rows")
             }
+            message("correlationServer: filtered_table returning ", nrow(tbl), " rows")
             tbl
         })
 

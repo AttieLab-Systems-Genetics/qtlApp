@@ -49,6 +49,7 @@ source("R/traitApp.R")
 source("R/traitProcessingModule.R")
 source("R/scanPlotModule.R") # Source our new module
 source("R/profilePlotApp.R") # Source the new profile plot module
+source("R/correlationApp.R") # Source the correlation module
 source("R/mainUI.R") # Source our new UI module
 source("R/peaksTableModule.R")
 source("R/mediationTab.R")
