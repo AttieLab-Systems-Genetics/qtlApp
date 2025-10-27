@@ -134,9 +134,24 @@ mainUI <- function() {
                 bslib::nav_panel(
                     "Correlation",
                     div(
-                        style = "padding: 10px; display: flex; flex-direction: column; gap: 10px;",
-                        correlationInput(shiny::NS("app_controller", "correlation_module")),
-                        correlationUI(shiny::NS("app_controller", "correlation_module"))
+                        style = "padding: 10px;",
+                        # Message for Liver Splice Junctions
+                        shiny::conditionalPanel(
+                            condition = "input['app_controller-dataset_category_selector'] && input['app_controller-dataset_category_selector'].match(/Liver.*Splice.*Junction/i)",
+                            div(
+                                style = "padding: 20px; text-align: center; color: #7f8c8d; font-size: 1.1em;",
+                                tags$em("No correlations for liver splice junctions")
+                            )
+                        ),
+                        # Normal correlation UI for other datasets
+                        shiny::conditionalPanel(
+                            condition = "!input['app_controller-dataset_category_selector'] || !input['app_controller-dataset_category_selector'].match(/Liver.*Splice.*Junction/i)",
+                            div(
+                                style = "display: flex; flex-direction: column; gap: 10px;",
+                                correlationInput(shiny::NS("app_controller", "correlation_module")),
+                                correlationUI(shiny::NS("app_controller", "correlation_module"))
+                            )
+                        )
                     )
                 )
             )

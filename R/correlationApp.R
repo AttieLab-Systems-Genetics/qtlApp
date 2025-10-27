@@ -107,10 +107,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 test_files <- list.files(path, pattern = "_corr\\.csv$")
                 if (length(test_files) > 0) {
                     correlations_dir <- path
-                    message("correlationServer: ✓ Found correlations directory with ", length(test_files), " files at: ", path)
                     break
-                } else {
-                    message("correlationServer: Directory exists but is empty: ", path)
                 }
             }
         }
@@ -212,20 +209,14 @@ correlationServer <- function(id, import_reactives, main_par) {
             )
 
             files <- character(0)
-            message("correlationServer: Checking directory: ", correlations_dir)
-            message("correlationServer: Directory exists: ", dir.exists(correlations_dir))
             if (dir.exists(correlations_dir)) {
                 all_files <- list.files(correlations_dir, pattern = "_corr\\.csv$", full.names = TRUE)
-                message("correlationServer: Found ", length(all_files), " total _corr.csv files")
                 # Include base (unadjusted) files
                 base_files <- all_files[!grepl("_adj_corr\\.csv$", all_files)]
-                message("correlationServer: Found ", length(base_files), " base (unadjusted) files")
                 # Include ALL adjusted files (both same-ordering and reversed-ordering)
                 adj_files <- all_files[grepl("_adj_corr\\.csv$", all_files)]
-                message("correlationServer: Found ", length(adj_files), " adjusted files")
                 # Include all adjusted files (we'll determine adjusted-only status later)
                 files <- c(base_files, adj_files)
-                message("correlationServer: Total files to process: ", length(files))
             } else {
                 warning("correlationServer: correlations_dir not found: ", correlations_dir)
             }
@@ -291,7 +282,6 @@ correlationServer <- function(id, import_reactives, main_par) {
                 return(TRUE) # No base version found in either ordering
             }, logical(1))
 
-            message("correlationServer: Found ", nrow(result_dt), " correlation file pairs")
             result_dt
         })
 
@@ -327,20 +317,15 @@ correlationServer <- function(id, import_reactives, main_par) {
                     return()
                 }
                 token <- current_type_token()
-                message("correlationServer: Current token = ", token)
-                message("correlationServer: Available pairs with sources: ", paste(unique(pairs_dt$source), collapse = ", "))
-                message("correlationServer: Available pairs with targets: ", paste(unique(pairs_dt$target), collapse = ", "))
 
                 # Files where current type is on either side (using standard R subsetting)
                 subset_dt <- pairs_dt[pairs_dt$source == token | pairs_dt$target == token, ]
                 if (nrow(subset_dt) == 0) {
-                    message("correlationServer: No matching pairs found for token: ", token)
                     shiny::updateSelectInput(session, "correlation_dataset_selector",
                         choices = character(0), selected = character(0)
                     )
                     return()
                 }
-                message("correlationServer: Found ", nrow(subset_dt), " matching pairs")
                 # Build choices mapping to only show the target dataset label (the "other side")
                 other_tokens <- ifelse(subset_dt$source == token, subset_dt$target, subset_dt$source)
                 labels <- vapply(other_tokens, token_to_label, character(1))
@@ -480,17 +465,12 @@ correlationServer <- function(id, import_reactives, main_par) {
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
 
-            message("correlationServer: Loading correlation file: ", basename(file_path))
-            message("correlationServer: Is adjusted: ", use_adjusted, ", Is adjusted-only: ", is_adj_only)
-
             # Determine which side (source/target) corresponds to the current trait type
             token <- current_type_token()
 
             side_token <- if (row$source[1] == token) row$source[1] else if (row$target[1] == token) row$target[1] else token
 
-            message("correlationServer: Resolving trait keys for trait='", trait, "', side_token='", side_token, "'")
             key_info <- resolve_trait_keys(trait, side_token, file_path, import_reactives())
-            message("correlationServer: key_info result: ", if (is.null(key_info)) "NULL" else paste("mode=", key_info$mode, ", key=", key_info$key))
             if (is.null(key_info)) {
                 shiny::showNotification(paste("Trait not found in correlation file:", trait), type = "warning", duration = 4)
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
@@ -605,10 +585,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                     shiny::showNotification("Correlation file missing 'phenotype' column.", type = "error", duration = NULL)
                     return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
                 }
-                message("correlationServer: Row mode - looking for phenotype='", key_info$key, "' in file with ", nrow(dt_full), " rows")
-                message("correlationServer: Row mode - first 5 phenotypes: ", paste(head(dt_full$phenotype, 5), collapse = ", "))
                 row_dt <- dt_full[phenotype == key_info$key]
-                message("correlationServer: Row mode - found ", nrow(row_dt), " matching rows")
                 if (nrow(row_dt) == 0) {
                     shiny::showNotification(paste("Trait not found in 'phenotype' column:", trait), type = "warning", duration = 4)
                     return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
@@ -757,12 +734,6 @@ correlationServer <- function(id, import_reactives, main_par) {
                 out <- out[!is.na(correlation_value)]
             }
 
-            message("correlationServer: Correlation table prepared with ", nrow(out), " rows")
-            message("correlationServer: Columns: ", paste(names(out), collapse = ", "))
-            if (nrow(out) > 0) {
-                message("correlationServer: First 3 traits: ", paste(head(out$trait, 3), collapse = ", "))
-            }
-
             # Prepare display formatting and default sort by absolute correlation
             if ("p_value" %in% names(out)) {
                 # For self-correlation (r ≈ 1.0), p-value may be missing (NA) from source data
@@ -773,7 +744,6 @@ correlationServer <- function(id, import_reactives, main_par) {
             out <- out[order(-abs_correlation, -correlation_value)]
             out <- data.table::as.data.table(out)
 
-            message("correlationServer: Returning table with ", nrow(out), " rows")
             out
         }) |> shiny::debounce(150)
 
@@ -786,16 +756,13 @@ correlationServer <- function(id, import_reactives, main_par) {
         # Filtered table by trait search; preserves ordering by absolute correlation
         filtered_table <- shiny::reactive({
             tbl <- correlation_table()
-            message("correlationServer: filtered_table reactive - received ", nrow(tbl), " rows from correlation_table()")
             q <- search_query()
             if (!is.null(tbl) && nrow(tbl) > 0 && nzchar(q)) {
                 keep <- tryCatch(grepl(q, tbl$trait, ignore.case = TRUE, perl = TRUE),
                     error = function(e) grepl(q, tbl$trait, ignore.case = TRUE, fixed = TRUE)
                 )
                 tbl <- tbl[keep]
-                message("correlationServer: After search filter (query='", q, "'): ", nrow(tbl), " rows")
             }
-            message("correlationServer: filtered_table returning ", nrow(tbl), " rows")
             tbl
         })
 

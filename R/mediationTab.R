@@ -17,6 +17,17 @@
 mediation_tab_ui <- function(current_category = NULL) {
     # Debug: entering UI builder
     message(sprintf("MediationTab UI: init (current_category = %s)", as.character(current_category %||% "<NULL>")))
+
+    # Check if current category is Liver Splice Junctions
+    if (!is.null(current_category) && grepl("Liver.*Splice.*Junction", current_category, ignore.case = TRUE)) {
+        return(
+            shiny::div(
+                style = "padding: 20px; text-align: center; color: #7f8c8d; font-size: 1.1em;",
+                shiny::tags$em("No mediations for liver splice juncs")
+            )
+        )
+    }
+
     # Discover mediation files
     candidate_dirs <- c("/data/dev/miniViewer_3.0", file.path(getwd(), "data"))
     files <- unlist(lapply(candidate_dirs, function(d) {

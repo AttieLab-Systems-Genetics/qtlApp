@@ -35,6 +35,11 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             sanitized_category <- tolower(category)
             sanitized_category <- str_replace_all(sanitized_category, "[^a-z0-9]+", "_")
 
+            # Special case: "Liver Splice Junctions" -> "liver_splice_juncs" (abbreviated)
+            if (sanitized_category == "liver_splice_junctions") {
+                sanitized_category <- "liver_splice_juncs"
+            }
+
             list(
                 fst = file.path("/data/dev/miniViewer_3.0", paste0("pheno_data_long_", sanitized_category, ".fst")),
                 rds = file.path("/data/dev/miniViewer_3.0", paste0("trait_names_", sanitized_category, ".rds"))
@@ -48,6 +53,32 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
 
             req(file.exists(paths$fst))
 
+            # Map trait name for special cases
+            trait_name_to_lookup <- trait_to_profile()
+            category <- selected_dataset_category()
+
+            # Special handling for Liver Splice Junctions:
+            # Display name is junction_id (e.g., "0610009E02Rik_junc1")
+            # Phenotype file uses liver_ + data_name (e.g., "liver_junc10857")
+            if (!is.null(category) && category == "Liver Splice Junctions") {
+                tryCatch(
+                    {
+                        annot_list <- readRDS("/data/dev/miniViewer_3.0/annotation_list.rds")
+                        splice_annot <- annot_list[["splice_junctions"]]
+                        if (!is.null(splice_annot) && "junction_id" %in% colnames(splice_annot) && "data_name" %in% colnames(splice_annot)) {
+                            match_row <- splice_annot[splice_annot$junction_id == trait_name_to_lookup, ]
+                            if (nrow(match_row) > 0) {
+                                # Map junction_id to liver_ + data_name
+                                trait_name_to_lookup <- paste0("liver_", match_row$data_name[1])
+                            }
+                        }
+                    },
+                    error = function(e) {
+                        warning("Profile Plot: Could not map splice junction trait name: ", e$message)
+                    }
+                )
+            }
+
             # Read the FST file and filter for the specific trait
             # Note: fst::fst() doesn't preserve data.table keys, so we need to read and filter manually
 
@@ -57,7 +88,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
                     full_data <- fst::read_fst(paths$fst, as.data.table = TRUE)
 
                     # Filter for the specific trait
-                    trait_data <- full_data[Trait_Name == trait_to_profile()]
+                    trait_data <- full_data[Trait_Name == trait_name_to_lookup]
 
                     req(trait_data, nrow(trait_data) > 0)
 
