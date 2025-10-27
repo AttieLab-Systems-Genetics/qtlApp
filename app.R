@@ -1327,7 +1327,7 @@ server <- function(input, output, session) {
                 ),
                 shiny::tabPanel(
                     title = "SNP association",
-                    snp_association_tab_ui()
+                    snp_association_tab_ui(current_category = selected_dataset_category_reactive())
                 )
             )
         )
@@ -3095,6 +3095,254 @@ server <- function(input, output, session) {
             message(sprintf("Mediator AE: rendering allele-effects plot with %d rows", nrow(ae)))
             ggplot_alleles(ae)
         }
+    })
+
+    # ========================================================================
+    # SNP ASSOCIATION LOGIC
+    # ========================================================================
+
+    # Cache for cross and genoprobs objects (loaded once)
+    snp_cross_cache <- shiny::reactiveVal(NULL)
+    snp_genoprobs_cache <- shiny::reactiveVal(NULL)
+
+    # Helper function to ensure cross is loaded
+    get_snp_cross <- function() {
+        cross <- snp_cross_cache()
+        if (is.null(cross)) {
+            message("SNP Association: Loading cross object...")
+            cross <- load_cross_for_snp()
+            snp_cross_cache(cross)
+        }
+        return(cross)
+    }
+
+    # Helper function to ensure genoprobs is loaded
+    get_snp_genoprobs <- function() {
+        genoprobs <- snp_genoprobs_cache()
+        if (is.null(genoprobs)) {
+            message("SNP Association: Loading genoprobs...")
+            genoprobs <- load_genoprobs_for_snp()
+            snp_genoprobs_cache(genoprobs)
+        }
+        return(genoprobs)
+    }
+
+    # Reactive for SNP association data
+    snp_association_data <- shiny::reactive({
+        # Early exit: require SNP window input to exist (means tab was rendered/visited)
+        shiny::req(input[[ns_app_controller("snp_window")]])
+
+        # Get the selected peak info from scan module
+        peak_info <- scan_module_outputs$selected_peak()
+        # Use req() to silently cancel execution if no peak selected
+        shiny::req(peak_info, nrow(peak_info) > 0)
+
+        # Get the current trait
+        trait <- trait_for_lod_scan_rv()
+        shiny::req(trait, nzchar(trait))
+
+        # Get parameters
+        window <- input[[ns_app_controller("snp_window")]] %||% 1.5
+
+        # Extract chr and pos from peak info
+        chr <- peak_info$qtl_chr[1]
+        pos <- peak_info$qtl_pos[1]
+
+        # Get interaction type
+        interaction_type <- current_interaction_type_rv() %||% "none"
+
+        message(sprintf(
+            "SNP Association: trait=%s, chr=%s, pos=%.2f, window=%.2f, interaction=%s",
+            trait, chr, pos, window, interaction_type
+        ))
+
+        # Get cross and genoprobs (load if not already cached)
+        cross <- get_snp_cross()
+        genoprobs <- get_snp_genoprobs()
+
+        if (is.null(cross)) {
+            shiny::showNotification(
+                "Failed to load cross object for SNP association",
+                type = "error",
+                duration = 5
+            )
+            return(list(error = "Cross object could not be loaded. Check file permissions and paths."))
+        }
+
+        if (is.null(genoprobs)) {
+            shiny::showNotification(
+                "Failed to load genoprobs for SNP association",
+                type = "error",
+                duration = 5
+            )
+            return(list(error = "Genoprobs could not be loaded. Check file permissions and paths."))
+        }
+
+        # Perform SNP association
+        shiny::withProgress(message = "Running SNP association...", value = 0, {
+            shiny::incProgress(0.3, detail = "Loading variants...")
+
+            result <- perform_snp_association(
+                cross = cross,
+                genoprobs = genoprobs,
+                phenotype = trait,
+                chr = chr,
+                pos = pos,
+                window = window,
+                interaction_type = interaction_type,
+                ncores = 1
+            )
+
+            shiny::incProgress(0.7, detail = "Analysis complete")
+            return(result)
+        })
+    }) |> shiny::debounce(500)
+
+    # Reactive for genes in the region (extracted from SNP association result)
+    snp_genes_data <- shiny::reactive({
+        snp_data <- snp_association_data()
+        if (!is.null(snp_data) && !is.null(snp_data$genes)) {
+            return(snp_data$genes)
+        }
+        return(NULL)
+    })
+
+    # Render SNP association plot
+    output[[ns_app_controller("snp_plot_container")]] <- shiny::renderUI({
+        snp_data <- snp_association_data()
+
+        if (is.null(snp_data)) {
+            return(
+                shiny::div(
+                    style = "padding: 20px; text-align: center; color: #7f8c8d;",
+                    shiny::tags$em("Select a peak to view SNP association")
+                )
+            )
+        }
+
+        # Check if there's an error message
+        if (!is.null(snp_data$error)) {
+            return(
+                shiny::div(
+                    style = "padding: 20px; text-align: center; color: #e74c3c; background-color: #fadbd8; border: 1px solid #e74c3c; border-radius: 5px;",
+                    shiny::tags$strong("SNP Association Not Available"),
+                    shiny::tags$p(snp_data$error, style = "margin-top: 10px;")
+                )
+            )
+        }
+
+        shiny::plotOutput(ns_app_controller("snp_plot"), height = "450px") |>
+            shinycssloaders::withSpinner(color = "#3498db")
+    })
+
+    output[[ns_app_controller("snp_plot")]] <- shiny::renderPlot({
+        snp_data <- snp_association_data()
+        genes <- snp_genes_data()
+
+        shiny::req(snp_data)
+
+        # Skip if error message present
+        if (!is.null(snp_data$error)) {
+            return(NULL)
+        }
+
+        lod_drop <- input[[ns_app_controller("snp_lod_drop")]] %||% 1.5
+        show_sdp <- input[[ns_app_controller("snp_show_sdp")]] %||% TRUE
+
+        tryCatch(
+            {
+                qtl2::plot_snpasso(
+                    snp_data$lod,
+                    snp_data$snpinfo,
+                    genes = genes,
+                    drop_hilit = lod_drop,
+                    sdp_panel = show_sdp
+                )
+            },
+            error = function(e) {
+                message(paste("Error rendering SNP plot:", e$message))
+                plot.new()
+                text(0.5, 0.5, paste("Error:", e$message), cex = 1.2, col = "red")
+            }
+        )
+    })
+
+    # Render top variants table
+    output[[ns_app_controller("snp_table_container")]] <- shiny::renderUI({
+        snp_data <- snp_association_data()
+
+        if (is.null(snp_data)) {
+            return(
+                shiny::div(
+                    style = "padding: 20px; text-align: center; color: #7f8c8d;",
+                    shiny::tags$em("No data available")
+                )
+            )
+        }
+
+        # Skip if error message present
+        if (!is.null(snp_data$error)) {
+            return(NULL)
+        }
+
+        DT::dataTableOutput(ns_app_controller("snp_table"))
+    })
+
+    output[[ns_app_controller("snp_table")]] <- DT::renderDataTable({
+        snp_data <- snp_association_data()
+        shiny::req(snp_data)
+
+        # Skip if error message present
+        if (!is.null(snp_data$error)) {
+            return(data.frame(Message = snp_data$error))
+        }
+
+        lod_drop <- input[[ns_app_controller("snp_lod_drop")]] %||% 1.5
+
+        tryCatch(
+            {
+                top <- qtl2::top_snps(snp_data$lod, snp_data$snpinfo, drop = lod_drop)
+
+                if (is.null(top) || nrow(top) == 0) {
+                    return(data.frame(Message = "No variants above LOD drop threshold"))
+                }
+
+                # Format the table for display - show key columns
+                display_cols <- intersect(
+                    colnames(top),
+                    c(
+                        "snp_id", "chr", "pos", "lod", "A_J", "C57BL_6J", "129S1_SvImJ",
+                        "NOD_ShiLtJ", "NZO_HlLtJ", "CAST_EiJ", "PWK_PhJ", "WSB_EiJ", "sdp", "consequence"
+                    )
+                )
+
+                if (length(display_cols) > 0) {
+                    top_display <- top[, display_cols, drop = FALSE]
+                } else {
+                    top_display <- top
+                }
+
+                # Round numeric columns for better display
+                numeric_cols <- sapply(top_display, is.numeric)
+                top_display[numeric_cols] <- lapply(top_display[numeric_cols], function(x) round(x, 3))
+
+                DT::datatable(
+                    top_display,
+                    options = list(
+                        pageLength = 15,
+                        scrollX = TRUE,
+                        dom = "Bfrtip",
+                        buttons = c("copy", "csv", "excel")
+                    ),
+                    rownames = FALSE,
+                    caption = "Top SNPs within LOD drop threshold from peak"
+                )
+            },
+            error = function(e) {
+                message(paste("Error creating top variants table:", e$message))
+                return(data.frame(Error = paste("Error:", e$message)))
+            }
+        )
     })
 }
 
