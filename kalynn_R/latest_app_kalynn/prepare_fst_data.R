@@ -196,7 +196,7 @@ main <- function() {
         # list(type = "genes", pattern = "chromosome[0-9XYM]+_liver_splice_juncs_HC_mice_additive_data\\.fst$")
         # list(type = "plasma_metabolites", pattern = "chromosome[0-9XYM]+_plasma_metabolites_all_mice_sexbydiet_interactive_data\\.fst$")
 
-        list(type = "splice_juncs", pattern = "chromosome[0-9XYM]+_liver_splice_juncs_all_mice_diet_interactive_data\\.fst$")
+        list(type = "splice_juncs", pattern = "chromosome[0-9XYM]+_liver_splice_juncs_HF_mice_additive_data\\.fst$")
     )
     all_processed_paths <- character(0)
 
