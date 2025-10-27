@@ -1327,10 +1327,33 @@ server <- function(input, output, session) {
                 ),
                 shiny::tabPanel(
                     title = "SNP association",
-                    snp_association_tab_ui(current_category = selected_dataset_category_reactive())
+                    shiny::uiOutput(ns_app_controller("snp_tab_content"))
                 )
             )
         )
+    })
+
+    # Conditional rendering for SNP tab - only render when tab is selected
+    output[[ns_app_controller("snp_tab_content")]] <- shiny::renderUI({
+        # Explicitly depend on tab selection
+        selected_tab <- input[[ns_app_controller("bottom_tabs")]]
+
+        # Also get category - but don't cause premature evaluation
+        current_cat <- shiny::isolate(selected_dataset_category_reactive())
+
+        message(sprintf(
+            "SNP tab check: selected_tab = '%s', category = '%s'",
+            selected_tab %||% "NULL",
+            current_cat %||% "NULL"
+        ))
+
+        if (!is.null(selected_tab) && selected_tab == "SNP association") {
+            message("SNP tab: Rendering UI")
+            return(snp_association_tab_ui(current_category = current_cat))
+        } else {
+            message("SNP tab: Not rendering (waiting for tab selection)")
+            return(NULL)
+        }
     })
 
     # Mediation plot logic
@@ -3127,11 +3150,8 @@ server <- function(input, output, session) {
         return(genoprobs)
     }
 
-    # Reactive for SNP association data
+    # Reactive for SNP association data - only fires when inputs change AND tab is visited
     snp_association_data <- shiny::reactive({
-        # Early exit: require SNP window input to exist (means tab was rendered/visited)
-        shiny::req(input[[ns_app_controller("snp_window")]])
-
         # Get the selected peak info from scan module
         peak_info <- scan_module_outputs$selected_peak()
         # Use req() to silently cancel execution if no peak selected
@@ -3141,19 +3161,30 @@ server <- function(input, output, session) {
         trait <- trait_for_lod_scan_rv()
         shiny::req(trait, nzchar(trait))
 
-        # Get parameters
-        window <- input[[ns_app_controller("snp_window")]] %||% 1.5
+        # Get parameters - req ensures tab has been visited
+        window <- input[[ns_app_controller("snp_window")]]
+        shiny::req(window)
+
+        lod_drop <- input[[ns_app_controller("snp_lod_drop")]]
+        shiny::req(lod_drop)
 
         # Extract chr and pos from peak info
         chr <- peak_info$qtl_chr[1]
         pos <- peak_info$qtl_pos[1]
 
+        # Get peak marker for tracking (ensures reactive fires when peak changes)
+        peak_marker <- if ("qtl_marker" %in% colnames(peak_info)) {
+            peak_info$qtl_marker[1]
+        } else {
+            paste0("chr", chr, "_", pos)
+        }
+
         # Get interaction type
         interaction_type <- current_interaction_type_rv() %||% "none"
 
         message(sprintf(
-            "SNP Association: trait=%s, chr=%s, pos=%.2f, window=%.2f, interaction=%s",
-            trait, chr, pos, window, interaction_type
+            "SNP Association: trait=%s, peak=%s, chr=%s, pos=%.2f, window=%.2f, interaction=%s",
+            trait, peak_marker, chr, pos, window, interaction_type
         ))
 
         # Get cross and genoprobs (load if not already cached)
@@ -3196,7 +3227,15 @@ server <- function(input, output, session) {
             shiny::incProgress(0.7, detail = "Analysis complete")
             return(result)
         })
-    }) |> shiny::debounce(500)
+    }) |>
+        shiny::bindEvent(
+            scan_module_outputs$selected_peak(),
+            input[[ns_app_controller("snp_window")]],
+            input[[ns_app_controller("snp_lod_drop")]],
+            ignoreNULL = TRUE,
+            ignoreInit = TRUE
+        ) |>
+        shiny::debounce(500)
 
     # Reactive for genes in the region (extracted from SNP association result)
     snp_genes_data <- shiny::reactive({
@@ -3344,6 +3383,10 @@ server <- function(input, output, session) {
             }
         )
     })
+
+    # Suspend SNP outputs when hidden (prevents reactive execution when tab not visible)
+    shiny::outputOptions(output, ns_app_controller("snp_plot_container"), suspendWhenHidden = TRUE)
+    shiny::outputOptions(output, ns_app_controller("snp_table_container"), suspendWhenHidden = TRUE)
 }
 
 # Launch the app
