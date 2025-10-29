@@ -17,6 +17,7 @@ library(DT)
 library(reshape2)
 library(htmltools) # Added for tags
 library(stats) # Added for setNames
+library(qtl2fst)
 
 # Source files in specific order
 source("R/helpers.R")
@@ -1332,6 +1333,19 @@ server <- function(input, output, session) {
             )
         )
     })
+
+    # When trait changes, switch away from SNP tab to prevent expensive recomputation
+    shiny::observeEvent(trait_for_lod_scan_rv(),
+        {
+            current_tab <- input[[ns_app_controller("bottom_tabs")]]
+            if (!is.null(current_tab) && current_tab == "SNP association") {
+                message("Trait changed while on SNP tab - switching to Effect tab")
+                shiny::updateTabsetPanel(session, ns_app_controller("bottom_tabs"), selected = "Effect")
+            }
+        },
+        ignoreInit = TRUE,
+        ignoreNULL = TRUE
+    )
 
     # Conditional rendering for SNP tab - only render when tab is selected
     output[[ns_app_controller("snp_tab_content")]] <- shiny::renderUI({

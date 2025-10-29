@@ -267,6 +267,16 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
 
     tryCatch(
         {
+            # Normalize and validate key inputs early
+            window <- suppressWarnings(as.numeric(window))
+            if (is.na(window) || window <= 0) {
+                window <- 1.5
+            }
+            ncores <- suppressWarnings(as.integer(ncores))
+            if (is.na(ncores) || ncores < 1) {
+                ncores <- 1
+            }
+
             message(sprintf(
                 "SNP Association: phenotype=%s, chr=%s, pos=%.2f, window=%.2f, interaction=%s",
                 phenotype, chr, pos, window, interaction_type
@@ -278,19 +288,47 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
             # Use the mapped phenotype name (might be transcript ID)
             message(sprintf("SNP Association: Using phenotype column: %s", pheno_to_use))
 
+            # Harmonize chromosome naming across map, genoprobs, and kinship_loco
+            map <- cross_copy$pmap
+            if (!is.null(cross_copy$kinship_loco)) {
+                names(cross_copy$kinship_loco) <- sub("^chr", "", names(cross_copy$kinship_loco))
+            }
+
+            # Check available covariates in cross object
+            message(sprintf("Available covariates in cross: %s", paste(colnames(cross_copy$covar), collapse = ", ")))
+
             # Perform rankz transformation
-            cross_copy$pheno[, pheno_to_use] <- rankz(cross_copy$pheno[, pheno_to_use])
+            pheno_before <- cross_copy$pheno[, pheno_to_use]
+            cross_copy$pheno[, pheno_to_use] <- rankz(pheno_before)
+            message(sprintf(
+                "Phenotype stats - Before rankz: mean=%.3f, sd=%.3f, range=[%.3f, %.3f]",
+                mean(pheno_before, na.rm = TRUE), sd(pheno_before, na.rm = TRUE),
+                min(pheno_before, na.rm = TRUE), max(pheno_before, na.rm = TRUE)
+            ))
+            message(sprintf(
+                "Phenotype stats - After rankz: mean=%.3f, sd=%.3f, range=[%.3f, %.3f]",
+                mean(cross_copy$pheno[, pheno_to_use], na.rm = TRUE),
+                sd(cross_copy$pheno[, pheno_to_use], na.rm = TRUE),
+                min(cross_copy$pheno[, pheno_to_use], na.rm = TRUE),
+                max(cross_copy$pheno[, pheno_to_use], na.rm = TRUE)
+            ))
 
             # Set up covariate matrices
             # Additive covariate matrix (always the same)
             addcovar <- model.matrix(as.formula("~GenLit+Sex*Diet"), cross_copy$covar)[, -1, drop = FALSE]
+            message(sprintf("Additive covariates: %d samples x %d covariates", nrow(addcovar), ncol(addcovar)))
+            message(sprintf("Additive covariate names: %s", paste(colnames(addcovar), collapse = ", ")))
 
             # Interactive covariate matrix depends on interaction type
             intcovar <- NULL
             if (interaction_type == "sex") {
                 intcovar <- model.matrix(as.formula("~Sex"), cross_copy$covar)[, -1, drop = FALSE]
+                message(sprintf("Interactive covariate (Sex): %d samples x %d covariates", nrow(intcovar), ncol(intcovar)))
             } else if (interaction_type == "diet") {
                 intcovar <- model.matrix(as.formula("~Diet"), cross_copy$covar)[, -1, drop = FALSE]
+                message(sprintf("Interactive covariate (Diet): %d samples x %d covariates", nrow(intcovar), ncol(intcovar)))
+            } else {
+                message("No interactive covariate (additive analysis)")
             }
 
             # Set up variant query function
@@ -331,90 +369,30 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
                 }
             )
 
-            # Ensure chromosome is a string for qtl2 functions
-            chr_str <- as.character(chr)
 
-            # For FST genoprobs, we need to manually subset to the chromosome
-            # because the subset() method doesn't work properly
-            message(sprintf("Subsetting genoprobs for chromosome %s...", chr_str))
 
-            # Extract just the chromosome we need by reading the FST file directly
-            tryCatch(
-                {
-                    fst_file <- paste0(genoprobs$fst, "_", chr_str, ".fst")
-                    message(sprintf("Reading FST file: %s", fst_file))
-
-                    if (!file.exists(fst_file)) {
-                        stop(sprintf("FST file not found: %s", fst_file))
-                    }
-
-                    # Read the FST data for this chromosome
-                    gp_data <- fst::read_fst(fst_file)
-                    message(sprintf("FST data loaded: %d x %d", nrow(gp_data), ncol(gp_data)))
-
-                    # Get dimensions from genoprobs metadata
-                    chr_idx <- which(genoprobs$chr == chr_str)
-                    n_ind <- genoprobs$dim[1, chr_idx]
-                    n_alleles <- genoprobs$dim[2, chr_idx]
-                    n_pos <- genoprobs$dim[3, chr_idx]
-
-                    message(sprintf("Expected dimensions: %d ind x %d alleles x %d pos", n_ind, n_alleles, n_pos))
-                    message(sprintf("FST dimensions: %d rows x %d cols", nrow(gp_data), ncol(gp_data)))
-
-                    # FST stores as (n_ind * n_alleles) rows x n_pos columns
-                    # We need to reshape to n_ind x n_alleles x n_pos
-                    if (nrow(gp_data) != n_ind * n_alleles || ncol(gp_data) != n_pos) {
-                        stop(sprintf(
-                            "FST dimension mismatch: expected %d x %d, got %d x %d",
-                            n_ind * n_alleles, n_pos, nrow(gp_data), ncol(gp_data)
-                        ))
-                    }
-
-                    message(sprintf("Reshaping genoprobs: %d ind x %d alleles x %d pos", n_ind, n_alleles, n_pos))
-
-                    # Convert to 3D array
-                    gp_matrix <- as.matrix(gp_data)
-                    gp_array <- array(dim = c(n_ind, n_alleles, n_pos))
-
-                    # Reshape: FST has rows as (ind1_allele1, ind1_allele2, ..., ind2_allele1, ...)
-                    for (i in 1:n_ind) {
-                        for (j in 1:n_alleles) {
-                            row_idx <- (i - 1) * n_alleles + j
-                            gp_array[i, j, ] <- gp_matrix[row_idx, ]
-                        }
-                    }
-
-                    # Set dimnames using the stored dimnames from genoprobs
-                    # genoprobs$dimnames[[chr_idx]] is a list with 3 elements: [ind_names, allele_names, marker_names]
-                    dimnames(gp_array) <- genoprobs$dimnames[[chr_idx]]
-
-                    # Reconstruct a single-chromosome genoprobs object
-                    gp_chr <- list()
-                    gp_chr[[chr_str]] <- gp_array
-                    class(gp_chr) <- c("calc_genoprob", "list")
-                    attr(gp_chr, "crosstype") <- attr(genoprobs, "crosstype")
-                    attr(gp_chr, "is_x_chr") <- stats::setNames(chr_str == "X", chr_str)
-                    attr(gp_chr, "alleles") <- attr(genoprobs, "alleles")
-                    attr(gp_chr, "alleleprobs") <- attr(genoprobs, "alleleprobs")
-
-                    message(sprintf("Genoprobs subset successful for chr %s", chr_str))
-                },
-                error = function(e) {
-                    stop(sprintf("Failed to subset genoprobs for chr %s: %s", chr_str, e$message))
-                }
-            )
-
+            # Check if kinship is available (after chr normalization)
+            kinship_to_use <- NULL
+            if (!is.null(cross_copy$kinship_loco) && chr %in% names(cross_copy$kinship_loco)) {
+                kinship_to_use <- cross_copy$kinship_loco[[chr]]
+                message(sprintf("Using LOCO kinship for chr %s", chr))
+            } else if (!is.null(cross_copy$kinship)) {
+                kinship_to_use <- cross_copy$kinship
+                message("Using overall kinship (LOCO not available)")
+            } else {
+                message("WARNING: No kinship matrix available - LOD scores may be incorrect")
+            }
             # Perform SNP association
-            message(sprintf("Running scan1snps for chromosome %s...", chr_str))
+            message(sprintf("Running scan1snps for chromosome %s...", chr))
             snp_assoc <- qtl2::scan1snps(
-                genoprobs = gp_chr,
-                map = cross_copy$pmap,
+                genoprobs = genoprobs,
+                map = map,
                 pheno = cross_copy$pheno[, pheno_to_use, drop = FALSE],
-                kinship = cross_copy$kinship_loco[[chr_str]],
+                kinship = kinship_to_use,
                 addcovar = addcovar,
                 intcovar = intcovar,
                 query_func = query_variants,
-                chr = chr_str,
+                chr = chr,
                 start = pos - window,
                 end = pos + window,
                 keep_all_snps = TRUE,
@@ -426,7 +404,17 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
                 return(list(error = "SNP association failed - no LOD scores returned. Check chromosome naming and data availability."))
             }
 
-            message(sprintf("SNP association complete: %d SNPs analyzed", nrow(snp_assoc$snpinfo)))
+
+            # Check if there are peak markers in the region
+            peak_lods <- snp_assoc$lod[snp_assoc$lod > quantile(snp_assoc$lod, 0.95, na.rm = TRUE)]
+            if (length(peak_lods) > 0) {
+                message(sprintf(
+                    "Top 5%% of SNP LODs: %.3f to %.3f (n=%d SNPs)",
+                    min(peak_lods, na.rm = TRUE),
+                    max(peak_lods, na.rm = TRUE),
+                    length(peak_lods)
+                ))
+            }
 
             # Add genes to the result
             snp_assoc$genes <- genes

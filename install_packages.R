@@ -1,11 +1,11 @@
 # install_packages.R
 
 # Set CRAN mirror
-options(repos = c(CRAN = 'http://cran.rstudio.com/'))
+options(repos = c(CRAN = "http://cran.rstudio.com/"))
 
 # Install BiocManager (needed even if some Bioc packages are pre-installed)
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
-  install.packages("BiocManager")
+    install.packages("BiocManager")
 }
 library(BiocManager)
 
@@ -14,19 +14,20 @@ library(BiocManager)
 pkgs <- c(
     # 'lme4', 'pbkrtest', 'car', 'rstatix', 'ragg', # Dependencies likely covered by shiny-verse
     # 'tidyverse', # Included in shiny-verse
-    'ggpubr', 'plumber', # Keep ggpubr, plumber might not be included
+    "ggpubr", "plumber", # Keep ggpubr, plumber might not be included
     # 'rstudioapi', # Likely included
     # 'dplyr', 'stringr', 'ggplot2', # Included in shiny-verse
     # 'grid', # Base R
-    'ggrepel', 'gridGraphics', 
+    "ggrepel", "gridGraphics",
     # 'shiny', # Included in shiny-verse
-    'shinyFiles', 'bslib', 
-    'spsComps', 'DT', 'shinyjs', 'shinycssloaders', 
-    'data.table', 
-    'plotly', 'ggiraph', 'writexl', 'fontawesome', 
-    'fst', 'R.utils', 
-    'qtl2', # Bioconductor package
-    'reshape2' # Added missing package
+    "shinyFiles", "bslib",
+    "spsComps", "DT", "shinyjs", "shinycssloaders",
+    "data.table",
+    "plotly", "ggiraph", "writexl", "fontawesome",
+    "fst", "R.utils",
+    "qtl2", # Bioconductor package
+    "reshape2", # Added missing package,
+    "qtl2fst" # Added missing package
 )
 
 # Install packages using BiocManager
@@ -40,7 +41,7 @@ required_pkgs_unique <- unique(pkgs)
 missing_pkgs <- required_pkgs_unique[!(required_pkgs_unique %in% installed_pkgs)]
 
 if (length(missing_pkgs) > 0) {
-    stop(paste("Failed to install required packages:", paste(missing_pkgs, collapse=", ")))
+    stop(paste("Failed to install required packages:", paste(missing_pkgs, collapse = ", ")))
 } else {
     print("--- Additional required packages installed successfully ---")
-} 
+}
