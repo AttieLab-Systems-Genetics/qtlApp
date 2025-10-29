@@ -33,7 +33,7 @@ snp_association_tab_ui <- function(current_category = NULL) {
                 shiny::numericInput(
                     shiny::NS("app_controller", "snp_window"),
                     label = "Window size (Mb):",
-                    value = 1.5,
+                    value = 0.5,
                     min = 0.5,
                     max = 10,
                     step = 0.5,
@@ -72,6 +72,18 @@ snp_association_tab_ui <- function(current_category = NULL) {
                     value = TRUE,
                     width = "100%"
                 )
+            ),
+            shiny::div(
+                style = "margin-top: 5px; display: flex; gap: 10px; align-items: center;",
+                shiny::actionButton(
+                    shiny::NS("app_controller", "run_snp_assoc"),
+                    label = "Run SNP Association",
+                    class = "btn btn-primary"
+                ),
+                shiny::tags$span(
+                    "Click to run analysis for the selected peak",
+                    style = "font-size: 11px; color: #7f8c8d;"
+                )
             )
         ),
 
@@ -99,6 +111,92 @@ snp_association_tab_ui <- function(current_category = NULL) {
 rankz <- function(x) {
     x <- rank(x, na.last = "keep", ties.method = "average") / (sum(!is.na(x)) + 1)
     return(qnorm(x))
+}
+
+# Internal cache for speeding up repeated SNP association calls
+.snp_assoc_cache <- new.env(parent = emptyenv())
+
+# Get or build static cross-derived objects (map, kinship, normalized LOCO)
+.get_cross_static <- function(cross) {
+    if (is.null(.snp_assoc_cache$map)) {
+        .snp_assoc_cache$map <- cross$pmap
+    }
+    if (is.null(.snp_assoc_cache$kinship)) {
+        .snp_assoc_cache$kinship <- if (!is.null(cross$kinship)) cross$kinship else NULL
+    }
+    if (is.null(.snp_assoc_cache$kinship_loco_norm)) {
+        if (!is.null(cross$kinship_loco)) {
+            kin <- cross$kinship_loco
+            names(kin) <- sub("^chr", "", names(kin))
+            .snp_assoc_cache$kinship_loco_norm <- kin
+        } else {
+            .snp_assoc_cache$kinship_loco_norm <- NULL
+        }
+    }
+    return(list(
+        map = .snp_assoc_cache$map,
+        kinship = .snp_assoc_cache$kinship,
+        kinship_loco_norm = .snp_assoc_cache$kinship_loco_norm
+    ))
+}
+
+# Get or build design matrices and transformed phenotype for a given phenotype/interaction
+.get_design_for <- function(cross, pheno_to_use, interaction_type) {
+    key <- paste0("design:", pheno_to_use, "|", interaction_type)
+    if (!is.null(.snp_assoc_cache[[key]])) {
+        return(.snp_assoc_cache[[key]])
+    }
+
+    pheno_before <- cross$pheno[, pheno_to_use]
+    pheno_after <- rankz(pheno_before)
+    pheno_mat <- matrix(pheno_after, ncol = 1)
+    colnames(pheno_mat) <- pheno_to_use
+    rownames(pheno_mat) <- rownames(cross$pheno)
+
+    addcovar <- model.matrix(as.formula("~GenLit+Sex*Diet"), cross$covar)[, -1, drop = FALSE]
+    intcovar <- NULL
+    if (interaction_type == "sex") {
+        intcovar <- model.matrix(as.formula("~Sex"), cross$covar)[, -1, drop = FALSE]
+    } else if (interaction_type == "diet") {
+        intcovar <- model.matrix(as.formula("~Diet"), cross$covar)[, -1, drop = FALSE]
+    }
+
+    obj <- list(
+        pheno_before = pheno_before,
+        pheno_mat = pheno_mat,
+        addcovar = addcovar,
+        intcovar = intcovar
+    )
+    .snp_assoc_cache[[key]] <- obj
+    return(obj)
+}
+
+# Get or create cached query functions for a chromosome
+.get_query_funcs_for_chr <- function(chr, dbfile) {
+    vkey <- paste0("query_variants:", chr)
+    gkey <- paste0("query_genes:", chr)
+    if (is.null(.snp_assoc_cache[[vkey]])) {
+        .snp_assoc_cache[[vkey]] <- qtl2::create_variant_query_func(
+            dbfile,
+            table_name = "variants",
+            chr_field = "chr",
+            pos_field = "pos",
+            id_field = "variant_id",
+            sdp_field = "sdp_num"
+        )
+    }
+    if (is.null(.snp_assoc_cache[[gkey]])) {
+        .snp_assoc_cache[[gkey]] <- qtl2::create_gene_query_func(
+            dbfile,
+            table_name = "genes",
+            chr_field = "gene_chr",
+            start_field = "gene_start",
+            stop_field = "gene_end",
+            name_field = "gene_symbol",
+            strand_field = "gene_strand"
+        )
+    }
+    return(list(query_variants = .snp_assoc_cache[[vkey]], query_genes = .snp_assoc_cache[[gkey]]))
 }
 
 #' Load cross object for SNP association
@@ -195,7 +293,7 @@ load_genoprobs_for_snp <- function() {
 #' @importFrom qtl2 scan1snps create_variant_query_func create_gene_query_func
 #' @export
 perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
-                                    window = 1.5, interaction_type = "none",
+                                    window = 0.5, interaction_type = "none",
                                     ncores = 1) {
     if (is.null(cross) || is.null(genoprobs)) {
         warning("SNP Association: Cross or genoprobs object is NULL")
@@ -270,11 +368,18 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
             # Normalize and validate key inputs early
             window <- suppressWarnings(as.numeric(window))
             if (is.na(window) || window <= 0) {
-                window <- 1.5
+                window <- 0.5
             }
             ncores <- suppressWarnings(as.integer(ncores))
             if (is.na(ncores) || ncores < 1) {
-                ncores <- 1
+                max_cores <- tryCatch(
+                    {
+                        parallel::detectCores()
+                    },
+                    error = function(e) 1
+                )
+                # leave one core free, cap at 8
+                ncores <- max(1, min(8, max_cores - 1))
             }
 
             message(sprintf(
@@ -282,24 +387,21 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
                 phenotype, chr, pos, window, interaction_type
             ))
 
-            # Make a copy of cross to avoid modifying the original
-            cross_copy <- cross
-
             # Use the mapped phenotype name (might be transcript ID)
             message(sprintf("SNP Association: Using phenotype column: %s", pheno_to_use))
 
-            # Harmonize chromosome naming across map, genoprobs, and kinship_loco
-            map <- cross_copy$pmap
-            if (!is.null(cross_copy$kinship_loco)) {
-                names(cross_copy$kinship_loco) <- sub("^chr", "", names(cross_copy$kinship_loco))
-            }
+            # Use cached static cross-derived objects
+            cross_static <- .get_cross_static(cross)
+            map <- cross_static$map
+            kinship_loco_norm <- cross_static$kinship_loco_norm
 
             # Check available covariates in cross object
-            message(sprintf("Available covariates in cross: %s", paste(colnames(cross_copy$covar), collapse = ", ")))
+            message(sprintf("Available covariates in cross: %s", paste(colnames(cross$covar), collapse = ", ")))
 
-            # Perform rankz transformation
-            pheno_before <- cross_copy$pheno[, pheno_to_use]
-            cross_copy$pheno[, pheno_to_use] <- rankz(pheno_before)
+            # Get cached design matrices and transformed phenotype
+            design <- .get_design_for(cross, pheno_to_use, interaction_type)
+            pheno_before <- design$pheno_before
+            pheno_after <- as.vector(design$pheno_mat[, 1])
             message(sprintf(
                 "Phenotype stats - Before rankz: mean=%.3f, sd=%.3f, range=[%.3f, %.3f]",
                 mean(pheno_before, na.rm = TRUE), sd(pheno_before, na.rm = TRUE),
@@ -307,29 +409,24 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
             ))
             message(sprintf(
                 "Phenotype stats - After rankz: mean=%.3f, sd=%.3f, range=[%.3f, %.3f]",
-                mean(cross_copy$pheno[, pheno_to_use], na.rm = TRUE),
-                sd(cross_copy$pheno[, pheno_to_use], na.rm = TRUE),
-                min(cross_copy$pheno[, pheno_to_use], na.rm = TRUE),
-                max(cross_copy$pheno[, pheno_to_use], na.rm = TRUE)
+                mean(pheno_after, na.rm = TRUE),
+                sd(pheno_after, na.rm = TRUE),
+                min(pheno_after, na.rm = TRUE),
+                max(pheno_after, na.rm = TRUE)
             ))
+
+            # Build phenotype matrix without modifying cross object
+            pheno_mat <- design$pheno_mat
 
             # Set up covariate matrices
             # Additive covariate matrix (always the same)
-            addcovar <- model.matrix(as.formula("~GenLit+Sex*Diet"), cross_copy$covar)[, -1, drop = FALSE]
+            addcovar <- design$addcovar
             message(sprintf("Additive covariates: %d samples x %d covariates", nrow(addcovar), ncol(addcovar)))
             message(sprintf("Additive covariate names: %s", paste(colnames(addcovar), collapse = ", ")))
 
             # Interactive covariate matrix depends on interaction type
-            intcovar <- NULL
-            if (interaction_type == "sex") {
-                intcovar <- model.matrix(as.formula("~Sex"), cross_copy$covar)[, -1, drop = FALSE]
-                message(sprintf("Interactive covariate (Sex): %d samples x %d covariates", nrow(intcovar), ncol(intcovar)))
-            } else if (interaction_type == "diet") {
-                intcovar <- model.matrix(as.formula("~Diet"), cross_copy$covar)[, -1, drop = FALSE]
-                message(sprintf("Interactive covariate (Diet): %d samples x %d covariates", nrow(intcovar), ncol(intcovar)))
-            } else {
-                message("No interactive covariate (additive analysis)")
-            }
+            intcovar <- design$intcovar
+            if (is.null(intcovar)) message("No interactive covariate (additive analysis)")
 
             # Set up variant query function
             data_dir <- "/data/dev/DO_mapping_files"
@@ -340,28 +437,13 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
                 return(list(error = paste0("Variant database not found for chromosome ", chr)))
             }
 
-            query_variants <- qtl2::create_variant_query_func(
-                dbfile,
-                table_name = "variants",
-                chr_field = "chr",
-                pos_field = "pos",
-                id_field = "variant_id",
-                sdp_field = "sdp_num"
-            )
+            qfuncs <- .get_query_funcs_for_chr(chr, dbfile)
+            query_variants <- qfuncs$query_variants
 
             # Query genes in the region
             genes <- tryCatch(
                 {
-                    query_genes <- qtl2::create_gene_query_func(
-                        dbfile,
-                        table_name = "genes",
-                        chr_field = "gene_chr",
-                        start_field = "gene_start",
-                        stop_field = "gene_end",
-                        name_field = "gene_symbol",
-                        strand_field = "gene_strand"
-                    )
-                    query_genes(chr, pos - window, pos + window)
+                    qfuncs$query_genes(chr, pos - window, pos + window)
                 },
                 error = function(e) {
                     message(paste("Could not query genes:", e$message))
@@ -373,11 +455,11 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
 
             # Check if kinship is available (after chr normalization)
             kinship_to_use <- NULL
-            if (!is.null(cross_copy$kinship_loco) && chr %in% names(cross_copy$kinship_loco)) {
-                kinship_to_use <- cross_copy$kinship_loco[[chr]]
+            if (!is.null(kinship_loco_norm) && chr %in% names(kinship_loco_norm)) {
+                kinship_to_use <- kinship_loco_norm[[chr]]
                 message(sprintf("Using LOCO kinship for chr %s", chr))
-            } else if (!is.null(cross_copy$kinship)) {
-                kinship_to_use <- cross_copy$kinship
+            } else if (!is.null(cross_static$kinship)) {
+                kinship_to_use <- cross_static$kinship
                 message("Using overall kinship (LOCO not available)")
             } else {
                 message("WARNING: No kinship matrix available - LOD scores may be incorrect")
@@ -387,7 +469,7 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
             snp_assoc <- qtl2::scan1snps(
                 genoprobs = genoprobs,
                 map = map,
-                pheno = cross_copy$pheno[, pheno_to_use, drop = FALSE],
+                pheno = pheno_mat,
                 kinship = kinship_to_use,
                 addcovar = addcovar,
                 intcovar = intcovar,
@@ -437,7 +519,7 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
 #' @return Gene information data frame or NULL
 #' @importFrom qtl2 create_gene_query_func
 #' @export
-get_genes_for_snp_plot <- function(chr, pos, window = 1.5) {
+get_genes_for_snp_plot <- function(chr, pos, window = 0.5) {
     data_dir <- "/data/dev/DO_mapping_files"
     dbfile <- file.path(data_dir, "variants_db_by_chr", paste0("founder_variants_chr", chr, ".sqlite"))
 

@@ -3164,96 +3164,86 @@ server <- function(input, output, session) {
         return(genoprobs)
     }
 
-    # Reactive for SNP association data - only fires when inputs change AND tab is visited
-    snp_association_data <- shiny::reactive({
-        # Get the selected peak info from scan module
-        peak_info <- scan_module_outputs$selected_peak()
-        # Use req() to silently cancel execution if no peak selected
-        shiny::req(peak_info, nrow(peak_info) > 0)
+    # Store SNP association results explicitly; compute only on button click
+    snp_association_result_rv <- shiny::reactiveVal(NULL)
 
-        # Get the current trait
-        trait <- trait_for_lod_scan_rv()
-        shiny::req(trait, nzchar(trait))
+    # Clear results when leaving the tab or changing trait/peak
+    shiny::observeEvent(input[[ns_app_controller("bottom_tabs")]],
+        {
+            if (!identical(input[[ns_app_controller("bottom_tabs")]], "SNP association")) {
+                snp_association_result_rv(NULL)
+            }
+        },
+        ignoreInit = TRUE
+    )
 
-        # Get parameters - req ensures tab has been visited
-        window <- input[[ns_app_controller("snp_window")]]
-        shiny::req(window)
+    shiny::observeEvent(scan_module_outputs$selected_peak(),
+        {
+            snp_association_result_rv(NULL)
+        },
+        ignoreInit = TRUE
+    )
 
-        lod_drop <- input[[ns_app_controller("snp_lod_drop")]]
-        shiny::req(lod_drop)
+    # Run analysis only when the button is clicked
+    shiny::observeEvent(input[[ns_app_controller("run_snp_assoc")]],
+        {
+            selected_tab <- input[[ns_app_controller("bottom_tabs")]]
+            if (is.null(selected_tab) || !identical(selected_tab, "SNP association")) {
+                return(NULL)
+            }
 
-        # Extract chr and pos from peak info
-        chr <- peak_info$qtl_chr[1]
-        pos <- peak_info$qtl_pos[1]
+            # Get the selected peak and trait
+            peak_info <- scan_module_outputs$selected_peak()
+            shiny::req(peak_info, nrow(peak_info) > 0)
+            trait <- trait_for_lod_scan_rv()
+            shiny::req(trait, nzchar(trait))
 
-        # Get peak marker for tracking (ensures reactive fires when peak changes)
-        peak_marker <- if ("qtl_marker" %in% colnames(peak_info)) {
-            peak_info$qtl_marker[1]
-        } else {
-            paste0("chr", chr, "_", pos)
-        }
+            # Parameters
+            window <- input[[ns_app_controller("snp_window")]]
+            shiny::req(window)
+            chr <- peak_info$qtl_chr[1]
+            pos <- peak_info$qtl_pos[1]
+            peak_marker <- if ("qtl_marker" %in% colnames(peak_info)) peak_info$qtl_marker[1] else paste0("chr", chr, "_", pos)
+            interaction_type <- current_interaction_type_rv() %||% "none"
 
-        # Get interaction type
-        interaction_type <- current_interaction_type_rv() %||% "none"
+            message(sprintf(
+                "SNP Association (button): trait=%s, peak=%s, chr=%s, pos=%.2f, window=%.2f, interaction=%s",
+                trait, peak_marker, chr, pos, window, interaction_type
+            ))
 
-        message(sprintf(
-            "SNP Association: trait=%s, peak=%s, chr=%s, pos=%.2f, window=%.2f, interaction=%s",
-            trait, peak_marker, chr, pos, window, interaction_type
-        ))
+            cross <- get_snp_cross()
+            genoprobs <- get_snp_genoprobs()
+            shiny::req(cross, genoprobs)
 
-        # Get cross and genoprobs (load if not already cached)
-        cross <- get_snp_cross()
-        genoprobs <- get_snp_genoprobs()
+            shiny::withProgress(message = "Running SNP association...", value = 0, {
+                shiny::incProgress(0.2, detail = "Preparing inputs...")
 
-        if (is.null(cross)) {
-            shiny::showNotification(
-                "Failed to load cross object for SNP association",
-                type = "error",
-                duration = 5
-            )
-            return(list(error = "Cross object could not be loaded. Check file permissions and paths."))
-        }
+                # Abort if user leaves the tab
+                if (!identical(input[[ns_app_controller("bottom_tabs")]], "SNP association")) {
+                    return(NULL)
+                }
 
-        if (is.null(genoprobs)) {
-            shiny::showNotification(
-                "Failed to load genoprobs for SNP association",
-                type = "error",
-                duration = 5
-            )
-            return(list(error = "Genoprobs could not be loaded. Check file permissions and paths."))
-        }
+                res <- perform_snp_association(
+                    cross = cross,
+                    genoprobs = genoprobs,
+                    phenotype = trait,
+                    chr = chr,
+                    pos = pos,
+                    window = window,
+                    interaction_type = interaction_type,
+                    ncores = 1
+                )
 
-        # Perform SNP association
-        shiny::withProgress(message = "Running SNP association...", value = 0, {
-            shiny::incProgress(0.3, detail = "Loading variants...")
-
-            result <- perform_snp_association(
-                cross = cross,
-                genoprobs = genoprobs,
-                phenotype = trait,
-                chr = chr,
-                pos = pos,
-                window = window,
-                interaction_type = interaction_type,
-                ncores = 1
-            )
-
-            shiny::incProgress(0.7, detail = "Analysis complete")
-            return(result)
-        })
-    }) |>
-        shiny::bindEvent(
-            scan_module_outputs$selected_peak(),
-            input[[ns_app_controller("snp_window")]],
-            input[[ns_app_controller("snp_lod_drop")]],
-            ignoreNULL = TRUE,
-            ignoreInit = TRUE
-        ) |>
-        shiny::debounce(500)
+                shiny::incProgress(0.8, detail = "Finalizing...")
+                snp_association_result_rv(res)
+            })
+        },
+        ignoreInit = TRUE
+    )
 
     # Reactive for genes in the region (extracted from SNP association result)
     snp_genes_data <- shiny::reactive({
-        snp_data <- snp_association_data()
+        snp_data <- snp_association_result_rv()
         if (!is.null(snp_data) && !is.null(snp_data$genes)) {
             return(snp_data$genes)
         }
@@ -3262,13 +3252,13 @@ server <- function(input, output, session) {
 
     # Render SNP association plot
     output[[ns_app_controller("snp_plot_container")]] <- shiny::renderUI({
-        snp_data <- snp_association_data()
+        snp_data <- snp_association_result_rv()
 
         if (is.null(snp_data)) {
             return(
                 shiny::div(
                     style = "padding: 20px; text-align: center; color: #7f8c8d;",
-                    shiny::tags$em("Select a peak to view SNP association")
+                    shiny::tags$em("Click 'Run SNP Association' to analyze the selected peak")
                 )
             )
         }
@@ -3289,7 +3279,7 @@ server <- function(input, output, session) {
     })
 
     output[[ns_app_controller("snp_plot")]] <- shiny::renderPlot({
-        snp_data <- snp_association_data()
+        snp_data <- snp_association_result_rv()
         genes <- snp_genes_data()
 
         shiny::req(snp_data)
@@ -3322,7 +3312,7 @@ server <- function(input, output, session) {
 
     # Render top variants table
     output[[ns_app_controller("snp_table_container")]] <- shiny::renderUI({
-        snp_data <- snp_association_data()
+        snp_data <- snp_association_result_rv()
 
         if (is.null(snp_data)) {
             return(
@@ -3342,7 +3332,7 @@ server <- function(input, output, session) {
     })
 
     output[[ns_app_controller("snp_table")]] <- DT::renderDataTable({
-        snp_data <- snp_association_data()
+        snp_data <- snp_association_result_rv()
         shiny::req(snp_data)
 
         # Skip if error message present
