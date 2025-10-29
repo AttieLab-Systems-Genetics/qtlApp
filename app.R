@@ -3274,7 +3274,7 @@ server <- function(input, output, session) {
             )
         }
 
-        shiny::plotOutput(ns_app_controller("snp_plot"), height = "450px") |>
+        shiny::plotOutput(ns_app_controller("snp_plot"), height = "650px") |>
             shinycssloaders::withSpinner(color = "#3498db")
     })
 
@@ -3372,8 +3372,10 @@ server <- function(input, output, session) {
                 DT::datatable(
                     top_display,
                     options = list(
-                        pageLength = 15,
+                        pageLength = 25,
                         scrollX = TRUE,
+                        scrollY = 500,
+                        scrollCollapse = TRUE,
                         dom = "Bfrtip",
                         buttons = c("copy", "csv", "excel")
                     ),
