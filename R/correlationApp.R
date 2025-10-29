@@ -500,16 +500,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 # Build output table
                 out <- dt[, .(trait = phenotype, correlation_value = .SD[[1]]), .SDcols = key_info$key]
 
-                # For large datasets (genes-vs-genes), filter to top N by absolute correlation
-                total_rows <- nrow(out)
-                truncated <- FALSE
-                if (total_rows > MAX_CORRELATIONS) {
-                    out[, abs_corr_temp := abs(correlation_value)]
-                    data.table::setorder(out, -abs_corr_temp)
-                    out <- out[1:MAX_CORRELATIONS]
-                    out[, abs_corr_temp := NULL]
-                    truncated <- TRUE
-                }
+                # Removed subsetting: return all rows, ordering is applied later by abs magnitude
 
                 # Add p-values from companion file if available (only for filtered traits)
                 pval_path <- sub("_genlitsexbydiet_adj_corr\\.csv$", "_genlitsexbydiet_adj_pval.csv", file_path)
@@ -554,14 +545,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                     out[, num_mice := as.numeric(NA)]
                 }
 
-                # Notify user if results were truncated
-                if (truncated) {
-                    shiny::showNotification(
-                        paste0("Showing top ", MAX_CORRELATIONS, " of ", total_rows, " correlations (filtered by absolute correlation)"),
-                        type = "message",
-                        duration = 5
-                    )
-                }
+                # Removed truncated notification: returning all rows
             } else {
                 # Row mode: read entire file, find the row, and transpose to long format
                 # For large files (genes-vs-genes), show progress notification
@@ -598,16 +582,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 )
                 out <- long_dt[, .(trait, correlation_value)]
 
-                # For large datasets (genes-vs-genes), filter to top N by absolute correlation
-                total_rows <- nrow(out)
-                truncated <- FALSE
-                if (total_rows > MAX_CORRELATIONS) {
-                    out[, abs_corr_temp := abs(correlation_value)]
-                    data.table::setorder(out, -abs_corr_temp)
-                    out <- out[1:MAX_CORRELATIONS]
-                    out[, abs_corr_temp := NULL]
-                    truncated <- TRUE
-                }
+                # Removed subsetting: return all rows, ordering is applied later by abs magnitude
 
                 # Get the trait names we kept for efficient companion file reading
                 kept_traits <- out$trait
@@ -682,14 +657,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                     out[, num_mice := as.numeric(NA)]
                 }
 
-                # Notify user if results were truncated
-                if (truncated) {
-                    shiny::showNotification(
-                        paste0("Showing top ", MAX_CORRELATIONS, " of ", total_rows, " correlations (filtered by absolute correlation)"),
-                        type = "message",
-                        duration = 5
-                    )
-                }
+                # Removed truncated notification: returning all rows
 
                 # Gene mapping happens after both column and row mode complete
             }
