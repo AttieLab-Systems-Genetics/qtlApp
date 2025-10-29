@@ -3310,6 +3310,79 @@ server <- function(input, output, session) {
         )
     })
 
+    # Download handlers for SNP association plot (PNG/PDF)
+    output[[ns_app_controller("download_snp_plot_png")]] <- shiny::downloadHandler(
+        filename = function() {
+            peak_info <- scan_module_outputs$selected_peak()
+            trait <- trait_for_lod_scan_rv()
+            trait_name <- trait %||% "snp_assoc"
+            chr_suffix <- ""
+            if (!is.null(peak_info) && nrow(peak_info) > 0) {
+                chr_val <- as.character(peak_info$qtl_chr[1] %||% peak_info$chr[1])
+                if (!is.null(chr_val) && nzchar(chr_val)) {
+                    chr_suffix <- paste0("_chr", chr_val)
+                }
+            }
+            paste0("snp_assoc_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".png")
+        },
+        content = function(file) {
+            snp_data <- snp_association_result_rv()
+            if (is.null(snp_data) || !is.null(snp_data$error)) {
+                return(invisible(NULL))
+            }
+            genes <- snp_genes_data()
+            lod_drop <- input[[ns_app_controller("snp_lod_drop")]] %||% 1.5
+            show_sdp <- input[[ns_app_controller("snp_show_sdp")]] %||% TRUE
+            grDevices::png(file, width = 1600, height = 900)
+            try({
+                qtl2::plot_snpasso(
+                    snp_data$lod,
+                    snp_data$snpinfo,
+                    genes = genes,
+                    drop_hilit = lod_drop,
+                    sdp_panel = show_sdp
+                )
+            }, silent = TRUE)
+            grDevices::dev.off()
+        }
+    )
+
+    output[[ns_app_controller("download_snp_plot_pdf")]] <- shiny::downloadHandler(
+        filename = function() {
+            peak_info <- scan_module_outputs$selected_peak()
+            trait <- trait_for_lod_scan_rv()
+            trait_name <- trait %||% "snp_assoc"
+            chr_suffix <- ""
+            if (!is.null(peak_info) && nrow(peak_info) > 0) {
+                chr_val <- as.character(peak_info$qtl_chr[1] %||% peak_info$chr[1])
+                if (!is.null(chr_val) && nzchar(chr_val)) {
+                    chr_suffix <- paste0("_chr", chr_val)
+                }
+            }
+            paste0("snp_assoc_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".pdf")
+        },
+        content = function(file) {
+            snp_data <- snp_association_result_rv()
+            if (is.null(snp_data) || !is.null(snp_data$error)) {
+                return(invisible(NULL))
+            }
+            genes <- snp_genes_data()
+            lod_drop <- input[[ns_app_controller("snp_lod_drop")]] %||% 1.5
+            show_sdp <- input[[ns_app_controller("snp_show_sdp")]] %||% TRUE
+            grDevices::pdf(file, width = 11, height = 7)
+            try({
+                qtl2::plot_snpasso(
+                    snp_data$lod,
+                    snp_data$snpinfo,
+                    genes = genes,
+                    drop_hilit = lod_drop,
+                    sdp_panel = show_sdp
+                )
+            }, silent = TRUE)
+            grDevices::dev.off()
+        }
+    )
+
     # Render top variants table
     output[[ns_app_controller("snp_table_container")]] <- shiny::renderUI({
         snp_data <- snp_association_result_rv()

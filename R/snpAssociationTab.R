@@ -90,7 +90,23 @@ snp_association_tab_ui <- function(current_category = NULL) {
         # SNP Association Plot Container
         shiny::tags$div(
             style = "margin-top: 20px;",
-            shiny::h6("SNP Association Plot", style = "color: #2c3e50; font-weight: bold; margin-bottom: 10px;"),
+            shiny::div(
+                style = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;",
+                shiny::h6("SNP Association Plot", style = "color: #2c3e50; font-weight: bold; margin: 0;"),
+                shiny::div(
+                    style = "display: flex; gap: 8px;",
+                    shiny::downloadButton(
+                        shiny::NS("app_controller", "download_snp_plot_png"),
+                        label = "Download PNG",
+                        class = "btn btn-default btn-sm"
+                    ),
+                    shiny::downloadButton(
+                        shiny::NS("app_controller", "download_snp_plot_pdf"),
+                        label = "Download PDF",
+                        class = "btn btn-default btn-sm"
+                    )
+                )
+            ),
             shiny::uiOutput(shiny::NS("app_controller", "snp_plot_container"))
         ),
 
