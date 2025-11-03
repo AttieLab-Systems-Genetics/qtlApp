@@ -12,6 +12,9 @@ create_modern_theme <- function() {
       axis.line = element_line(color = "#2c3e50", size = 0.5),
       axis.text = element_text(color = "#2c3e50", size = 12),
       axis.title = element_text(color = "#2c3e50", size = 14, face = "bold"),
+      # Increase spacing between axis titles and tick labels
+      axis.title.x = element_text(margin = ggplot2::margin(t = 12)),
+      axis.title.y = element_text(margin = ggplot2::margin(r = 12)),
       plot.title = element_text(color = "#2c3e50", size = 16, face = "bold", hjust = 0),
       plot.subtitle = element_text(color = "#7f8c8d", size = 14, hjust = 0),
       legend.title = element_text(color = "#2c3e50", size = 12, face = "bold"),

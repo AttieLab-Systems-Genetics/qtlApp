@@ -1157,12 +1157,14 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     hovermode = "closest",
                     title = list(text = NULL),
                     xaxis = list(
-                        title = plot_gg$labels$x,
-                        fixedrange = FALSE
+                        title = list(text = plot_gg$labels$x, standoff = 20),
+                        fixedrange = FALSE,
+                        automargin = TRUE
                     ),
                     yaxis = list(
-                        title = plot_gg$labels$y,
-                        fixedrange = TRUE
+                        title = list(text = plot_gg$labels$y, standoff = 20),
+                        fixedrange = TRUE,
+                        automargin = TRUE
                     )
                 ) %>%
                 plotly::config(
@@ -1457,12 +1459,14 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     hovermode = "closest",
                     title = list(text = NULL),
                     xaxis = list(
-                        title = diff_plot_gg$labels$x,
-                        fixedrange = FALSE
+                        title = list(text = diff_plot_gg$labels$x, standoff = 20),
+                        fixedrange = FALSE,
+                        automargin = TRUE
                     ),
                     yaxis = list(
-                        title = diff_plot_gg$labels$y,
-                        fixedrange = TRUE
+                        title = list(text = diff_plot_gg$labels$y, standoff = 20),
+                        fixedrange = TRUE,
+                        automargin = TRUE
                     )
                 ) %>%
                 plotly::config(

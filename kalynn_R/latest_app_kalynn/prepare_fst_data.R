@@ -44,16 +44,46 @@ read_transcript_annotations <- function(anno_file) {
         warning("Transcript annotation file not found: ", anno_file)
         return(list(id_to_symbol = data.table(), full_annos = data.table()))
     }
-    transcript_annos <- fread(anno_file)
-    # Ensure required columns exist
+
+    # Support annotation_list.rds (preferred) via $isoforms with columns transcript.id and symbol
+    if (grepl("\\.rds$", tolower(anno_file))) {
+        anno_list <- tryCatch(readRDS(anno_file), error = function(e) NULL)
+        if (is.null(anno_list)) {
+            warning("Failed to read RDS: ", anno_file)
+            return(list(id_to_symbol = data.table(), full_annos = data.table()))
+        }
+        iso <- anno_list[["isoforms"]]
+        if (is.null(iso) || !is.data.frame(iso)) {
+            warning("annotation_list.rds does not contain a valid 'isoforms' data.frame")
+            return(list(id_to_symbol = data.table(), full_annos = data.table()))
+        }
+        req_cols <- c("transcript.id", "symbol")
+        if (!all(req_cols %in% colnames(iso))) {
+            warning("'isoforms' table must contain columns: ", paste(req_cols, collapse = ", "))
+            return(list(id_to_symbol = data.table(), full_annos = data.table()))
+        }
+        iso_dt <- data.table::as.data.table(iso)
+        # Build id_to_symbol with standardized column names expected by the merge step
+        id_to_symbol <- iso_dt[, .(transcript_id = `transcript.id`, transcript_symbol = symbol)] %>%
+            dplyr::filter(!is.na(transcript_id) & !is.na(transcript_symbol)) %>%
+            dplyr::distinct(transcript_id, .keep_all = TRUE)
+
+        return(list(
+            id_to_symbol = id_to_symbol,
+            full_annos = iso_dt
+        ))
+    }
+
+    # Fallback: CSV with columns transcript_id, transcript_symbol
+    transcript_annos <- data.table::fread(anno_file)
     if (!all(c("transcript_id", "transcript_symbol") %in% colnames(transcript_annos))) {
         warning("Transcript annotation file must contain 'transcript_id' and 'transcript_symbol' columns. Path: ", anno_file)
         return(list(id_to_symbol = data.table(), full_annos = data.table()))
     }
 
     id_to_symbol <- transcript_annos[, .(transcript_id, transcript_symbol)] %>%
-        filter(!is.na(transcript_symbol) & !is.na(transcript_id)) %>%
-        distinct(transcript_id, .keep_all = TRUE) # Ensure transcript_id is unique for mapping
+        dplyr::filter(!is.na(transcript_symbol) & !is.na(transcript_id)) %>%
+        dplyr::distinct(transcript_id, .keep_all = TRUE) # Ensure transcript_id is unique for mapping
 
     return(list(
         id_to_symbol = id_to_symbol, # This will be used for mapping
@@ -181,7 +211,8 @@ main <- function() {
     gene_anno_file <- "/mnt/rdrive/mkeller3/General/main_directory/files_for_cross_object/gene_annotations.csv"
     gene_data <- read_gene_annotations(gene_anno_file)
 
-    transcript_anno_file <- "/mnt/rdrive/mkeller3/General/main_directory/files_for_cross_object/transcript_annotations.csv"
+    # Use annotation_list.rds isoform mapping by default
+    transcript_anno_file <- "/data/dev/miniViewer_3.0/annotation_list.rds"
     transcript_data <- read_transcript_annotations(transcript_anno_file)
 
     input_dir <- "/data/dev/miniViewer_3.0"
@@ -190,13 +221,8 @@ main <- function() {
     }
 
     file_processing_configs <- list(
-        # list(type = "liver_lipids", pattern = "chromosome[0-9XYM]+_liver_lipids_all_mice_sex_interactive_data\\.fst$")
-        # list(type = "genes", pattern = "chromosome[0-9XYM]+_DO_NOT_USE_data\.fst$"), # Example for gene files, adjust pattern
-        # list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoform_.*_data\.fst$") # Adjust pattern as needed
-        # list(type = "genes", pattern = "chromosome[0-9XYM]+_liver_splice_juncs_HC_mice_additive_data\\.fst$")
-        # list(type = "plasma_metabolites", pattern = "chromosome[0-9XYM]+_plasma_metabolites_all_mice_sexbydiet_interactive_data\\.fst$")
-
-        list(type = "splice_juncs", pattern = "chromosome[0-9XYM]+_liver_splice_juncs_HF_mice_additive_data\\.fst$")
+        # Enable isoform processing: chromosome{chr}_liver_isoforms_*_data.fst
+        list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\\.fst$")
     )
     all_processed_paths <- character(0)
 

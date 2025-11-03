@@ -1745,11 +1745,19 @@ server <- function(input, output, session) {
                 ),
                 na.translate = FALSE
             ) +
-            ggplot2::theme_minimal()
+            ggplot2::theme_minimal() +
+            ggplot2::theme(
+                axis.title.x = ggplot2::element_text(margin = ggplot2::margin(t = 12)),
+                axis.title.y = ggplot2::element_text(margin = ggplot2::margin(r = 12))
+            )
 
         plotly::ggplotly(g, tooltip = "text", source = "mediation_plot_src") |>
             plotly::event_register("plotly_click") |>
-            plotly::layout(legend = list(orientation = "h", y = -0.2))
+            plotly::layout(
+                legend = list(orientation = "h", y = -0.2),
+                xaxis = list(title = list(text = g$labels$x, standoff = 20), automargin = TRUE),
+                yaxis = list(title = list(text = g$labels$y, standoff = 20), automargin = TRUE)
+            )
     })
 
     # Render allele effects section conditionally
@@ -2906,9 +2914,17 @@ server <- function(input, output, session) {
             ggplot2::scale_fill_manual(values = red_shades, name = "Model") +
             ggplot2::scale_x_discrete(expand = ggplot2::expansion(mult = c(0.2, 0.2))) +
             ggplot2::labs(x = NULL, y = "Posterior model probability", title = NULL) +
-            ggplot2::theme_minimal()
+            ggplot2::theme_minimal() +
+            ggplot2::theme(
+                axis.title.x = ggplot2::element_text(margin = ggplot2::margin(t = 12)),
+                axis.title.y = ggplot2::element_text(margin = ggplot2::margin(r = 12))
+            )
         plotly::ggplotly(gbar) |>
-            plotly::layout(legend = list(orientation = "h", y = -0.2))
+            plotly::layout(
+                legend = list(orientation = "h", y = -0.2),
+                xaxis = list(title = list(text = gbar$labels$x %||% NULL, standoff = 20), automargin = TRUE),
+                yaxis = list(title = list(text = gbar$labels$y %||% NULL, standoff = 20), automargin = TRUE)
+            )
     })
 
     # Selected mediator row id for posterior bar plot
@@ -3334,15 +3350,18 @@ server <- function(input, output, session) {
             lod_drop <- input[[ns_app_controller("snp_lod_drop")]] %||% 1.5
             show_sdp <- input[[ns_app_controller("snp_show_sdp")]] %||% TRUE
             grDevices::png(file, width = 1600, height = 900)
-            try({
-                qtl2::plot_snpasso(
-                    snp_data$lod,
-                    snp_data$snpinfo,
-                    genes = genes,
-                    drop_hilit = lod_drop,
-                    sdp_panel = show_sdp
-                )
-            }, silent = TRUE)
+            try(
+                {
+                    qtl2::plot_snpasso(
+                        snp_data$lod,
+                        snp_data$snpinfo,
+                        genes = genes,
+                        drop_hilit = lod_drop,
+                        sdp_panel = show_sdp
+                    )
+                },
+                silent = TRUE
+            )
             grDevices::dev.off()
         }
     )
@@ -3370,15 +3389,18 @@ server <- function(input, output, session) {
             lod_drop <- input[[ns_app_controller("snp_lod_drop")]] %||% 1.5
             show_sdp <- input[[ns_app_controller("snp_show_sdp")]] %||% TRUE
             grDevices::pdf(file, width = 11, height = 7)
-            try({
-                qtl2::plot_snpasso(
-                    snp_data$lod,
-                    snp_data$snpinfo,
-                    genes = genes,
-                    drop_hilit = lod_drop,
-                    sdp_panel = show_sdp
-                )
-            }, silent = TRUE)
+            try(
+                {
+                    qtl2::plot_snpasso(
+                        snp_data$lod,
+                        snp_data$snpinfo,
+                        genes = genes,
+                        drop_hilit = lod_drop,
+                        sdp_panel = show_sdp
+                    )
+                },
+                silent = TRUE
+            )
             grDevices::dev.off()
         }
     )

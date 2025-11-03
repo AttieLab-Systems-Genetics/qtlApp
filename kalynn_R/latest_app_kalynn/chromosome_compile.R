@@ -10,8 +10,18 @@ library(stringr)
 library(parallel)
 
 # Define input and output directories
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_splice_juncs/liver_splice_juncs_all_mice_additive/output"
+# Allow override via env var INPUT_DIR or first command-line argument
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_isoforms/liver_isoforms_all_mice_additive/output"
 OUTPUT_DIR <- "/data/dev/miniViewer_3.0"
+
+args <- commandArgs(trailingOnly = TRUE)
+env_input <- Sys.getenv("INPUT_DIR", unset = NA)
+if (!is.na(env_input) && dir.exists(env_input)) {
+  INPUT_DIR <- env_input
+}
+if (length(args) >= 1 && dir.exists(args[1])) {
+  INPUT_DIR <- args[1]
+}
 
 # Set data.table specific temp directory
 # options(datatable.tmpdir = my_temp_dir)
@@ -23,7 +33,7 @@ input_dirname <- basename(dirname(INPUT_DIR))
 
 # Define all chromosomes
 
-CHROMOSOMES <- c(16:19, "X", "Y", "M")
+CHROMOSOMES <- c(1:5)
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
