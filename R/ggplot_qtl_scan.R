@@ -19,7 +19,8 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
                               "Diet Interactive" = 10.5,
                               "Sex Interactive" = 10.5,
                               "Sex x Diet Interactive" = 15.7
-                            )) {
+                            ),
+                            y_max_override = NULL) {
   if (!exists("create_modern_theme", mode = "function")) {
     source("R/plot_enhancements.R")
   }
@@ -98,6 +99,16 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
   y_max_data <- suppressWarnings(max(plot_data$LOD, na.rm = TRUE))
   y_max_thr <- if (isTRUE(show_thresholds) && length(thresholds_present) > 0) suppressWarnings(max(as.numeric(thresholds_present), na.rm = TRUE)) else -Inf
   y_axis_max <- max(y_max_data, y_max_thr)
+  # Apply optional override for y-axis maximum if provided and valid
+  if (!is.null(y_max_override)) {
+    y_override_num <- suppressWarnings(as.numeric(y_max_override))
+    if (is.finite(y_override_num) && y_override_num > 0) {
+      y_axis_max <- y_override_num
+    }
+  } else {
+    # Add headroom when not overridden
+    y_axis_max <- y_axis_max * 1.25
+  }
 
   # --- Plot Construction ---
   p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = .data[[xvar]], y = .data$LOD, color = .data$aesthetics_type, group = interaction(.data$aesthetics_type, .data$chr), text = .data$hover_text)) +
@@ -110,7 +121,7 @@ ggplot_qtl_scan <- function(scan_table, LOD_thr = NULL, selected_chr = "All",
 
     # Axis and theme setup
     ggplot2::scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = ggplot2::expansion(mult = c(0.01, 0.01))) +
-    ggplot2::ylim(0, y_axis_max * 1.25) +
+    ggplot2::ylim(0, y_axis_max) +
     create_modern_theme() +
     ggplot2::theme(
       legend.position = "bottom",

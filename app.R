@@ -894,6 +894,10 @@ server <- function(input, output, session) {
     # Reactive value to store the trait selected from either plot for LOD scanning
     trait_for_lod_scan_rv <- shiny::reactiveVal(NULL)
 
+    # Optional y-axis max override for LOD plots
+    lod_y_max_override_rv <- shiny::reactiveVal(NULL)
+    show_ymax_input_rv <- shiny::reactiveVal(FALSE)
+
     # Track last selected dataset group to refine trait preservation behavior
     last_selected_dataset_group_rv <- shiny::reactiveVal(NULL)
 
@@ -1132,7 +1136,8 @@ server <- function(input, output, session) {
         interaction_type_reactive = current_interaction_type_rv, # Pass the interaction type reactive
         overlay_diet_toggle = reactive(input[[ns_app_controller("overlay_diet")]]),
         overlay_sex_toggle = reactive(input[[ns_app_controller("overlay_sex")]]),
-        overlay_sex_diet_toggle = reactive(input[[ns_app_controller("overlay_sex_diet")]])
+        overlay_sex_diet_toggle = reactive(input[[ns_app_controller("overlay_sex_diet")]]),
+        y_axis_max_override_reactive = lod_y_max_override_rv
     )
 
     # Initialize allele effects module, now driven by the scan plot's selected peak
@@ -1210,13 +1215,26 @@ server <- function(input, output, session) {
                                 shiny::uiOutput(ns_app_controller("overlay_toggles_ui"))
                             ),
                             div(
-                                style = "flex: 0 0 auto;",
+                                style = "flex: 0 0 auto; display: flex; gap: 6px; align-items: center;",
                                 shiny::actionButton(
                                     ns_app_controller("reset_chr_view"),
                                     "🌐 Reset Zoom",
                                     class = "btn btn-sm btn-secondary",
                                     style = "background: #7f8c8d; border: none; color: white; font-size: 11px; padding: 4px 8px;"
-                                )
+                                ),
+                                shiny::actionButton(
+                                    ns_app_controller("set_y_max_btn"),
+                                    "Set Y Max",
+                                    class = "btn btn-sm btn-outline-primary",
+                                    style = "font-size: 11px; padding: 4px 8px;"
+                                ),
+                                shiny::actionButton(
+                                    ns_app_controller("reset_y_max_btn"),
+                                    "Reset Y Max",
+                                    class = "btn btn-sm btn-outline-secondary",
+                                    style = "font-size: 11px; padding: 4px 8px;"
+                                ),
+                                shiny::uiOutput(ns_app_controller("y_max_inline_ui"))
                             )
                         )
                     ),
@@ -2766,6 +2784,92 @@ server <- function(input, output, session) {
             duration = 2
         )
     })
+
+    # ====== Y-AXIS MAX OVERRIDE CONTROLS ======
+    observeEvent(input[[ns_app_controller("set_y_max_btn")]], {
+        default_val <- 20
+        # Safely parse existing override to a positive finite number
+        cur <- tryCatch(lod_y_max_override_rv(), error = function(e) NULL)
+        if (!is.null(cur)) {
+            num <- suppressWarnings(as.numeric(cur))
+            if (isTRUE(is.finite(num)) && isTRUE(num > 0)) {
+                default_val <- num
+            }
+        }
+        shiny::showModal(shiny::modalDialog(
+            title = "Set LOD Plot Y-axis Maximum",
+            easyClose = TRUE,
+            footer = tagList(
+                shiny::modalButton("Cancel"),
+                shiny::actionButton(ns_app_controller("apply_y_max_btn"), "Apply", class = "btn btn-primary")
+            ),
+            shiny::numericInput(ns_app_controller("y_max_input"), label = "Y-axis maximum (LOD)", value = default_val, min = 1, step = 0.5, width = "200px")
+        ))
+    })
+
+    observeEvent(input[[ns_app_controller("apply_y_max_btn")]],
+        {
+            val <- suppressWarnings(as.numeric(input[[ns_app_controller("y_max_input")]]))
+            if (is.finite(val) && val > 0) {
+                lod_y_max_override_rv(val)
+                shiny::showNotification(paste("Set LOD y max to", val), type = "message", duration = 2)
+            } else {
+                shiny::showNotification("Please enter a positive number.", type = "error", duration = 3)
+            }
+            shiny::removeModal()
+        },
+        ignoreInit = TRUE
+    )
+
+    observeEvent(input[[ns_app_controller("reset_y_max_btn")]],
+        {
+            lod_y_max_override_rv(NULL)
+            shiny::showNotification("Reset LOD y max to auto.", type = "default", duration = 2)
+        },
+        ignoreInit = TRUE
+    )
+
+    # Also support an inline input right next to the buttons for quick editing
+    output[[ns_app_controller("y_max_inline_ui")]] <- shiny::renderUI({
+        # Only show while the user is actively setting a new value
+        if (!isTRUE(show_ymax_input_rv())) {
+            return(NULL)
+        }
+        default_val <- 20
+        cur <- suppressWarnings(as.numeric(lod_y_max_override_rv()))
+        if (isTRUE(is.finite(cur)) && isTRUE(cur > 0)) default_val <- cur
+        shiny::div(
+            style = "display: flex; gap: 6px; align-items: center;",
+            shiny::numericInput(ns_app_controller("y_max_input_inline"), label = NULL, value = default_val, min = 1, step = 0.5, width = "110px"),
+            shiny::actionButton(ns_app_controller("apply_y_max_inline"), "Apply", class = "btn btn-sm btn-primary"),
+            shiny::actionButton(ns_app_controller("cancel_y_max_inline"), "Cancel", class = "btn btn-sm btn-light")
+        )
+    })
+
+    observeEvent(input[[ns_app_controller("set_y_max_btn")]], {
+        show_ymax_input_rv(TRUE)
+    })
+
+    observeEvent(input[[ns_app_controller("apply_y_max_inline")]],
+        {
+            val <- suppressWarnings(as.numeric(input[[ns_app_controller("y_max_input_inline")]]))
+            if (is.finite(val) && val > 0) {
+                lod_y_max_override_rv(val)
+                shiny::showNotification(paste("Set LOD y max to", val), type = "message", duration = 2)
+                show_ymax_input_rv(FALSE)
+            } else {
+                shiny::showNotification("Please enter a positive number.", type = "error", duration = 3)
+            }
+        },
+        ignoreInit = TRUE
+    )
+
+    observeEvent(input[[ns_app_controller("cancel_y_max_inline")]],
+        {
+            show_ymax_input_rv(FALSE)
+        },
+        ignoreInit = TRUE
+    )
 
     # ====== ADDITIONAL ANALYSES PLOT OUTPUTS ======
     # Profile Plot output

@@ -36,7 +36,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                            FALSE
                        }), overlay_sex_diet_toggle = reactive({
                            FALSE
-                       })) {
+                       }), y_axis_max_override_reactive = NULL) {
     shiny::moduleServer(id, function(input, output, session) {
         ns <- session$ns
 
@@ -861,7 +861,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         selected_chr,
                         overlay_diet_data = diet_overlay,
                         overlay_sex_data = sex_overlay,
-                        overlay_sex_diet_data = sex_diet_overlay
+                        overlay_sex_diet_data = sex_diet_overlay,
+                        y_max_override = tryCatch(if (!is.null(y_axis_max_override_reactive)) y_axis_max_override_reactive() else NULL, error = function(e) NULL)
                     )
                     # Threshold lines are now handled inside ggplot_qtl_scan by type/color
                     if (!is.null(p) && !is.null(static_threshold)) {
@@ -954,7 +955,13 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     diff_plot_data$type <- "Difference"
 
                     # Create plot
-                    diff_plot <- ggplot_qtl_scan(diff_plot_data, -Inf, selected_chromosome, show_thresholds = FALSE)
+                    diff_plot <- ggplot_qtl_scan(
+                        diff_plot_data,
+                        -Inf,
+                        selected_chromosome,
+                        show_thresholds = FALSE,
+                        y_max_override = tryCatch(if (!is.null(y_axis_max_override_reactive)) y_axis_max_override_reactive() else NULL, error = function(e) NULL)
+                    )
 
                     if (!is.null(diff_plot)) {
                         diff_plot <- diff_plot + ggplot2::labs(title = paste("LOD Difference:", interaction_label, "- Additive"))
