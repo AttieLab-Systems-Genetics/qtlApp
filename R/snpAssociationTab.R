@@ -114,6 +114,15 @@ snp_association_tab_ui <- function(current_category = NULL) {
         shiny::tags$div(
             style = "margin-top: 20px;",
             shiny::h6("Top Variants", style = "color: #2c3e50; font-weight: bold; margin-bottom: 10px;"),
+            shiny::div(
+                style = "display: flex; align-items: center; gap: 12px; margin-bottom: 8px;",
+                shiny::checkboxInput(
+                    shiny::NS("app_controller", "snp_only_hi_mod"),
+                    label = "Only HIGH/MODERATE impacts",
+                    value = FALSE,
+                    width = "auto"
+                )
+            ),
             shiny::uiOutput(shiny::NS("app_controller", "snp_table_container"))
         )
     )

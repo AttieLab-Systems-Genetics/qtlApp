@@ -3587,6 +3587,7 @@ server <- function(input, output, session) {
         }
 
         lod_drop <- input[[ns_app_controller("snp_lod_drop")]] %||% 1.5
+        only_hi_mod <- input[[ns_app_controller("snp_only_hi_mod")]] %||% FALSE
 
         tryCatch(
             {
@@ -3596,37 +3597,119 @@ server <- function(input, output, session) {
                     return(data.frame(Message = "No variants above LOD drop threshold"))
                 }
 
-                # Format the table for display - show key columns
-                display_cols <- intersect(
-                    colnames(top),
-                    c(
-                        "snp_id", "chr", "pos", "lod", "A_J", "C57BL_6J", "129S1_SvImJ",
-                        "NOD_ShiLtJ", "NZO_HlLtJ", "CAST_EiJ", "PWK_PhJ", "WSB_EiJ", "sdp", "consequence"
-                    )
-                )
-
-                if (length(display_cols) > 0) {
-                    top_display <- top[, display_cols, drop = FALSE]
-                } else {
-                    top_display <- top
+                # Optional: filter by HIGH/MODERATE impact if column exists
+                if (isTRUE(only_hi_mod) && "impact" %in% names(top)) {
+                    top <- top[top$impact %in% c("HIGH", "MODERATE"), , drop = FALSE]
+                    if (nrow(top) == 0) {
+                        return(data.frame(Message = "No variants with HIGH/MODERATE impact in this region"))
+                    }
                 }
 
-                # Round numeric columns for better display
-                numeric_cols <- sapply(top_display, is.numeric)
-                top_display[numeric_cols] <- lapply(top_display[numeric_cols], function(x) round(x, 3))
+                # Build a compact 4-column display
+                variant_col <- if ("snp_id" %in% names(top)) "snp_id" else if ("variant_id" %in% names(top)) "variant_id" else NULL
+                gene_col <- if ("gene_symbol" %in% names(top)) "gene_symbol" else if ("nearest_gene" %in% names(top)) "nearest_gene" else NULL
+                impact_col <- if ("impact" %in% names(top)) "impact" else if ("consequence" %in% names(top)) "consequence" else NULL
+                has_lod <- "lod" %in% names(top)
+                has_pos <- all(c("chr", "pos") %in% names(top))
+
+                # Create a working copy and helper columns
+                df <- top
+                if (has_pos && !"position_mb" %in% names(df)) {
+                    df$position_mb <- round(df$pos, 3)
+                }
+                if (has_pos && !"chr_pos" %in% names(df)) {
+                    df$chr_pos <- paste0(df$chr, ":", round(df$pos, 3))
+                }
+
+                # Prepare impact badge if available
+                if (!is.null(impact_col)) {
+                    make_badge <- function(val) {
+                        col <- ifelse(val == "HIGH", "#e74c3c",
+                            ifelse(val == "MODERATE", "#e67e22", "#95a5a6")
+                        )
+                        sprintf("<span style='display:inline-block;padding:2px 6px;border-radius:10px;background:%s;color:white;font-size:11px;'>%s</span>", col, val)
+                    }
+                    df$impact_display <- vapply(df[[impact_col]], make_badge, character(1))
+                }
+
+                # Base 4 columns visible by default
+                # Priority: Variant, Gene (or Position), Impact, LOD (or Position)
+                col_variant <- variant_col
+                col_gene_or_pos <- if (!is.null(gene_col)) gene_col else if (has_pos) "position_mb" else NULL
+                col_impact <- if (!is.null(impact_col)) "impact_display" else NULL
+                col_metric <- if (has_lod) "lod" else if (has_pos) "position_mb" else NULL
+
+                base_cols <- c(col_variant, col_gene_or_pos, col_impact, col_metric)
+                base_cols <- base_cols[!vapply(base_cols, is.null, logical(1))]
+                if (length(base_cols) < 4) {
+                    base_fallbacks <- setdiff(c("chr_pos", "chr", "position_mb", impact_col, gene_col), base_cols)
+                    base_cols <- unique(c(base_cols, base_fallbacks))
+                    base_cols <- base_cols[seq_len(min(length(base_cols), 4))]
+                } else if (length(base_cols) > 4) {
+                    base_cols <- base_cols[1:4]
+                }
+
+                # Additional optional columns (hidden by default, toggle via ColVis)
+                founder_cols <- c("A_J", "C57BL_6J", "129S1_SvImJ", "NOD_ShiLtJ", "NZO_HlLtJ", "CAST_EiJ", "PWK_PhJ", "WSB_EiJ")
+                extra_pref <- c(
+                    "chr", "chr_pos", "position_mb", "sdp", "consequence", impact_col,
+                    "nearest_gene", "gene_id", "distance", "allele", "ref", "alt",
+                    founder_cols
+                )
+                extra_pref <- unique(extra_pref[!vapply(extra_pref, is.null, logical(1))])
+                extra_cols <- intersect(extra_pref, setdiff(names(df), c(base_cols, "impact_display")))
+
+                all_cols <- c(base_cols, extra_cols)
+                original_names <- all_cols
+                df_display <- df[, all_cols, drop = FALSE]
+
+                # Pretty column labels
+                friendly_names <- names(df_display)
+                friendly_names[friendly_names == variant_col] <- "Variant"
+                friendly_names[friendly_names == gene_col] <- "Gene"
+                friendly_names[friendly_names == "nearest_gene"] <- "Nearest gene"
+                friendly_names[friendly_names == "position_mb"] <- "Position (Mb)"
+                friendly_names[friendly_names == "chr_pos"] <- "Position"
+                friendly_names[friendly_names == "chr"] <- "Chr"
+                friendly_names[friendly_names == "pos"] <- "Pos (Mb)"
+                friendly_names[friendly_names == "lod"] <- "LOD"
+                friendly_names[friendly_names == "impact_display"] <- "Impact"
+                friendly_names[friendly_names == impact_col] <- "Impact"
+                friendly_names[friendly_names == "sdp"] <- "SDP"
+                # Shorten founder strain names if present
+                founder_map <- c(
+                    "A_J" = "AJ", "C57BL_6J" = "B6", "129S1_SvImJ" = "129", "NOD_ShiLtJ" = "NOD",
+                    "NZO_HlLtJ" = "NZO", "CAST_EiJ" = "CAST", "PWK_PhJ" = "PWK", "WSB_EiJ" = "WSB"
+                )
+                for (nm in intersect(names(founder_map), names(df_display))) {
+                    friendly_names[friendly_names == nm] <- founder_map[[nm]]
+                }
+                names(df_display) <- friendly_names
+
+                # Round numeric columns
+                numeric_cols <- sapply(df_display, is.numeric)
+                df_display[numeric_cols] <- lapply(df_display[numeric_cols], function(x) round(x, 3))
+
+                # Hide extra columns by default; allow user to toggle via ColVis
+                extras_idx <- if (length(extra_cols) > 0) which(original_names %in% extra_cols) - 1 else integer(0)
 
                 DT::datatable(
-                    top_display,
-                    options = list(
-                        pageLength = 25,
-                        scrollX = TRUE,
-                        scrollY = 500,
-                        scrollCollapse = TRUE,
-                        dom = "Bfrtip",
-                        buttons = c("copy", "csv", "excel")
-                    ),
+                    df_display,
+                    escape = FALSE,
                     rownames = FALSE,
-                    caption = "Top SNPs within LOD drop threshold from peak"
+                    selection = "none",
+                    class = "compact stripe hover",
+                    extensions = "Buttons",
+                    options = list(
+                        pageLength = 10,
+                        lengthMenu = c(10, 25, 50, 100),
+                        autoWidth = TRUE,
+                        deferRender = TRUE,
+                        scrollX = TRUE,
+                        dom = "Bfrtip",
+                        buttons = list("colvis", "copy", "csv", "excel"),
+                        columnDefs = list(list(visible = FALSE, targets = extras_idx))
+                    )
                 )
             },
             error = function(e) {
