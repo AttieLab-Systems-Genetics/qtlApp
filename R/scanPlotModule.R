@@ -13,7 +13,7 @@
 #' @param overlay_sex_toggle reactive boolean for sex overlay
 #'
 #' @importFrom shiny moduleServer NS reactive reactiveVal observeEvent updateNumericInput req
-#'             observe tagList h5 div uiOutput renderUI conditionalPanel checkboxInput downloadHandler
+#'             observe tagList h5 div uiOutput renderUI conditionalPanel checkboxInput downloadHandler downloadButton
 #' @importFrom plotly plotlyOutput renderPlotly ggplotly event_data layout config
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom dplyr filter select mutate across where arrange desc inner_join everything all_of
@@ -1120,6 +1120,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                         style = "margin-bottom: 10px;",
                         shiny::div("Interactive LOD Scan", style = "text-align: center; font-weight: bold; margin-bottom: 5px;"),
                         shiny::div(textOutput(ns("scan_plot_subheader")), style = "text-align: center; font-style: italic; margin-bottom: 5px;"),
+                        shiny::div(
+                            style = "text-align: right; margin-bottom: 5px;",
+                            shiny::downloadButton(ns("download_qtl_plot_png"), label = "PNG", class = "btn btn-sm"),
+                            shiny::downloadButton(ns("download_qtl_plot_pdf"), label = "PDF", class = "btn btn-sm")
+                        ),
                         plotly::plotlyOutput(ns("render_plotly_plot"),
                             width = paste0(plot_width_rv(), "px"),
                             height = paste0(individual_plot_height, "px")
@@ -1129,6 +1134,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     # Difference plot (bottom)
                     shiny::div(
                         shiny::div("LOD Difference (Interactive - Additive)", style = "text-align: center; font-weight: bold; margin-bottom: 5px;"),
+                        shiny::div(
+                            style = "text-align: right; margin-bottom: 5px;",
+                            shiny::downloadButton(ns("download_diff_plot_png"), label = "PNG", class = "btn btn-sm"),
+                            shiny::downloadButton(ns("download_diff_plot_pdf"), label = "PDF", class = "btn btn-sm")
+                        ),
                         plotly::plotlyOutput(ns("render_difference_plot"),
                             width = paste0(plot_width_rv(), "px"),
                             height = paste0(individual_plot_height, "px")
@@ -1141,6 +1151,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 shiny::tagList(
                     shiny::div("Additive LOD Scan", style = "text-align: center; font-weight: bold; margin-bottom: 5px;"),
                     shiny::div(textOutput(ns("scan_plot_subheader")), style = "text-align: center; font-style: italic; margin-bottom: 5px;"),
+                    shiny::div(
+                        style = "text-align: right; margin-bottom: 5px;",
+                        shiny::downloadButton(ns("download_qtl_plot_png"), label = "PNG", class = "btn btn-sm"),
+                        shiny::downloadButton(ns("download_qtl_plot_pdf"), label = "PDF", class = "btn btn-sm")
+                    ),
                     plotly::plotlyOutput(ns("render_plotly_plot"),
                         width = paste0(plot_width_rv(), "px"),
                         height = paste0(plot_height_rv(), "px")
@@ -1745,10 +1760,11 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             },
             content = function(file) {
                 shiny::req(current_scan_plot_gg())
+                height_px <- if (isTRUE(show_stacked_plots())) plot_height_rv() / 2 else plot_height_rv()
                 ggplot2::ggsave(file,
                     plot = current_scan_plot_gg(),
                     width = plot_width_rv() / 96,
-                    height = plot_height_rv() / 96,
+                    height = height_px / 96,
                     dpi = 300, units = "in"
                 )
             }
@@ -1763,11 +1779,51 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             },
             content = function(file) {
                 shiny::req(current_scan_plot_gg())
+                height_px <- if (isTRUE(show_stacked_plots())) plot_height_rv() / 2 else plot_height_rv()
                 ggplot2::ggsave(file,
                     plot = current_scan_plot_gg(),
                     width = plot_width_rv() / 96,
-                    height = plot_height_rv() / 96,
+                    height = height_px / 96,
                     device = cairo_pdf, units = "in"
+                )
+            }
+        )
+
+        output$download_diff_plot_pdf <- shiny::downloadHandler(
+            filename = function() {
+                main_par_list <- main_par_inputs()
+                trait_name <- current_trait_for_scan() %||% "plot"
+                chr_suffix <- if (main_par_list$selected_chr() != "All") paste0("_chr", main_par_list$selected_chr()) else ""
+                paste0("lod_difference_plot_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".pdf")
+            },
+            content = function(file) {
+                shiny::req(difference_plot_gg())
+                # Match the displayed height: half when stacked, full otherwise
+                height_px <- if (isTRUE(show_stacked_plots())) plot_height_rv() / 2 else plot_height_rv()
+                ggplot2::ggsave(file,
+                    plot = difference_plot_gg(),
+                    width = plot_width_rv() / 96,
+                    height = height_px / 96,
+                    device = cairo_pdf, units = "in"
+                )
+            }
+        )
+
+        output$download_diff_plot_png <- shiny::downloadHandler(
+            filename = function() {
+                main_par_list <- main_par_inputs()
+                trait_name <- current_trait_for_scan() %||% "plot"
+                chr_suffix <- if (main_par_list$selected_chr() != "All") paste0("_chr", main_par_list$selected_chr()) else ""
+                paste0("lod_difference_plot_", trait_name, chr_suffix, "_", format(Sys.time(), "%Y%m%d"), ".png")
+            },
+            content = function(file) {
+                shiny::req(difference_plot_gg())
+                height_px <- if (isTRUE(show_stacked_plots())) plot_height_rv() / 2 else plot_height_rv()
+                ggplot2::ggsave(file,
+                    plot = difference_plot_gg(),
+                    width = plot_width_rv() / 96,
+                    height = height_px / 96,
+                    dpi = 300, units = "in"
                 )
             }
         )

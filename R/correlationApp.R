@@ -9,7 +9,7 @@ utils::globalVariables(c(
 #'
 #' @param id Module ID.
 #' @return UI elements for correlation controls
-#' @importFrom shiny NS selectInput tags div
+#' @importFrom shiny NS selectInput tags div textInput checkboxInput
 #' @export
 correlationInput <- function(id) {
     ns <- shiny::NS(id)
@@ -39,7 +39,7 @@ correlationInput <- function(id) {
                 shiny::checkboxInput(
                     inputId = ns("use_adjusted"),
                     label = "Covariate-Adjusted",
-                    value = FALSE
+                    value = TRUE
                 )
             )
         )
