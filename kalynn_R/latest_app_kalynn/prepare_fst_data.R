@@ -186,14 +186,14 @@ process_fst_file <- function(fst_path, gene_id_to_symbol_map, transcript_id_to_s
                 return(NULL)
             }
 
+            # Ensure Phenotype is clean character for consistent sort
+            if ("Phenotype" %in% colnames(data)) {
+                data[, Phenotype := trimws(as.character(Phenotype))]
+                message("Sorting ", basename(new_fst_path), " by Phenotype...")
+                setorder(data, Phenotype)
+            }
             write_fst(data, new_fst_path, compress = 50)
-            message("Created ", basename(new_fst_path))
-
-            # Sort the data by Phenotype for efficient trait-based reading
-            message("Sorting ", basename(new_fst_path), " by Phenotype...")
-            setorder(data, Phenotype)
-            write_fst(data, new_fst_path, compress = 50)
-            message("Successfully sorted and saved: ", basename(new_fst_path))
+            message("Created (sorted) ", basename(new_fst_path))
 
             create_fst_rows_index(new_fst_path)
 
@@ -215,7 +215,7 @@ main <- function() {
     transcript_anno_file <- "/data/dev/miniViewer_3.0/annotation_list.rds"
     transcript_data <- read_transcript_annotations(transcript_anno_file)
 
-    input_dir <- "/data/dev/miniViewer_3.0"
+    input_dir <- "/mnt/rdrive/mkeller3/General/main_directory/scans/isoforms_kalynn"
     if (!dir.exists(input_dir)) {
         stop("Input directory not found: ", input_dir)
     }
@@ -233,6 +233,21 @@ main <- function() {
         fst_files <- fst_files[!grepl("_with_symbols\\.fst$", fst_files) &
             !grepl("_with_transcript_symbols\\.fst$", fst_files) &
             !grepl("_processed\\.fst$", fst_files)]
+
+        # Skip raws that already have a processed output (or where output is newer)
+        if (identical(config$type, "isoforms") && length(fst_files) > 0) {
+            out_files <- paste0(tools::file_path_sans_ext(fst_files), "_with_transcript_symbols.fst")
+            out_exists <- file.exists(out_files)
+            if (any(out_exists)) {
+                raw_mtime <- file.info(fst_files)$mtime
+                out_mtime <- file.info(out_files)$mtime
+                # keep if output missing OR raw is newer than output
+                need_proc <- (!out_exists) | (raw_mtime > out_mtime)
+                kept_before <- length(fst_files)
+                fst_files <- fst_files[need_proc]
+                message(sprintf("After skipping already-processed isoform raws, remaining: %d (from %d)", length(fst_files), kept_before))
+            }
+        }
 
         if (length(fst_files) == 0) {
             message("No raw files found for type: ", config$type)

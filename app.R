@@ -1501,6 +1501,38 @@ server <- function(input, output, session) {
             return(NULL)
         }
 
+        # Block mediation for cis-eQTL in Genes/Isoforms categories
+        current_category <- tryCatch(selected_dataset_category_reactive(), error = function(e) NULL)
+        is_cis_peak <- FALSE
+        if (!is.null(peak_info) && nrow(peak_info) > 0) {
+            if ("cis" %in% names(peak_info)) {
+                is_cis_peak <- isTRUE(as.logical(peak_info$cis[1]))
+            } else {
+                # Fallback distance-based check when columns are available
+                chr_col <- if ("qtl_chr" %in% names(peak_info)) "qtl_chr" else if ("chr" %in% names(peak_info)) "chr" else NULL
+                pos_col <- if ("qtl_pos" %in% names(peak_info)) "qtl_pos" else if ("pos" %in% names(peak_info)) "pos" else NULL
+                gene_chr_col <- NULL
+                gene_pos_col <- NULL
+                if ("gene_chr_char" %in% names(peak_info)) gene_chr_col <- "gene_chr_char"
+                if ("gene_chr" %in% names(peak_info)) gene_chr_col <- "gene_chr"
+                if ("gene_start" %in% names(peak_info)) gene_pos_col <- "gene_start"
+                if (!is.null(chr_col) && !is.null(pos_col) && !is.null(gene_chr_col) && !is.null(gene_pos_col)) {
+                    qchr <- as.character(peak_info[[chr_col]][1])
+                    gchr <- as.character(peak_info[[gene_chr_col]][1])
+                    qpos <- suppressWarnings(as.numeric(peak_info[[pos_col]][1]))
+                    gpos <- suppressWarnings(as.numeric(peak_info[[gene_pos_col]][1]))
+                    if (nzchar(qchr) && nzchar(gchr) && is.finite(qpos) && is.finite(gpos)) {
+                        same_chr <- toupper(qchr) == toupper(gchr)
+                        is_cis_peak <- isTRUE(same_chr && abs(qpos - gpos) <= 4)
+                    }
+                }
+            }
+        }
+        if (!is.null(current_category) && current_category %in% c("Liver Genes", "Liver Isoforms") && isTRUE(is_cis_peak)) {
+            # No mediation for cis-eQTL in genes/isoforms
+            return(NULL)
+        }
+
         if (!file.exists(file_path)) {
             warning(paste("Mediation file not found:", file_path))
             return(NULL)
@@ -1716,8 +1748,23 @@ server <- function(input, output, session) {
         dt <- mediation_plot_data()
         peaks_tbl <- tryCatch(available_peaks_for_trait(), error = function(e) NULL)
         peaks_exist <- !is.null(peaks_tbl) && is.data.frame(peaks_tbl) && nrow(peaks_tbl) > 0
+        # Custom message for cis-eQTL in genes/isoforms
+        peak_info <- scan_module_outputs$selected_peak()
+        current_category <- tryCatch(selected_dataset_category_reactive(), error = function(e) NULL)
+        show_cis_msg <- FALSE
+        if (!is.null(current_category) && current_category %in% c("Liver Genes", "Liver Isoforms") && !is.null(peak_info) && nrow(peak_info) > 0) {
+            if ("cis" %in% names(peak_info)) {
+                show_cis_msg <- isTRUE(as.logical(peak_info$cis[1]))
+            }
+        }
         if (is.null(dt) || nrow(dt) == 0) {
-            msg <- if (!peaks_exist) "No mediation data" else "No mediation data found for selected peak"
+            msg <- if (isTRUE(show_cis_msg)) {
+                "Mediation not performed for cis-eQTL (genes/isoforms)."
+            } else if (!peaks_exist) {
+                "No mediation data"
+            } else {
+                "No mediation data found for selected peak"
+            }
             return(shiny::div(style = "color:#6c757d; font-size: 13px; padding: 6px 0;", msg))
         }
         plotly::plotlyOutput(ns_app_controller("mediation_plot"), height = "380px")

@@ -74,6 +74,12 @@ trait_scan <- function(file_dir, selected_dataset, selected_trait, cache_env = N
   }
 
   combined_data <- data.table::rbindlist(all_data, fill = TRUE)
+  # Deduplicate potential overlaps from multiple slices by marker/chr/position
+  dedup_keys <- intersect(c("marker", "chr", "position"), names(combined_data))
+  if (length(dedup_keys) >= 1) {
+    data.table::setkeyv(combined_data, dedup_keys)
+    combined_data <- unique(combined_data)
+  }
   message("Combined data: ", nrow(combined_data), " rows for trait: ", selected_trait)
 
   # Prepare the result list
@@ -252,24 +258,49 @@ process_trait_from_file <- function(fst_path, row_index_path, selected_trait, ch
 
       # Handle both old (from/to) and new (.row_min/.row_max) column naming
       if ("from" %in% colnames(trait_rows) && "to" %in% colnames(trait_rows)) {
-        from_row <- trait_rows$from
-        to_row <- trait_rows$to
+        from_row <- as.integer(trait_rows$from)
+        to_row <- as.integer(trait_rows$to)
       } else if (".row_min" %in% colnames(trait_rows) && ".row_max" %in% colnames(trait_rows)) {
-        from_row <- trait_rows$.row_min
-        to_row <- trait_rows$.row_max
+        from_row <- as.integer(trait_rows$.row_min)
+        to_row <- as.integer(trait_rows$.row_max)
       } else {
         warning("Row index file has unexpected column names for chromosome ", chr_num)
         return(NULL)
       }
 
-      message("Found trait in chromosome ", chr_num, " at rows ", from_row, "-", to_row)
+      # Defensive bounds: ensure vectors are same length and valid scalars per slice
+      n_slices <- min(length(from_row), length(to_row))
+      if (n_slices <= 0) {
+        return(NULL)
+      }
+      from_row <- from_row[seq_len(n_slices)]
+      to_row <- to_row[seq_len(n_slices)]
 
-      # Read only the rows for this trait
-      data <- fst::read_fst(fst_path,
-        from = from_row,
-        to = to_row,
-        as.data.table = TRUE
-      )
+      # Read one or more ranges; rbind if multiple slices matched
+      message("Found trait in chromosome ", chr_num, " at rows count=", n_slices)
+      slice_list <- vector("list", n_slices)
+      for (k in seq_len(n_slices)) {
+        fr <- from_row[k]
+        tr <- to_row[k]
+        if (!is.finite(fr) || !is.finite(tr) || tr < fr) next
+        slice_list[[k]] <- tryCatch(
+          fst::read_fst(
+            fst_path,
+            from = fr,
+            to = tr,
+            as.data.table = TRUE
+          ),
+          error = function(e) {
+            warning("Failed reading slice ", k, " for chr ", chr_num, ": ", e$message)
+            NULL
+          }
+        )
+      }
+      slice_list <- Filter(Negate(is.null), slice_list)
+      if (length(slice_list) == 0) {
+        return(NULL)
+      }
+      data <- data.table::rbindlist(slice_list, fill = TRUE)
 
       # Ensure required columns are present
       data <- ensure_required_columns(data, fst_path)
@@ -277,15 +308,19 @@ process_trait_from_file <- function(fst_path, row_index_path, selected_trait, ch
         return(NULL)
       }
 
-      # Filter by phenotype if column exists
+      # Filter by phenotype if column exists, but do not drop the slice if no match
       if ("Phenotype" %in% colnames(data)) {
-        data <- data[tolower(Phenotype) == sel_trait]
-        if (nrow(data) == 0) {
-          # Try normalized filter inside slice too
-          data[, Phenotype := tolower(trimws(as.character(Phenotype)))]
+        data[, Phenotype := tolower(trimws(as.character(Phenotype)))]
+        filtered <- data[Phenotype == sel_trait]
+        if (nrow(filtered) == 0) {
+          # Try normalized equality inside slice
           data[, phen_norm := gsub("[^a-z0-9]+", "", Phenotype)]
           sel_norm <- gsub("[^a-z0-9]+", "", sel_trait)
-          data <- data[phen_norm == sel_norm]
+          filtered <- data[phen_norm == sel_norm]
+        }
+        # If still zero after attempts, keep original 'data' (slice corresponds to target trait)
+        if (nrow(filtered) > 0) {
+          data <- filtered
         }
       }
 

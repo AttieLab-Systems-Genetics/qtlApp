@@ -516,6 +516,10 @@ resolve_trait_for_scan <- function(import_data, selected_dataset, display_trait)
       if (length(match_idx) >= 1) {
         dn <- trait_list_df$data_name[match_idx[1]]
         if (!is.null(dn) && nzchar(dn)) {
+          # For scan row-index keys, splice junctions use a 'liver_' prefix (e.g., liver_junc10857)
+          if (grepl("^junc[0-9]+$", dn, ignore.case = TRUE)) {
+            return(paste0("liver_", dn))
+          }
           return(dn)
         }
       }
