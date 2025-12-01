@@ -215,7 +215,7 @@ main <- function() {
     transcript_anno_file <- "/data/dev/miniViewer_3.0/annotation_list.rds"
     transcript_data <- read_transcript_annotations(transcript_anno_file)
 
-    input_dir <- "/mnt/rdrive/mkeller3/General/main_directory/scans/isoforms_kalynn"
+    input_dir <- "/data/prod/miniViewer_3.0"
     if (!dir.exists(input_dir)) {
         stop("Input directory not found: ", input_dir)
     }

@@ -94,6 +94,9 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # Local cache for peaks data to avoid polluting GlobalEnv and ensure session isolation
+    local_peaks_cache <- new.env(parent = emptyenv())
+
     selected_peaks_file <- shiny::reactive({
       shiny::req(
         import_reactives(),
@@ -167,19 +170,17 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       cache_key <- paste0(file_path, "_", file.info(file_path)$mtime)
 
       # Check if data is already cached
-      if (exists("manhattan_cache", envir = .GlobalEnv)) {
-        if (cache_key %in% names(.GlobalEnv$manhattan_cache)) {
-          message("ManhattanPlot: Using cached peaks data")
-          return(.GlobalEnv$manhattan_cache[[cache_key]])
-        }
-      } else {
-        .GlobalEnv$manhattan_cache <- list()
+      if (cache_key %in% ls(envir = local_peaks_cache)) {
+        message("ManhattanPlot: Using cached peaks data")
+        return(local_peaks_cache[[cache_key]])
       }
 
       tryCatch(
         {
           message(paste("ManhattanPlot: Loading and caching peaks data from:", basename(file_path)))
+          if (exists("log_mem", mode = "function")) log_mem("manhattan: before fread")
           dt <- data.table::fread(file_path, showProgress = FALSE)
+          if (exists("log_mem", mode = "function")) log_mem("manhattan: after fread")
 
           # Transform alternative schema (sex x diet compiled) to expected columns when needed
           dt <- data.table::as.data.table(dt)
@@ -193,11 +194,18 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
           missing_cols <- req_cols[!req_cols %in% colnames(dt)]
 
           # Cache the processed data regardless; plot_data_prep will add phenotype_class if missing
-          .GlobalEnv$manhattan_cache[[cache_key]] <- dt
+          local_peaks_cache[[cache_key]] <- dt
 
-          # Keep cache size manageable (max 5 datasets)
-          if (length(.GlobalEnv$manhattan_cache) > 5) {
-            .GlobalEnv$manhattan_cache <- .GlobalEnv$manhattan_cache[-(1:2)]
+          # Keep cache size manageable (max 2 datasets to prevent memory bloat)
+          # We only need the current one and maybe the previous one for quick switching
+          cached_items <- ls(envir = local_peaks_cache)
+          if (length(cached_items) > 2) {
+            # Remove oldest items (simplified FIFO: remove items not matching current key)
+            items_to_remove <- setdiff(cached_items, cache_key)
+            if (length(items_to_remove) > 0) {
+              rm(list = items_to_remove, envir = local_peaks_cache)
+              base::gc() # Force GC after clearing large objects
+            }
           }
 
           if (length(missing_cols) > 0) {

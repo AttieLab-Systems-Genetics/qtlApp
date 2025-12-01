@@ -82,6 +82,7 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
             # Read the FST file and filter for the specific trait
             # Note: fst::fst() doesn't preserve data.table keys, so we need to read and filter manually
 
+            if (exists("log_mem", mode = "function")) log_mem("profilePlot: before fst read")
             tryCatch(
                 {
                     # Read the full FST file (this might be memory intensive for large files)
@@ -92,6 +93,10 @@ profilePlotServer <- function(id, selected_dataset_category, trait_to_profile) {
 
                     req(trait_data, nrow(trait_data) > 0)
 
+                    if (exists("log_mem", mode = "function")) log_mem("profilePlot: after fst read")
+                    # Encourage GC of the large object if any
+                    rm(full_data)
+                    invisible(gc())
                     return(as.data.table(trait_data)) # Ensure it's a mutable data.table
                 },
                 error = function(e) {

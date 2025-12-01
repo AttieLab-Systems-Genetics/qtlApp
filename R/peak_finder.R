@@ -92,7 +92,9 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
 
     tryCatch(
       {
+        if (exists("log_mem", mode = "function")) log_mem("peak_finder: before fread")
         all_peaks_for_dataset_raw <- data.table::fread(actual_file_to_load, stringsAsFactors = FALSE)
+        if (exists("log_mem", mode = "function")) log_mem("peak_finder: after fread")
 
         current_colnames <- colnames(all_peaks_for_dataset_raw)
 
@@ -170,7 +172,16 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
         # Columns to keep: mapped rename_vec plus optional A-H and any present optional fields
         optional_keep <- intersect(c("A", "B", "C", "D", "E", "F", "G", "H"), current_colnames)
         # Keep raw junction_id/data_name as well if present (helps with splice_junctions matching)
-        optional_keep <- unique(c(optional_keep, intersect(c("junction_id", "data_name"), current_colnames)))
+        optional_keep <- unique(c(
+          optional_keep,
+          intersect(c("junction_id", "data_name"), current_colnames),
+          # For isoforms, also keep transcript_symbol / transcript_id so we can match on them
+          if (!is.null(trait_type) && trait_type == "isoforms") {
+            intersect(c("transcript_symbol", "transcript_id"), current_colnames)
+          } else {
+            character(0)
+          }
+        ))
         select_cols <- unique(c(unname(rename_vec), optional_keep))
 
         all_peaks_for_dataset <- dplyr::select(as.data.frame(all_peaks_for_dataset_raw), dplyr::all_of(select_cols)) %>%
@@ -224,7 +235,22 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
 
   if (!is.null(selected_trait) && length(selected_trait) > 0 && any(nzchar(selected_trait))) {
     # Determine primary filter column
-    filter_col <- if (!is.null(trait_type) && trait_type %in% c("genes", "isoforms")) "gene_symbol" else "phenotype"
+    if (!is.null(trait_type) && trait_type == "isoforms") {
+      # For isoforms, prefer transcript_symbol; fall back to transcript_id, then gene_symbol, then phenotype
+      if ("transcript_symbol" %in% colnames(all_peaks_for_dataset)) {
+        filter_col <- "transcript_symbol"
+      } else if ("transcript_id" %in% colnames(all_peaks_for_dataset)) {
+        filter_col <- "transcript_id"
+      } else if ("gene_symbol" %in% colnames(all_peaks_for_dataset)) {
+        filter_col <- "gene_symbol"
+      } else {
+        filter_col <- "phenotype"
+      }
+    } else if (!is.null(trait_type) && trait_type == "genes") {
+      filter_col <- "gene_symbol"
+    } else {
+      filter_col <- "phenotype"
+    }
     if (!(filter_col %in% colnames(all_peaks_for_dataset))) {
       warning("peak_finder: Column '", filter_col, "' needed for filtering type '", trait_type, "' not found after renaming. Returning all peaks.")
       return(all_peaks_for_dataset)
@@ -248,7 +274,11 @@ peak_finder <- function(file_dir, selected_dataset, selected_trait = NULL, trait
     # (no debug output)
 
     if (nrow(filtered_peaks) == 0 && trait_type %in% c("genes", "isoforms")) {
-      warning("peak_finder: No peaks found for gene symbol '", selected_trait, "'. Check if this symbol exists in the 'gene_symbol' column of the CSV: ", basename(peaks_file_path_for_warning))
+      if (!is.null(trait_type) && trait_type == "isoforms" && "transcript_symbol" %in% colnames(all_peaks_for_dataset)) {
+        warning("peak_finder: No peaks found for transcript symbol '", selected_trait, "'. Check if this symbol exists in the 'transcript_symbol' column of the CSV: ", basename(peaks_file_path_for_warning))
+      } else {
+        warning("peak_finder: No peaks found for gene symbol '", selected_trait, "'. Check if this symbol exists in the 'gene_symbol' column of the CSV: ", basename(peaks_file_path_for_warning))
+      }
     }
     if (nrow(filtered_peaks) > 0 && "marker" %in% colnames(filtered_peaks) && "qtl_lod" %in% colnames(filtered_peaks)) {
       filtered_peaks <- filtered_peaks %>%

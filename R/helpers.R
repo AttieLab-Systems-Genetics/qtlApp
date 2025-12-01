@@ -506,6 +506,71 @@ resolve_trait_for_scan <- function(import_data, selected_dataset, display_trait)
   if (is.null(trait_type)) {
     return(display_trait)
   }
+  # Isoforms: map between display symbol, transcript_id, and scan key
+  if (identical(trait_type, "isoforms")) {
+    trait_list_df <- tryCatch(get_trait_list(import_data, trait_type), error = function(e) NULL)
+    if (is.null(trait_list_df) || !is.data.frame(trait_list_df)) {
+      return(display_trait)
+    }
+
+    display_clean <- trimws(display_trait)
+    display_lower <- tolower(display_clean)
+    # Many scan keys use bare transcript_id without the 'liver_' prefix
+    display_stripped <- sub("^liver_", "", display_lower)
+
+    # Helper to safely extract a column as character
+    get_col_chr <- function(df, nm) {
+      if (!nm %in% colnames(df)) {
+        return(NULL)
+      }
+      as.character(df[[nm]])
+    }
+
+    sym_vec <- get_col_chr(trait_list_df, "symbol")
+    tid_vec <- get_col_chr(trait_list_df, "transcript_id")
+
+    # 1) If display is already a symbol, prefer using that directly
+    if (!is.null(sym_vec)) {
+      idx_sym <- which(tolower(sym_vec) == display_lower)
+      if (length(idx_sym) >= 1) {
+        sym_val <- sym_vec[idx_sym[1]]
+        if (!is.na(sym_val) && nzchar(sym_val)) {
+          return(sym_val)
+        }
+      }
+    }
+
+    # 2) If display matches transcript_id (with or without 'liver_' prefix),
+    #    map to symbol when available; otherwise use bare transcript_id.
+    if (!is.null(tid_vec)) {
+      tid_lower <- tolower(tid_vec)
+      idx_tid <- which(tid_lower == display_lower | tid_lower == display_stripped)
+      if (length(idx_tid) >= 1) {
+        # Prefer the corresponding symbol if present
+        if (!is.null(sym_vec)) {
+          sym_candidates <- sym_vec[idx_tid]
+          sym_candidates <- sym_candidates[!is.na(sym_candidates) && nzchar(sym_candidates)]
+          if (length(sym_candidates) >= 1) {
+            return(sym_candidates[1])
+          }
+        }
+        # Fallback: use bare transcript_id (without 'liver_' prefix)
+        tid_val <- tid_vec[idx_tid[1]]
+        if (!is.na(tid_val) && nzchar(tid_val)) {
+          return(tid_val)
+        }
+      }
+    }
+
+    # 3) As a last resort, if display starts with 'liver_', strip the prefix
+    #    since scan Phenotype keys typically omit it for isoforms.
+    if (startsWith(display_lower, "liver_")) {
+      return(sub("^liver_", "", display_clean))
+    }
+
+    return(display_trait)
+  }
+
   if (identical(trait_type, "splice_junctions")) {
     trait_list_df <- tryCatch(get_trait_list(import_data, trait_type), error = function(e) NULL)
     if (!is.null(trait_list_df) &&
@@ -544,6 +609,62 @@ resolve_trait_aliases_for_peaks <- function(import_data, selected_dataset, displ
     return(character(0))
   }
   trait_type <- tryCatch(get_trait_type(import_data, selected_dataset), error = function(e) NULL)
+  # Isoforms: return aliases spanning symbol, transcript_id, and liver_ prefixed ID
+  if (identical(trait_type, "isoforms")) {
+    trait_list_df <- tryCatch(get_trait_list(import_data, trait_type), error = function(e) NULL)
+    if (is.null(trait_list_df) || !is.data.frame(trait_list_df)) {
+      return(display_trait)
+    }
+
+    display_clean <- trimws(display_trait)
+    display_lower <- tolower(display_clean)
+    stripped_lower <- sub("^liver_", "", display_lower)
+
+    get_col_chr <- function(df, nm) {
+      if (!nm %in% colnames(df)) {
+        return(NULL)
+      }
+      as.character(df[[nm]])
+    }
+
+    sym_vec <- get_col_chr(trait_list_df, "symbol")
+    tid_vec <- get_col_chr(trait_list_df, "transcript_id")
+
+    aliases <- character(0)
+
+    # Match by symbol
+    if (!is.null(sym_vec)) {
+      idx_sym <- which(tolower(sym_vec) == display_lower)
+      if (length(idx_sym) >= 1) {
+        sym_vals <- sym_vec[idx_sym]
+        aliases <- c(aliases, sym_vals)
+        if (!is.null(tid_vec)) {
+          tid_vals <- tid_vec[idx_sym]
+          aliases <- c(aliases, tid_vals, paste0("liver_", tid_vals))
+        }
+      }
+    }
+
+    # Match by transcript_id (with or without 'liver_' prefix)
+    if (!is.null(tid_vec)) {
+      tid_lower <- tolower(tid_vec)
+      idx_tid <- which(tid_lower == display_lower | tid_lower == stripped_lower)
+      if (length(idx_tid) >= 1) {
+        tid_vals2 <- tid_vec[idx_tid]
+        aliases <- c(aliases, tid_vals2, paste0("liver_", tid_vals2))
+        if (!is.null(sym_vec)) {
+          sym_vals2 <- sym_vec[idx_tid]
+          aliases <- c(aliases, sym_vals2)
+        }
+      }
+    }
+
+    # Always include the original display string as a fallback alias
+    aliases <- c(aliases, display_trait)
+    aliases <- unique(aliases[!is.na(aliases) & nzchar(aliases)])
+    return(aliases)
+  }
+
   if (!identical(trait_type, "splice_junctions")) {
     return(display_trait)
   }

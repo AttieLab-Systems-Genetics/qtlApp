@@ -116,9 +116,14 @@ correct_file_path <- function(original_path, trait_type) {
       corrected_path <- paste0(tools::file_path_sans_ext(original_path), "_processed.fst")
     }
   } else if (processed_trait_type %in% c("genes", "isoforms")) {
+    # Check if the original path already has the correct suffix to avoid duplication
     if (grepl("_processed\\.fst$", original_path)) {
       corrected_path <- sub("_processed\\.fst$", "_with_symbols.fst", original_path)
+    } else if (grepl("_with_trancript_symbols\\.fst$", original_path, ignore.case = TRUE) || grepl("_with_transcript_symbols\\.fst$", original_path, ignore.case = TRUE)) {
+      # Special case for isoforms: allow '_with_transcript_symbols.fst' (and handle potential typo in filename if it exists in prod)
+      corrected_path <- original_path
     } else if (!grepl("_with_symbols\\.fst$", original_path)) {
+      # Only append if not already present
       corrected_path <- paste0(tools::file_path_sans_ext(original_path), "_with_symbols.fst")
     }
   }

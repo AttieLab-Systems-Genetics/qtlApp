@@ -95,7 +95,13 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
 
       interaction_type <- if (shiny::is.reactive(sidebar_interaction_type)) sidebar_interaction_type() else "none"
       base_dataset <- selected_dataset()
-      use_qtlxcovar <- !is.null(interaction_type) && interaction_type != "none" && grepl("^HC_HF", base_dataset, ignore.case = TRUE)
+      trait_type_val <- trait_type()
+
+      # For isoforms, always use additive peaks via peak_finder (no qtlxcovar files)
+      use_qtlxcovar <- !is.null(interaction_type) &&
+        interaction_type != "none" &&
+        grepl("^HC_HF", base_dataset, ignore.case = TRUE) &&
+        !identical(trait_type_val, "isoforms")
 
       found_peaks <- NULL
       if (use_qtlxcovar) {
@@ -116,7 +122,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
         found_peaks <- peak_finder(
           file_dir = import_reactives()$file_directory,
           selected_dataset = selected_dataset(),
-          trait_type = trait_type(),
+          trait_type = trait_type_val,
           cache_env = peaks_cache,
           use_cache = TRUE
         )
@@ -201,6 +207,34 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       plot_data_dt[, gene_chr := get(y_chr_col)]
       plot_data_dt[, gene_start := suppressWarnings(as.numeric(get(y_pos_col)))]
       plot_data_dt[, gene_chr_char := chr_XYM(gene_chr)]
+
+      # Build display label for isoforms: prefer transcript_symbol
+      if (identical(trait_type_val, "isoforms")) {
+        transcript_sym <- if ("transcript_symbol" %in% names(plot_data_dt)) {
+          as.character(plot_data_dt[["transcript_symbol"]])
+        } else {
+          rep(NA_character_, nrow(plot_data_dt))
+        }
+        gene_symbol_vec <- if ("gene_symbol" %in% names(plot_data_dt)) {
+          as.character(plot_data_dt[["gene_symbol"]])
+        } else {
+          rep(NA_character_, nrow(plot_data_dt))
+        }
+        phenotype_vec <- if ("phenotype" %in% names(plot_data_dt)) {
+          as.character(plot_data_dt[["phenotype"]])
+        } else {
+          rep(NA_character_, nrow(plot_data_dt))
+        }
+
+        display_label_vec <- ifelse(!is.na(transcript_sym) & nzchar(transcript_sym),
+          transcript_sym,
+          ifelse(!is.na(gene_symbol_vec) & nzchar(gene_symbol_vec) & gene_symbol_vec != "N/A",
+            gene_symbol_vec,
+            phenotype_vec
+          )
+        )
+        plot_data_dt$display_label <- display_label_vec
+      }
 
       plot_data_dt[chr_summary, on = .(qtl_chr_char = chr), qtl_BPcum := qtl_pos + i.tot]
       plot_data_dt[chr_summary, on = .(gene_chr_char = chr), gene_BPcum := gene_start + i.tot]

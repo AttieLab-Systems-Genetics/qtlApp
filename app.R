@@ -3652,8 +3652,21 @@ server <- function(input, output, session) {
                 # Additional optional columns (hidden by default, toggle via ColVis)
                 founder_cols <- c("A_J", "C57BL_6J", "129S1_SvImJ", "NOD_ShiLtJ", "NZO_HlLtJ", "CAST_EiJ", "PWK_PhJ", "WSB_EiJ")
                 extra_pref <- c(
-                    "chr", "chr_pos", "position_mb", "sdp", "consequence", impact_col,
-                    "nearest_gene", "gene_id", "distance", "allele", "ref", "alt",
+                    # positional/context
+                    "chr", "chr_pos", "position_mb", "pos", "distance", "distance_to_tss", "strand",
+                    # variant id and alleles
+                    "snp_id", "variant_id", "rsid", "rsID", "dbSNP", "allele", "effect_allele", "other_allele", "ref", "alt",
+                    # consequence/annotation
+                    "consequence", "csq", "vep_csq", impact_col, "impact",
+                    "biotype", "gene_symbol", "nearest_gene", "gene_id", "transcript_id", "Transcript",
+                    "exon", "intron",
+                    # protein/cDNA annotation
+                    "amino_acids", "codons", "protein_position", "cdna_position", "cds_position",
+                    # scores/frequencies (if present)
+                    "AF", "AF_POPMAX", "CADD", "SIFT", "PolyPhen",
+                    # segregation/SDP
+                    "sdp", "sdp_num",
+                    # founder allele probabilities / presence
                     founder_cols
                 )
                 extra_pref <- unique(extra_pref[!vapply(extra_pref, is.null, logical(1))])
@@ -3668,6 +3681,10 @@ server <- function(input, output, session) {
                 friendly_names[friendly_names == variant_col] <- "Variant"
                 friendly_names[friendly_names == gene_col] <- "Gene"
                 friendly_names[friendly_names == "nearest_gene"] <- "Nearest gene"
+                friendly_names[friendly_names == "gene_symbol"] <- "Gene"
+                friendly_names[friendly_names == "gene_id"] <- "Gene ID"
+                friendly_names[friendly_names == "transcript_id"] <- "Transcript ID"
+                friendly_names[friendly_names == "Transcript"] <- "Transcript"
                 friendly_names[friendly_names == "position_mb"] <- "Position (Mb)"
                 friendly_names[friendly_names == "chr_pos"] <- "Position"
                 friendly_names[friendly_names == "chr"] <- "Chr"
@@ -3676,6 +3693,25 @@ server <- function(input, output, session) {
                 friendly_names[friendly_names == "impact_display"] <- "Impact"
                 friendly_names[friendly_names == impact_col] <- "Impact"
                 friendly_names[friendly_names == "sdp"] <- "SDP"
+                friendly_names[friendly_names == "sdp_num"] <- "SDP (num)"
+                friendly_names[friendly_names == "consequence"] <- "Consequence"
+                friendly_names[friendly_names == "csq"] <- "CSQ"
+                friendly_names[friendly_names == "vep_csq"] <- "VEP CSQ"
+                friendly_names[friendly_names == "biotype"] <- "Biotype"
+                friendly_names[friendly_names == "exon"] <- "Exon"
+                friendly_names[friendly_names == "intron"] <- "Intron"
+                friendly_names[friendly_names == "amino_acids"] <- "AA Change"
+                friendly_names[friendly_names == "codons"] <- "Codons"
+                friendly_names[friendly_names == "protein_position"] <- "Protein Pos"
+                friendly_names[friendly_names == "cdna_position"] <- "cDNA Pos"
+                friendly_names[friendly_names == "cds_position"] <- "CDS Pos"
+                friendly_names[friendly_names == "rsid"] <- "rsID"
+                friendly_names[friendly_names == "dbSNP"] <- "dbSNP"
+                friendly_names[friendly_names == "AF"] <- "AF"
+                friendly_names[friendly_names == "AF_POPMAX"] <- "AF PopMax"
+                friendly_names[friendly_names == "CADD"] <- "CADD"
+                friendly_names[friendly_names == "SIFT"] <- "SIFT"
+                friendly_names[friendly_names == "PolyPhen"] <- "PolyPhen"
                 # Shorten founder strain names if present
                 founder_map <- c(
                     "A_J" = "AJ", "C57BL_6J" = "B6", "129S1_SvImJ" = "129", "NOD_ShiLtJ" = "NOD",

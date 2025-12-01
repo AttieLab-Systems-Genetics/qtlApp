@@ -518,14 +518,27 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
         # Reactive to store additive plot data for difference calculations
         additive_scan_data_rv <- shiny::reactiveVal(NULL)
 
-        # Observer to clear the additive data cache whenever the selected trait changes
+        # Observer to clear the additive data cache AND local caches whenever the selected trait changes
         shiny::observeEvent(current_trait_for_scan(),
             {
                 # This ensures we don't use stale additive data from a previous trait
-                message("scanServer: New trait selected, clearing additive data cache and diff peaks.")
+                # AND we don't keep memory hogging scan data for previous traits
+                message("scanServer: New trait selected, clearing additive data cache, diff peaks, and local scan/peaks caches.")
                 additive_scan_data_rv(NULL)
                 diff_peak_1_rv(NULL)
                 diff_peak_2_rv(NULL)
+
+                # Clear the local caches to prevent memory accumulation
+                if (exists("local_scan_cache") && is.environment(local_scan_cache)) {
+                    rm(list = ls(envir = local_scan_cache), envir = local_scan_cache)
+                    if (exists("log_mem", mode = "function")) log_mem("scanServer: cleared local_scan_cache")
+                }
+                if (exists("local_peaks_cache") && is.environment(local_peaks_cache)) {
+                    rm(list = ls(envir = local_peaks_cache), envir = local_peaks_cache)
+                }
+
+                # Force garbage collection to reclaim memory immediately
+                base::gc()
             },
             ignoreNULL = FALSE,
             ignoreInit = TRUE
