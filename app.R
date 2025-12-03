@@ -1665,16 +1665,10 @@ server <- function(input, output, session) {
                 message(sprintf("Mediation: interactive center_pos chosen = %0.3f", center_pos))
             }
         } else {
-            # Additive: require exact position match when possible. If not found, fall back to nearest within ±4 Mb.
-            prelim_lo <- peak_pos - 4
-            prelim_hi <- peak_pos + 4
-            idx <- which(!is.na(dt_qtl_chr_num) & dt_qtl_chr_num == peak_chr_num & !is.na(pos_num) &
-                pos_num >= prelim_lo & pos_num <= prelim_hi)
-            if (length(idx) > 0) {
-                pick <- idx[which.min(abs(pos_num[idx] - peak_pos))]
-                center_pos <- pos_num[pick]
-                message(sprintf("Mediation: additive fallback center_pos chosen = %0.3f", center_pos))
-            }
+            # Additive: if there is no exact matching row for this peak in the mediation file,
+            # treat this as "no mediation" rather than falling back to a loose window match.
+            message("Mediation: no exact additive match in mediation file; skipping mediation for this peak.")
+            return(NULL)
         }
 
         # Define plotting window
@@ -1688,7 +1682,7 @@ server <- function(input, output, session) {
 
         keep_idx <- !is.na(dt_qtl_chr_num) & (dt_qtl_chr_num == peak_chr_num) & !is.na(pos_num) &
             pos_num >= window_lo & pos_num <= window_hi
-        dt <- dt[keep_idx]
+        dt <- dt[keep_idx, , drop = FALSE]
         message(sprintf("Mediation: rows after window filter chr=%s [%.3f, %.3f]: %s", as.character(peak_chr), window_lo, window_hi, nrow(dt)))
         if (nrow(dt) == 0) {
             return(NULL)
