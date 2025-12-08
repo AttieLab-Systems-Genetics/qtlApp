@@ -20,6 +20,12 @@ get_interactive_dataset_name <- function(base_dataset, interaction_type) {
             return("HC_HF Liver Genes, interactive (Diet)")
         }
     }
+    # HC_HF Liver Isoforms (supports Diet interaction)
+    else if (grepl("HC_HF.*Liver.*Isoform", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "diet") {
+            return("HC_HF Liver Isoforms, interactive (Diet)")
+        }
+    }
     # HC_HF Liver Lipids (supports Diet and Sex x Diet interactions)
     else if (grepl("HC_HF.*Liver.*Lipid", base_dataset, ignore.case = TRUE)) {
         if (interaction_type == "diet") {

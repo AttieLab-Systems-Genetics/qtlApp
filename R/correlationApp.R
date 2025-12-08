@@ -195,6 +195,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 file.path(correlations_dir, "clinical_traits_vs_clinical_traits_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_clinical_traits_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_liver_genes_corr.csv"),
+                file.path(correlations_dir, "liver_isoforms_vs_liver_isoforms_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_liver_lipids_corr.csv"),
                 file.path(correlations_dir, "liver_genes_vs_plasma_metabolites_corr.csv"),
                 file.path(correlations_dir, "liver_lipids_vs_liver_lipids_corr.csv"),
@@ -385,6 +386,72 @@ correlationServer <- function(id, import_reactives, main_par) {
                         }
                     }
                 }
+            } else if (token_side == "liver_isoforms") {
+                # For isoforms, correlation files are keyed by transcript_id (optionally with liver_ prefix)
+                # The viewer may be using symbols or transcript IDs, so we normalize to transcript_id
+                iso_id <- trait_string
+
+                ann <- import$annotation_list
+                if (!is.null(ann) && !is.null(ann$isoforms)) {
+                    iso_dt <- ann$isoforms
+
+                    # Helper to safely coerce a column to character
+                    get_col_chr <- function(df, nms) {
+                        # nms can be a single name or a vector of candidate names
+                        for (nm in nms) {
+                            if (nm %in% colnames(df)) {
+                                return(as.character(df[[nm]]))
+                            }
+                        }
+                        return(NULL)
+                    }
+
+                    # Isoform annotations can use several naming conventions; try common options:
+                    #   - symbol columns: "symbol", "gene.symbol"
+                    #   - transcript ID columns: "transcript_id", "transcript.id"
+                    sym_vec <- get_col_chr(iso_dt, c("symbol", "gene.symbol"))
+                    tid_vec <- get_col_chr(iso_dt, c("transcript_id", "transcript.id"))
+
+                    trait_clean <- trimws(trait_string)
+                    trait_lower <- tolower(trait_clean)
+
+                    # Try matching by symbol first (isoform symbol such as "0610005C13Rik-201")
+                    if (!is.null(sym_vec)) {
+                        idx_sym <- which(tolower(sym_vec) == trait_lower)
+                        if (length(idx_sym) >= 1 && !is.null(tid_vec)) {
+                            cand <- tid_vec[idx_sym[1]]
+                            if (!is.na(cand) && nzchar(cand)) {
+                                iso_id <- cand
+                            }
+                        }
+                    }
+
+                    # If that failed, try matching directly against transcript_id-style values
+                    if (!is.null(tid_vec)) {
+                        tid_lower <- tolower(tid_vec)
+                        stripped <- sub("^liver_", "", trait_lower)
+                        idx_tid <- which(tid_lower == trait_lower | tid_lower == stripped)
+                        if (length(idx_tid) >= 1) {
+                            cand <- tid_vec[idx_tid[1]]
+                            if (!is.na(cand) && nzchar(cand)) {
+                                iso_id <- cand
+                            }
+                        }
+                    }
+                }
+
+                # Now try matching the resolved transcript_id against headers
+                if (iso_id %in% headers) {
+                    column_candidates <- c(column_candidates, iso_id)
+                }
+                if (!grepl("^liver_", iso_id) && paste0("liver_", iso_id) %in% headers) {
+                    column_candidates <- c(column_candidates, paste0("liver_", iso_id))
+                }
+
+                # If we found a direct column match, use efficient column mode
+                if (length(column_candidates) > 0) {
+                    return(list(mode = "column", key = column_candidates[1]))
+                }
             } else {
                 # For non-gene types, first column should be phenotype; we'll usually match as a row
                 if (trait_string %in% headers) column_candidates <- c(column_candidates, trait_string)
@@ -398,6 +465,13 @@ correlationServer <- function(id, import_reactives, main_par) {
             # Otherwise, attempt row mode via Phenotype/phenotype column
             pheno_col <- if ("phenotype" %in% tolower(headers)) headers[which(tolower(headers) == "phenotype")[1]] else NULL
             if (!is.null(pheno_col)) {
+                # IMPORTANT: For liver_isoforms, isoform-vs-isoform correlation files can be extremely large
+                # (tens of thousands of isoforms x tens of thousands). Row mode would require reading the
+                # entire matrix into memory, which is not feasible and was causing the app to be killed.
+                # For isoforms we ONLY support column mode; if no matching column was found above, bail out.
+                if (token_side == "liver_isoforms") {
+                    return(NULL)
+                }
                 # For liver_genes in row mode, try gene symbol -> gene ID mapping
                 row_key <- trait_string
                 if (token_side == "liver_genes") {
@@ -440,6 +514,37 @@ correlationServer <- function(id, import_reactives, main_par) {
 
             is_adj_only <- isTRUE(row$is_adj_only[1])
 
+            # Determine which side (source/target) corresponds to the current trait type
+            token <- current_type_token()
+            side_token <- if (row$source[1] == token) row$source[1] else if (row$target[1] == token) row$target[1] else token
+
+            # SPECIAL CASE: liver isoforms self-correlation
+            # Instead of reading a massive precomputed CSV (tens of GB),
+            # compute one-vs-all correlations on the fly from the DO cross
+            # object using helper functions in isoform_correlation_functions.R.
+            # IMPORTANT: This path completely bypasses correlation CSV files,
+            # including any adjusted (_genlitsexbydiet_adj_corr.csv) variants.
+            if (identical(side_token, "liver_isoforms") &&
+                identical(row$source[1], "liver_isoforms") &&
+                identical(row$target[1], "liver_isoforms")) {
+                message("correlationServer: Using on-the-fly isoform self-correlation for trait '", trait, "', use_adjusted = ", use_adjusted, ".")
+                out <- compute_isoform_cor_top_n(
+                    trait_string = trait,
+                    import = import_reactives(),
+                    top_n = MAX_CORRELATIONS,
+                    use_adjusted = use_adjusted
+                )
+                # Add abs_correlation for consistency with other paths
+                if (nrow(out) > 0L) {
+                    message("correlationServer: isoform self-correlation returned ", nrow(out), " rows.")
+                    if (!"abs_correlation" %in% names(out)) {
+                        out$abs_correlation <- abs(out$correlation_value)
+                    }
+                }
+                return(out)
+            }
+
+            # For all other trait types, proceed with file-based logic
             # For adjusted-only files, always use the file as-is
             # For files with both versions, apply the toggle
             if (is_adj_only) {
@@ -465,11 +570,6 @@ correlationServer <- function(id, import_reactives, main_par) {
                 return(data.frame(trait = character(0), correlation_value = numeric(0), p_value = numeric(0), num_mice = numeric(0)))
             }
 
-            # Determine which side (source/target) corresponds to the current trait type
-            token <- current_type_token()
-
-            side_token <- if (row$source[1] == token) row$source[1] else if (row$target[1] == token) row$target[1] else token
-
             key_info <- resolve_trait_keys(trait, side_token, file_path, import_reactives())
             if (is.null(key_info)) {
                 shiny::showNotification(paste("Trait not found in correlation file:", trait), type = "warning", duration = 4)
@@ -479,6 +579,28 @@ correlationServer <- function(id, import_reactives, main_par) {
             if (key_info$mode == "column") {
                 # Check file size and show loading notification for large files
                 file_size_mb <- file.info(file_path)$size / (1024^2)
+
+                # For isoform-vs-isoform correlations, the underlying matrix can be enormous.
+                # Even with column selection, parsing extremely large CSVs can exhaust memory/CPU.
+                # If the file is unreasonably large, skip loading and warn the user instead of
+                # letting the R session be killed.
+                if (identical(side_token, "liver_isoforms") && is.finite(file_size_mb) && file_size_mb > 1000) {
+                    shiny::showNotification(
+                        paste0(
+                            "Isoform correlation file is too large to load safely (",
+                            round(file_size_mb, 0), " MB). ",
+                            "Isoform-vs-isoform correlations are disabled for this file."
+                        ),
+                        type = "error", duration = NULL
+                    )
+                    return(data.frame(
+                        trait = character(0),
+                        correlation_value = numeric(0),
+                        p_value = numeric(0),
+                        num_mice = numeric(0)
+                    ))
+                }
+
                 if (file_size_mb > 100) {
                     shiny::showNotification(
                         paste0("Loading correlation file (", round(file_size_mb, 0), " MB). This may take 30-60 seconds..."),
@@ -711,6 +833,12 @@ correlationServer <- function(id, import_reactives, main_par) {
             out[, abs_correlation := abs(correlation_value)]
             out <- out[order(-abs_correlation, -correlation_value)]
             out <- data.table::as.data.table(out)
+
+            # Global safety cap: limit the number of rows returned to avoid overwhelming DT
+            # and the browser when correlation tables are very large.
+            if (nrow(out) > MAX_CORRELATIONS) {
+                out <- out[1:MAX_CORRELATIONS]
+            }
 
             out
         }) |> shiny::debounce(150)

@@ -97,13 +97,23 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       base_dataset <- selected_dataset()
       trait_type_val <- trait_type()
 
-      # For isoforms, always use additive peaks via peak_finder (no qtlxcovar files)
+      # For isoforms, allow Diet-interactive HC_HF isoform dataset (no qtlxcovar files, use peak_finder)
       use_qtlxcovar <- !is.null(interaction_type) &&
         interaction_type != "none" &&
         grepl("^HC_HF", base_dataset, ignore.case = TRUE) &&
         !identical(trait_type_val, "isoforms")
 
       found_peaks <- NULL
+      dataset_for_peaks <- base_dataset
+
+      # For HC_HF Liver Isoforms with diet interaction, switch to the interactive isoform dataset
+      if (identical(trait_type_val, "isoforms") &&
+        !is.null(interaction_type) &&
+        interaction_type == "diet" &&
+        grepl("^HC_HF", base_dataset, ignore.case = TRUE)) {
+        dataset_for_peaks <- get_interactive_dataset_name(base_dataset, interaction_type)
+      }
+
       if (use_qtlxcovar) {
         qtlxcovar_files <- get_qtlxcovar_file_paths(base_dataset, interaction_type)
         if (!is.null(qtlxcovar_files) && length(qtlxcovar_files) > 0) {
@@ -121,7 +131,7 @@ cisTransPlotServer <- function(id, import_reactives, main_par, peaks_cache, side
       } else {
         found_peaks <- peak_finder(
           file_dir = import_reactives()$file_directory,
-          selected_dataset = selected_dataset(),
+          selected_dataset = dataset_for_peaks,
           trait_type = trait_type_val,
           cache_env = peaks_cache,
           use_cache = TRUE

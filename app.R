@@ -1030,8 +1030,13 @@ server <- function(input, output, session) {
                     "Diet interaction" = "diet",
                     "Sex x Diet interaction" = "sex_diet"
                 )
+            } else if (grepl("HC_HF.*Liver.*Isoform", dataset_group, ignore.case = TRUE)) {
+                # Liver Isoforms: diet-interactive only
+                available_interactions <- c(available_interactions,
+                    "Diet interaction" = "diet"
+                )
             } else if (grepl("HC_HF.*Liver.*Splice.*Junction", dataset_group, ignore.case = TRUE)) {
-                # Splice Junctions: diet-interactive only (currently supported)
+                # Splice Junctions: diet-interactive only
                 available_interactions <- c(available_interactions,
                     "Diet interaction" = "diet"
                 )
@@ -1169,15 +1174,36 @@ server <- function(input, output, session) {
                 available_interactions <- c("None (Additive only)" = "none")
 
                 if (grepl("HC_HF Liver Genes", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet")
+                    available_interactions <- c(available_interactions,
+                        "Sex interaction" = "sex",
+                        "Diet interaction" = "diet"
+                    )
                 } else if (grepl("HC_HF.*Liver.*Lipid", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+                    available_interactions <- c(available_interactions,
+                        "Sex interaction" = "sex",
+                        "Diet interaction" = "diet",
+                        "Sex x Diet interaction" = "sex_diet"
+                    )
                 } else if (grepl("HC_HF.*Clinical", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+                    available_interactions <- c(available_interactions,
+                        "Sex interaction" = "sex",
+                        "Diet interaction" = "diet",
+                        "Sex x Diet interaction" = "sex_diet"
+                    )
                 } else if (grepl("HC_HF.*Plasma.*Metabol", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Sex interaction" = "sex", "Diet interaction" = "diet", "Sex x Diet interaction" = "sex_diet")
+                    available_interactions <- c(available_interactions,
+                        "Sex interaction" = "sex",
+                        "Diet interaction" = "diet",
+                        "Sex x Diet interaction" = "sex_diet"
+                    )
+                } else if (grepl("HC_HF.*Liver.*Isoform", dataset_group, ignore.case = TRUE)) {
+                    available_interactions <- c(available_interactions,
+                        "Diet interaction" = "diet"
+                    )
                 } else if (grepl("HC_HF.*Liver.*Splice.*Junction", dataset_group, ignore.case = TRUE)) {
-                    available_interactions <- c(available_interactions, "Diet interaction" = "diet")
+                    available_interactions <- c(available_interactions,
+                        "Diet interaction" = "diet"
+                    )
                 }
 
                 interaction_analysis_ui <- tagList(
@@ -2955,6 +2981,10 @@ server <- function(input, output, session) {
                     "Sex interaction" = "sex",
                     "Diet interaction" = "diet",
                     "Sex x Diet interaction" = "sex_diet"
+                )
+            } else if (grepl("HC_HF.*Liver.*Isoform", dataset_group, ignore.case = TRUE)) {
+                available_interactions <- c(available_interactions,
+                    "Diet interaction" = "diet"
                 )
             } else if (grepl("HC_HF.*Liver.*Splice.*Junction", dataset_group, ignore.case = TRUE)) {
                 available_interactions <- c(available_interactions,

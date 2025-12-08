@@ -33,7 +33,7 @@ snp_association_tab_ui <- function(current_category = NULL) {
                 shiny::numericInput(
                     shiny::NS("app_controller", "snp_window"),
                     label = "Window size (Mb):",
-                    value = 0.5,
+                    value = 1.5,
                     min = 0.5,
                     max = 10,
                     step = 0.5,
@@ -200,6 +200,12 @@ rankz <- function(x) {
 .get_query_funcs_for_chr <- function(chr, dbfile) {
     vkey <- paste0("query_variants:", chr)
     gkey <- paste0("query_genes:", chr)
+
+    # NOTE: The actual DO founder variants SQLite files used by the viewer
+    # expose columns named "chr" and "pos" (not "variant_chr"/"variant_pos").
+    # Using "variant_chr"/"variant_pos" here causes:
+    #   "no such column: variant_chr"
+    # so we must point to the real schema for this database.
     if (is.null(.snp_assoc_cache[[vkey]])) {
         .snp_assoc_cache[[vkey]] <- qtl2::create_variant_query_func(
             dbfile,
@@ -210,6 +216,7 @@ rankz <- function(x) {
             sdp_field = "sdp_num"
         )
     }
+
     if (is.null(.snp_assoc_cache[[gkey]])) {
         .snp_assoc_cache[[gkey]] <- qtl2::create_gene_query_func(
             dbfile,
@@ -221,7 +228,11 @@ rankz <- function(x) {
             strand_field = "gene_strand"
         )
     }
-    return(list(query_variants = .snp_assoc_cache[[vkey]], query_genes = .snp_assoc_cache[[gkey]]))
+
+    return(list(
+        query_variants = .snp_assoc_cache[[vkey]],
+        query_genes = .snp_assoc_cache[[gkey]]
+    ))
 }
 
 #' Load cross object for SNP association
@@ -318,7 +329,7 @@ load_genoprobs_for_snp <- function() {
 #' @importFrom qtl2 scan1snps create_variant_query_func create_gene_query_func
 #' @export
 perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
-                                    window = 0.5, interaction_type = "none",
+                                    window = 1.5, interaction_type = "none",
                                     ncores = 1) {
     if (is.null(cross) || is.null(genoprobs)) {
         warning("SNP Association: Cross or genoprobs object is NULL")
@@ -342,14 +353,24 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
     if (!phenotype %in% colnames(cross$pheno)) {
         message(sprintf("SNP Association: '%s' not found directly, attempting gene symbol -> transcript mapping...", phenotype))
 
-        # Try to map gene symbol to transcript ID
+        # Try to map gene symbol or gene ID to transcript ID
         if (!is.null(cross$gene_annos) && !is.null(cross$transcript_annos)) {
             # Convert to data frame if it's a tibble to ensure proper indexing
             gene_annos_df <- as.data.frame(cross$gene_annos)
             transcript_annos_df <- as.data.frame(cross$transcript_annos)
 
-            # Find gene by symbol using which() for safer indexing
-            gene_idx <- which(gene_annos_df$gene_symbol == phenotype)
+            # Find gene by symbol or, if that fails, by gene_id
+            gene_idx <- integer(0)
+            if ("gene_symbol" %in% colnames(gene_annos_df)) {
+                gene_idx <- which(gene_annos_df$gene_symbol == phenotype)
+            }
+            if (length(gene_idx) == 0 && "gene_id" %in% colnames(gene_annos_df)) {
+                # Allow direct lookup by Ensembl-style gene IDs (e.g. ENSMUSG...)
+                gene_idx <- which(gene_annos_df$gene_id == phenotype)
+                if (length(gene_idx) > 0) {
+                    message(sprintf("SNP Association: Interpreting '%s' as gene_id (not gene_symbol)", phenotype))
+                }
+            }
 
             if (length(gene_idx) > 0) {
                 gene_id <- gene_annos_df$gene_id[gene_idx[1]]
@@ -393,7 +414,7 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
             # Normalize and validate key inputs early
             window <- suppressWarnings(as.numeric(window))
             if (is.na(window) || window <= 0) {
-                window <- 0.5
+                window <- 1.5
             }
             ncores <- suppressWarnings(as.integer(ncores))
             if (is.na(ncores) || ncores < 1) {
