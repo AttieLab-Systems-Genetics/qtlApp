@@ -283,6 +283,15 @@ correlationServer <- function(id, import_reactives, main_par) {
                 return(TRUE) # No base version found in either ordering
             }, logical(1))
 
+            # Remove ALL adjusted liver isoform self-correlation rows from the menu.
+            # Isoform self-correlations are handled on-the-fly in correlation_table()
+            # and do not need separate adjusted file entries (e.g., genlitsexbydiet_adj).
+            result_dt <- result_dt[
+                !(source == "liver_isoforms" &
+                    target == "liver_isoforms" &
+                    grepl("_adj_corr\\.csv$", file)),
+            ]
+
             result_dt
         })
 
@@ -321,6 +330,33 @@ correlationServer <- function(id, import_reactives, main_par) {
 
                 # Files where current type is on either side (using standard R subsetting)
                 subset_dt <- pairs_dt[pairs_dt$source == token | pairs_dt$target == token, ]
+
+                # For liver isoforms, hide any extra adjusted self-correlation entries
+                # (e.g., files with "genlitsex" or "sexbydiet" in the filename). These
+                # legacy files are superseded by the on-the-fly isoform self-correlation.
+                if (identical(token, "liver_isoforms") && nrow(subset_dt) > 0) {
+                    subset_dt <- subset_dt[
+                        !(source == "liver_isoforms" &
+                            target == "liver_isoforms" &
+                            grepl("(genlitsex|sexbydiet)", basename(file), ignore.case = TRUE)),
+                    ]
+
+                    # Remove any options that point to the legacy liver_isoforms_genlitsex_adj dataset.
+                    # These adjusted isoform matrices are no longer exposed through the correlation UI;
+                    # isoform self-correlations are handled on-the-fly instead.
+                    subset_dt <- subset_dt[
+                        !(source == "liver_isoforms_genlitsex_adj" |
+                            target == "liver_isoforms_genlitsex_adj"),
+                    ]
+
+                    # If nothing remains after filtering, bail out early
+                    if (nrow(subset_dt) == 0) {
+                        shiny::updateSelectInput(session, "correlation_dataset_selector",
+                            choices = character(0), selected = character(0)
+                        )
+                        return()
+                    }
+                }
                 if (nrow(subset_dt) == 0) {
                     shiny::updateSelectInput(session, "correlation_dataset_selector",
                         choices = character(0), selected = character(0)
@@ -465,15 +501,9 @@ correlationServer <- function(id, import_reactives, main_par) {
             # Otherwise, attempt row mode via Phenotype/phenotype column
             pheno_col <- if ("phenotype" %in% tolower(headers)) headers[which(tolower(headers) == "phenotype")[1]] else NULL
             if (!is.null(pheno_col)) {
-                # IMPORTANT: For liver_isoforms, isoform-vs-isoform correlation files can be extremely large
-                # (tens of thousands of isoforms x tens of thousands). Row mode would require reading the
-                # entire matrix into memory, which is not feasible and was causing the app to be killed.
-                # For isoforms we ONLY support column mode; if no matching column was found above, bail out.
-                if (token_side == "liver_isoforms") {
-                    return(NULL)
-                }
-                # For liver_genes in row mode, try gene symbol -> gene ID mapping
                 row_key <- trait_string
+
+                # For liver_genes in row mode, try gene symbol -> gene ID mapping
                 if (token_side == "liver_genes") {
                     ann <- import$annotation_list
                     if (!is.null(ann) && !is.null(ann$genes)) {
@@ -486,6 +516,78 @@ correlationServer <- function(id, import_reactives, main_par) {
                                 gene_id <- match_row[[id_col]][1]
                                 # Try with liver_ prefix (adjusted files use this format)
                                 row_key <- paste0("liver_", gene_id)
+                            }
+                        }
+                    }
+                } else if (token_side == "liver_isoforms") {
+                    # For liver_isoforms in row mode (e.g., clinical_traits_vs_liver_isoforms_corr.csv),
+                    # the phenotype column contains isoform phenotype IDs such as "liver_<transcript_id>".
+                    # Map the displayed trait (symbol or transcript ID) to the correct phenotype key.
+                    ann <- import$annotation_list
+                    iso_id <- trait_string
+
+                    if (!is.null(ann) && !is.null(ann$isoforms)) {
+                        iso_dt <- ann$isoforms
+
+                        # Helper to safely coerce a column to character
+                        get_col_chr <- function(df, nms) {
+                            for (nm in nms) {
+                                if (nm %in% colnames(df)) {
+                                    return(as.character(df[[nm]]))
+                                }
+                            }
+                            return(NULL)
+                        }
+
+                        sym_vec <- get_col_chr(iso_dt, c("symbol", "gene.symbol"))
+                        tid_vec <- get_col_chr(iso_dt, c("transcript_id", "transcript.id"))
+
+                        trait_clean <- trimws(trait_string)
+                        trait_lower <- tolower(trait_clean)
+
+                        # Prefer matching by symbol (e.g., "0610005C13Rik-201")
+                        if (!is.null(sym_vec)) {
+                            idx_sym <- which(tolower(sym_vec) == trait_lower)
+                            if (length(idx_sym) >= 1 && !is.null(tid_vec)) {
+                                cand <- tid_vec[idx_sym[1]]
+                                if (!is.na(cand) && nzchar(cand)) {
+                                    iso_id <- cand
+                                }
+                            }
+                        }
+
+                        # If that failed, try matching directly against transcript_id-style values
+                        if (!is.null(tid_vec)) {
+                            tid_lower <- tolower(tid_vec)
+                            stripped <- sub("^liver_", "", trait_lower)
+                            idx_tid <- which(tid_lower == trait_lower | tid_lower == stripped)
+                            if (length(idx_tid) >= 1) {
+                                cand <- tid_vec[idx_tid[1]]
+                                if (!is.na(cand) && nzchar(cand)) {
+                                    iso_id <- cand
+                                }
+                            }
+                        }
+                    }
+
+                    # Candidate phenotype keys in the correlation file
+                    candidate_keys <- c(paste0("liver_", iso_id), iso_id)
+
+                    # Read only the phenotype column to see which key is present
+                    pheno_vals <- NULL
+                    pheno_dt <- tryCatch(
+                        data.table::fread(corr_file,
+                            select = pheno_col,
+                            showProgress = FALSE
+                        ),
+                        error = function(e) NULL
+                    )
+                    if (!is.null(pheno_dt) && pheno_col %in% names(pheno_dt)) {
+                        pheno_vals <- as.character(pheno_dt[[pheno_col]])
+                        for (cand in candidate_keys) {
+                            if (cand %in% pheno_vals) {
+                                row_key <- cand
+                                break
                             }
                         }
                     }
