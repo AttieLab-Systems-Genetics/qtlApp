@@ -124,6 +124,13 @@ correlationServer <- function(id, import_reactives, main_par) {
                 return(file_path)
             }
 
+            # If the selected file is already an adjusted correlation file,
+            # just return it as-is to avoid generating names like
+            # *_genlitsexbydiet_adj_genlitsexbydiet_adj_corr.csv.
+            if (grepl("_adj_corr\\.csv$", file_path)) {
+                return(file_path)
+            }
+
             # First try same-ordering adjusted file
             same_order <- sub("_corr\\.csv$", "_genlitsexbydiet_adj_corr.csv", file_path)
             if (file.exists(same_order)) {
@@ -366,16 +373,43 @@ correlationServer <- function(id, import_reactives, main_par) {
                 # Build choices mapping to only show the target dataset label (the "other side")
                 other_tokens <- ifelse(subset_dt$source == token, subset_dt$target, subset_dt$source)
                 labels <- vapply(other_tokens, token_to_label, character(1))
-                # Prefer files where the current token is on the source side; then deduplicate by label
-                order_pref <- ifelse(subset_dt$source == token, 0L, 1L)
-                ord <- order(order_pref, labels)
+
+                # Prefer base (unadjusted) files over adjusted ones when both exist for the
+                # same logical pair, so that the "Covariate-Adjusted" toggle actually
+                # controls whether the adjusted matrix is used.
+                is_adj_file <- grepl("_adj_corr\\.csv$", subset_dt$file)
+                source_pref <- ifelse(subset_dt$source == token, 0L, 1L)
+                ord <- order(is_adj_file, source_pref, labels)
                 subset_dt <- subset_dt[ord]
                 labels <- labels[ord]
+                other_tokens <- other_tokens[ord]
                 keep_idx <- !duplicated(labels)
-                choices <- stats::setNames(subset_dt$file[keep_idx], labels[keep_idx])
+                choices_files <- subset_dt$file[keep_idx]
+                choices_labels <- labels[keep_idx]
+                other_tokens_dedup <- other_tokens[keep_idx]
+                choices <- stats::setNames(choices_files, choices_labels)
+
+                # For liver isoforms, avoid defaulting to the isoforms self-correlation matrix,
+                # which is expensive to compute/load. Prefer correlations against Clinical Traits
+                # or Liver Lipids when available.
+                default_selected <- NULL
+                if (length(choices) > 0) {
+                    if (identical(token, "liver_isoforms")) {
+                        preferred_partners <- c("clinical_traits", "liver_lipids")
+                        preferred_idx <- which(other_tokens_dedup %in% preferred_partners)[1]
+                        if (!is.na(preferred_idx)) {
+                            default_selected <- choices[[preferred_idx]]
+                        } else {
+                            default_selected <- choices[[1]]
+                        }
+                    } else {
+                        default_selected <- choices[[1]]
+                    }
+                }
+
                 shiny::updateSelectInput(session, "correlation_dataset_selector",
                     choices = choices,
-                    selected = if (length(choices) > 0) choices[[1]] else NULL
+                    selected = default_selected
                 )
             },
             ignoreInit = FALSE
@@ -642,6 +676,16 @@ correlationServer <- function(id, import_reactives, main_par) {
                     if (!"abs_correlation" %in% names(out)) {
                         out$abs_correlation <- abs(out$correlation_value)
                     }
+                    # For isoform self-correlations, format p-values in scientific notation
+                    # with 4 decimal places (e.g., 5.9125e-159), showing "—" for missing
+                    # values. This avoids rounding extremely small values to zero.
+                    if ("p_value" %in% names(out)) {
+                        out$p_value <- ifelse(
+                            is.na(out$p_value),
+                            "—",
+                            sprintf("%.4e", as.numeric(out$p_value))
+                        )
+                    }
                 }
                 return(out)
             }
@@ -661,6 +705,15 @@ correlationServer <- function(id, import_reactives, main_par) {
                     }
                 }
             }
+
+            # Log which correlation file is actually being used for debugging/verification
+            message(
+                "correlationServer: Using correlation file: ",
+                basename(file_path),
+                " (use_adjusted = ", use_adjusted,
+                ", is_adj_only = ", is_adj_only,
+                ")"
+            )
 
             if (!file.exists(file_path)) {
                 msg <- if (use_adjusted) {
@@ -929,8 +982,24 @@ correlationServer <- function(id, import_reactives, main_par) {
             # Prepare display formatting and default sort by absolute correlation
             if ("p_value" %in% names(out)) {
                 # For self-correlation (r ≈ 1.0), p-value may be missing (NA) from source data
-                # This is expected because p-value calculation for perfect correlation is undefined
-                out[, p_value := ifelse(is.na(p_value), "—", format(p_value, digits = 3, scientific = TRUE))]
+                # This is expected because p-value calculation for perfect correlation is undefined.
+                # For liver isoforms, display p-values in scientific notation with 4 decimal places
+                # (e.g., 5.9125e-159) to avoid rounding extremely small values to zero while still
+                # keeping them readable. For all other trait types, keep the existing formatting.
+                token_safe <- tryCatch(current_type_token(), error = function(e) NULL)
+                if (identical(token_safe, "liver_isoforms")) {
+                    out[, p_value := ifelse(
+                        is.na(p_value),
+                        "—",
+                        sprintf("%.4e", as.numeric(p_value))
+                    )]
+                } else {
+                    out[, p_value := ifelse(
+                        is.na(p_value),
+                        "—",
+                        format(p_value, digits = 3, scientific = TRUE)
+                    )]
+                }
             }
             out[, abs_correlation := abs(correlation_value)]
             out <- out[order(-abs_correlation, -correlation_value)]

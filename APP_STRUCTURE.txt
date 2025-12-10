@@ -1,0 +1,728 @@
+================================================================================
+                          QTL APP STRUCTURE DOCUMENTATION
+================================================================================
+
+1. OVERVIEW
+================================================================================
+
+The qtlApp is a modular R/Shiny package for QTL (Quantitative Trait Loci) 
+analysis and visualization. It provides:
+
+  - Fast LOD (Logarithm of Odds) scans for genetic mapping
+  - Manhattan and cis/trans plots for genome-wide visualization
+  - Peak exploration with founder allele effects
+  - Interactive sex/diet analyses with on-the-fly difference plots
+  - Trait search across large genomic datasets
+  - Correlation and profile plot analyses
+
+Package Version: 0.4.10
+R Version Required: >= 4.2.0
+Authors: Brian S Yandell, Chris Emfinger, Kalynn Willis (UW-Madison)
+
+================================================================================
+2. PROJECT DIRECTORY STRUCTURE
+================================================================================
+
+qtlApp/
+├── app.R                       # Main Shiny app entry point
+├── DESCRIPTION                 # R package metadata and dependencies
+├── NAMESPACE                   # R package exports
+├── LICENSE                     # GPL-3 license
+├── README.md                   # Project overview and changelog
+├── install_packages.R          # Package installation script for Docker
+│
+├── R/                          # Core R source files (detailed below)
+│   ├── mainUI.R               # Main UI layout definition
+│   ├── scanPlotModule.R       # LOD scan visualization module
+│   ├── helpers.R              # Core utility functions
+│   ├── data_handling.R        # Data validation and caching
+│   ├── import_data.R          # Data loading from files
+│   └── ... (40+ module files)
+│
+├── man/                        # Auto-generated roxygen2 documentation
+├── data/                       # Sample data and configuration
+│   ├── import.csv             # Data import configuration
+│   └── correlations/          # Pre-computed correlation data
+│
+├── inst/shinyApp/             # Alternative deployment location
+│   ├── app.R                  # Shiny app entry
+│   ├── Dockerfile             # Docker configuration
+│   ├── launch_Rshiny.sh       # Launch script
+│   └── shiny-server.conf      # Shiny server configuration
+│
+├── kalynn_R/latest_app_kalynn/ # Production deployment files
+│   ├── Dockerfile             # Production Docker configuration
+│   ├── launch_Rshiny.sh       # Production launch script
+│   ├── chromosome_compile.R   # Data preprocessing script
+│   └── prepare_fst_data.R     # FST file preparation
+│
+├── scripts/                    # Utility scripts
+│   └── convert_pheno_to_fst.R # Phenotype data conversion
+│
+└── docs/                       # Additional documentation
+    └── FS_REORG_PLAN.md       # File system reorganization plans
+
+================================================================================
+3. FRONTEND ARCHITECTURE (UI)
+================================================================================
+
+The UI is built using the bslib package for modern Bootstrap styling.
+
+PRIMARY UI FILE: R/mainUI.R
+─────────────────────────────
+
+Layout Structure:
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        QTL Scan Visualizer (Header)                          │
+├─────────────────────────────────┬────────────────────────────────────────────┤
+│         SIDEBAR (600px)         │              MAIN CONTENT AREA             │
+│                                 │                                            │
+│  ┌───────────────────────────┐  │  ┌──────────────────────────────────────┐  │
+│  │   Dataset Category        │  │  │                                      │  │
+│  │   Selection Dropdown      │  │  │         LOD Scan Plot Card           │  │
+│  └───────────────────────────┘  │  │                                      │  │
+│                                 │  │    • Dynamic title (trait name)      │  │
+│  TABS:                          │  │    • Main LOD scan visualization     │  │
+│  ┌───────────────────────────┐  │  │    • Interactive plotly chart        │  │
+│  │ [LOD peaks] [Data Search] │  │  │    • Chromosome zoom controls        │  │
+│  └───────────────────────────┘  │  │                                      │  │
+│                                 │  └──────────────────────────────────────┘  │
+│  LOD Peaks Tab:                 │                                            │
+│  • LOD Threshold Slider         │                                            │
+│  • Peak Analysis Controls       │                                            │
+│  • Manhattan/Cis-Trans Plot     │                                            │
+│                                 │                                            │
+│  Data Search Tab:               │                                            │
+│  • Trait Search (selectize)     │                                            │
+│                                 │                                            │
+│  ─────────────────────────────  │                                            │
+│  Additional Analyses:           │                                            │
+│  [Profile Plot] [Correlation]   │                                            │
+│                                 │                                            │
+└─────────────────────────────────┴────────────────────────────────────────────┘
+
+KEY UI COMPONENTS:
+─────────────────
+
+1. Dataset Category Selector
+   - Dropdown for selecting biological data type
+   - Options: Liver Genes, Liver Lipids, Clinical Traits, etc.
+
+2. LOD Peaks Tab
+   - LOD Threshold Slider (7.5 additive, 10.5 interactive)
+   - Peak Selection for detailed analysis
+   - Manhattan/Cis-Trans overview plots
+
+3. Data Search Tab
+   - Server-side selectize for large trait lists
+   - Supports gene symbols, clinical traits, lipid names
+
+4. Additional Analyses
+   - Profile Plot: Expression/phenotype profiles
+   - Correlation: Trait-trait correlations
+
+STYLING:
+─────────────────
+- Custom CSS defined in R/ui_styles.R (669 lines)
+- Modern gradient headers (blue: #2c3e50 → #3498db)
+- Responsive design with viewport meta tags
+- Loading spinners via shinycssloaders
+
+================================================================================
+4. BACKEND ARCHITECTURE (Server)
+================================================================================
+
+PRIMARY SERVER FILE: app.R (3789 lines)
+────────────────────────────────────────
+
+The server function coordinates all modules and manages application state.
+
+SERVER INITIALIZATION:
+─────────────────────
+
+1. Source files in dependency order:
+   helpers.R → utils_operators.R → data_handling.R → modules → plots
+
+2. Set global options:
+   options(shiny.maxRequestSize = 20000 * 1024^2)  # 20 GB upload limit
+
+3. Initialize caches:
+   trait_cache <- new.env(parent = emptyenv())
+   peaks_cache <- new.env(parent = emptyenv())
+
+KEY SERVER COMPONENTS:
+─────────────────────
+
+A. Data Import (importServer)
+   - Loads file index, markers, annotations
+   - Creates reactive data structures
+
+B. Dataset Selection Reactives
+   - main_selected_dataset_group(): Current dataset
+   - mapped_dataset_for_interaction(): Maps additive to interactive datasets
+   - scan_type(): Detects "additive" or "interactive"
+
+C. Interactive Analysis State
+   - current_interaction_type_rv: Stores "none", "sex", "diet"
+   - Automatic dataset mapping for HC_HF datasets
+
+D. LOD Threshold Management
+   - Dynamic slider based on scan type
+   - Debounced reactive (300ms) to prevent rapid re-firing
+
+E. Scan Module (scanServer)
+   - Handles LOD scan plotting
+   - Manages overlays and difference plots
+   - Click events for peak selection
+
+F. Peak Analysis
+   - peaks_data_for_trait(): Find peaks for selected trait
+   - available_peaks_for_trait(): Filter by LOD threshold
+   - allele_effects_data(): Prepare founder effects data
+
+MODULE COMMUNICATION PATTERN:
+────────────────────────────
+
+  ┌─────────────────┐
+  │  importServer   │─────→ import_reactives
+  └─────────────────┘
+           │
+           ▼
+  ┌─────────────────┐      ┌─────────────────┐
+  │ dataset_select  │─────→│  scanServer     │
+  └─────────────────┘      └─────────────────┘
+           │                      │
+           ▼                      ▼
+  ┌─────────────────┐      ┌─────────────────┐
+  │ trait_search    │      │ allele_effects  │
+  └─────────────────┘      └─────────────────┘
+
+================================================================================
+5. R MODULE FILES (R/ Directory)
+================================================================================
+
+CORE MODULES:
+────────────
+
+mainUI.R (169 lines)
+  - Main UI composition and layout
+  - Sidebar and main content areas
+  - Tab structure for analyses
+
+scanPlotModule.R (1881 lines)
+  - scanServer(): Main LOD scan module
+  - Handles interactive/difference plots
+  - Manages overlays (sex, diet, sex_diet)
+  - Click-based peak selection
+
+HELPER MODULES:
+──────────────
+
+helpers.R (952 lines)
+  - Caching utilities
+  - Trait selection and validation
+  - Chromosome handling (chr_to_numeric, chr_XYM)
+  - Data reshaping (pivot_peaks)
+
+data_handling.R (459 lines)
+  - Cache management (create_cache_env, clear_all_caches)
+  - Input validation (validate_trait, validate_plot_dimensions)
+  - File path safety (safe_file_path, check_file_accessible)
+
+utils_operators.R (9 lines)
+  - %||% operator for NULL coalescing
+
+DATA ACCESS MODULES:
+───────────────────
+
+import_data.R (158 lines)
+  - import_data(): Main data loader
+  - Loads file index, gene symbols, markers, annotations
+  - Base path: /data/dev/miniViewer_3.0
+
+fst_rows.R (107 lines)
+  - fst_rows(): Create row indices for efficient FST reading
+  - create_fst_rows_index(): Generate trait-based indices
+
+trait_scan.R (371 lines)
+  - trait_scan(): Load LOD scan data for a trait
+  - Supports FST file format for fast I/O
+  - Uses row indices for efficient trait-specific reads
+
+peak_finder.R (295 lines)
+  - peak_finder(): Find QTL peaks from peaks files
+  - Caching support for repeated queries
+  - Handles CSV and FST peak files
+
+VISUALIZATION MODULES:
+─────────────────────
+
+ggplot_qtl_scan.R
+  - ggplot_qtl_scan(): Create LOD scan plots
+  - Supports overlays and threshold lines
+  - Chromosome-aware coloring
+
+ggplotly_qtl_scan.R
+  - ggplotly_qtl_scan(): Convert to interactive plotly
+  - Configure zoom behavior
+  - Custom hover text
+
+ggplot_alleles.R
+  - ggplot_alleles(): Founder allele effects plots
+  - Horizontal layout with strain names
+  - Color-coded by strain
+
+plot_enhancements.R
+  - Theme and styling functions
+  - Consistent color schemes
+  - Responsive design helpers
+
+plot_null.R
+  - Placeholder plots for empty states
+  - Informative "No data" messages
+
+SPECIALIZED MODULES:
+───────────────────
+
+cisTransPlotApp.R
+  - Cis/trans QTL visualization
+  - Single-panel cumulative coordinate plot
+  - Cis (blue) vs Trans (red) coloring
+
+manhattanPlotApp.R
+  - Manhattan plot visualization
+  - Genome-wide peak display
+  - Click-to-scan functionality
+
+correlationApp.R (1129 lines)
+  - Trait-trait correlation analysis
+  - Matrix visualization
+  - Pre-computed correlation data
+
+profilePlotApp.R
+  - Expression/phenotype profile plots
+  - Sample-level visualization
+
+interactiveSubtractionApp.R
+  - On-the-fly difference calculations
+  - Interactive - Additive subtraction
+
+SUPPORT MODULES:
+───────────────
+
+interaction_dataset_mapping.R
+  - get_interactive_dataset_name(): Map base to interactive datasets
+  - Handles HC_HF dataset naming conventions
+
+lod_thresholds.R
+  - default_threshold_for_scan(): Get default LOD threshold
+  - scan_info_for_interaction(): Get scan metadata
+  - recommended_min_lod_for_sidebar(): Sidebar-specific thresholds
+
+qtlxcovar_files.R
+  - get_qtlxcovar_file_path(): Path to QTL×covariate files
+  - get_qtlxcovar_file_path_manhattan(): Manhattan-specific paths
+
+split_by_helpers.R / split_by_scan_groups.R / split_by_overlay_plot.R
+  - Split-by LOD overlay functionality
+  - Female vs Male, HC vs HF comparisons
+
+peak_info.R / peak_info_ui.R
+  - Peak metadata extraction
+  - format_peak_info(): Display formatting
+  - build_peak_info_panel(): UI panel builder
+
+ui_styles.R (669 lines)
+  - custom_css: Main stylesheet
+  - Spinner colors, card styling
+  - Responsive breakpoints
+
+================================================================================
+6. DATA FLOW AND FILE FORMAT
+================================================================================
+
+DATA FILES LOCATION:
+───────────────────
+Base path: /data/dev/miniViewer_3.0/
+
+Required Files:
+  file_index.csv        - Catalog of all datasets
+  gene_symbols.csv      - Gene symbol lookup table
+  chromosomal_sep_mm11.csv  - Chromosome boundaries
+  annotation_list.rds   - Trait annotations by type
+  CHTC_dietDO_markers_RDSgrcm39.rds  - Genetic markers
+
+FILE INDEX STRUCTURE (file_index.csv):
+─────────────────────────────────────
+Columns:
+  - diet: HC, HF, HC_HF
+  - trait_compartment: Liver, Plasma, Systemic
+  - trait_type: genes, lipids, clinical, isoforms
+  - sexes: Both, Female, Male
+  - scan_type: additive, interactive
+  - covars_interactive: Sex, Diet, Sex_Diet
+  - File_path: Path to scan data file
+  - file_type: scans, peaks
+  - dataset_category: Display category name
+
+DATA FORMATS:
+────────────
+
+1. FST Files (Fast Serialization Format)
+   - Primary format for large scan data
+   - Supports indexed row access
+   - Columns: marker, Phenotype, LOD, chr, pos
+
+2. CSV Files
+   - Used for peaks files and configuration
+   - Human-readable and easily editable
+
+3. RDS Files
+   - R serialization format
+   - Used for complex objects (annotations, markers)
+
+DATA FLOW:
+─────────
+
+User Selection → file_index lookup → Load FST/CSV → Process → Plot
+
+  ┌────────────┐     ┌──────────────┐     ┌───────────┐
+  │  Dataset   │────→│  file_index  │────→│  FST/CSV  │
+  │  Category  │     │   lookup     │     │   File    │
+  └────────────┘     └──────────────┘     └───────────┘
+                                                │
+       ┌────────────────────────────────────────┘
+       ▼
+  ┌────────────┐     ┌──────────────┐     ┌───────────┐
+  │  trait_    │────→│  Process &   │────→│  ggplot/  │
+  │  scan()    │     │  Cache       │     │  plotly   │
+  └────────────┘     └──────────────┘     └───────────┘
+
+================================================================================
+7. RUNNING THE APPLICATION
+================================================================================
+
+METHOD 1: LOCAL DEVELOPMENT
+───────────────────────────
+
+# From the qtlApp directory:
+cd /home/khwillis@ad.wisc.edu/qtlApp
+
+# Start R and run:
+shiny::runApp("app.R", port = 3838)
+
+# Or use RStudio's Run App button
+
+METHOD 2: DOCKER CONTAINER (Recommended for Production)
+──────────────────────────────────────────────────────
+
+# Navigate to deployment directory
+cd /home/khwillis@ad.wisc.edu/qtlApp/kalynn_R/latest_app_kalynn
+
+# Run the launch script
+./launch_Rshiny.sh
+
+# Or manually:
+# 1. Stop and remove existing container
+docker stop mini-viewer-image_v2
+docker rm mini-viewer-image_v2
+
+# 2. Build the image (from qtlApp root)
+cd /home/khwillis@ad.wisc.edu/qtlApp
+docker build --no-cache -t mini-viewer-image_v2 \
+  -f kalynn_R/latest_app_kalynn/Dockerfile .
+
+# 3. Run with mounted data volumes
+docker run -m 30g -d -p 51175:3838 \
+  -v /data/dev/miniViewer_3.0:/data/dev/miniViewer_3.0 \
+  -v /data/prod/miniViewer_3.0:/data/prod/miniViewer_3.0:ro \
+  -v /data/dev/DO_mapping_files:/data/dev/DO_mapping_files:ro \
+  -v /home/khwillis@ad.wisc.edu/qtlApp/data/correlations:/data/correlations:ro \
+  --name mini-viewer-image_v2 mini-viewer-image_v2
+
+# 4. Access the app at: http://localhost:51175
+
+DOCKER COMMANDS:
+───────────────
+
+# View logs
+docker logs mini-viewer-image_v2
+
+# Enter container shell
+docker exec -it mini-viewer-image_v2 /bin/bash
+
+# Stop container
+docker stop mini-viewer-image_v2
+
+# Force rebuild (cache issues)
+docker build --no-cache -t mini-viewer-image_v2 -f Dockerfile .
+
+================================================================================
+8. DOCKER CONFIGURATION
+================================================================================
+
+DOCKERFILE: kalynn_R/latest_app_kalynn/Dockerfile
+────────────────────────────────────────────────
+
+Base Image: rocker/shiny-verse:latest
+  - Includes R, Shiny, tidyverse, ggplot2
+
+System Dependencies:
+  - gfortran, libblas-dev, liblapack-dev (linear algebra)
+  - cmake, libsodium-dev (build tools)
+  - libcurl4-gnutls-dev, libssl-dev (networking)
+  - libxml2-dev, libgit2-dev (file parsing)
+
+R Packages (via install_packages.R):
+  - Visualization: plotly, ggiraph, ggrepel, ggpubr
+  - Shiny: bslib, shinyFiles, shinyjs, shinycssloaders, spsComps
+  - Data: data.table, fst, reshape2, DT, writexl
+  - QTL Analysis: qtl2, qtl2fst
+  - Utilities: R.utils, fontawesome
+
+Volume Mounts:
+  /data/dev/miniViewer_3.0      - Development data (read-write)
+  /data/prod/miniViewer_3.0     - Production data (read-only)
+  /data/dev/DO_mapping_files    - Mapping resources (read-only)
+  /data/correlations            - Correlation data (read-only)
+
+Exposed Port: 3838 (Shiny Server default)
+Memory Limit: 30GB (-m 30g)
+
+================================================================================
+9. APP.R STRUCTURE
+================================================================================
+
+The main app.R file (3789 lines) is organized as follows:
+
+SECTION 1: PACKAGE LOADING (Lines 1-20)
+───────────────────────────────────────
+library(shiny)
+library(bslib)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(qtl2)
+library(ggplot2)
+library(plotly)
+library(shinyjs)
+library(shinycssloaders)
+library(data.table)
+library(ggiraph)
+library(writexl)
+library(fontawesome)
+library(DT)
+library(reshape2)
+library(htmltools)
+library(stats)
+library(qtl2fst)
+
+SECTION 2: SOURCE FILE LOADING (Lines 22-57)
+───────────────────────────────────────────
+Files are sourced in dependency order:
+1. Core utilities (helpers, utils_operators)
+2. Data handling (interaction_mapping, lod_thresholds, data_handling)
+3. Import and export (import_data, importApp, downloadApp)
+4. Visualization (plot files, ggplot functions)
+5. Analysis modules (trait, scan, peaks, alleles)
+6. UI and specialized modules
+
+SECTION 3: GLOBAL OPTIONS (Lines 59-61)
+──────────────────────────────────────
+options(shiny.maxRequestSize = 20000 * 1024^2)  # 20 GB
+
+SECTION 4: UI DEFINITION (Lines 62-63)
+─────────────────────────────────────
+ui <- mainUI()
+
+SECTION 5: SERVER FUNCTION (Lines 65-3789)
+────────────────────────────────────────
+
+A. Initialization (Lines 66-92)
+   - Namespace setup
+   - Cache creation
+   - Import server call
+   - Reactive value initialization
+
+B. LOD Threshold Management (Lines 94-156)
+   - Dynamic slider rendering
+   - Initialization flag
+   - Debounced threshold reactive
+
+C. Dataset Selection (Lines 158-271)
+   - File index reactive
+   - Category selector updates
+   - main_selected_dataset_group reactive
+   - mapped_dataset_for_interaction reactive
+   - scan_type detection
+
+D. Peak Analysis (Lines 273-394)
+   - peaks_data_for_trait
+   - available_peaks_for_trait
+   - selected_peak_marker
+   - allele_effects_data
+
+E. Module Calls (~Lines 400-1500)
+   - scanServer module instantiation
+   - Profile plot module
+   - Correlation module
+   - Manhattan/Cis-Trans modules
+
+F. UI Outputs (~Lines 1500-2500)
+   - renderUI functions
+   - Dynamic content generation
+   - Conditional panels
+
+G. Observers (~Lines 2500-3500)
+   - Event handlers
+   - State synchronization
+   - Cache management
+
+H. Additional Features (~Lines 3500-3789)
+   - Download handlers
+   - Specialized analysis outputs
+
+================================================================================
+10. KEY PATTERNS AND CONVENTIONS
+================================================================================
+
+REACTIVE PATTERNS:
+─────────────────
+
+1. Debouncing for Performance
+   reactive({ ... }) %>% shiny::debounce(200)
+   - Data loading: 100-150ms
+   - Plot creation: 200-300ms
+   - LOD threshold: 300ms
+
+2. Breaking Circular Dependencies
+   - Separate base and mapped reactives
+   - Use reactiveVal with observeEvent
+   - Avoid UI inputs in renderUI dependencies
+
+3. State Preservation
+   - Use reactiveVal() for persistent state
+   - Store interaction types across re-renders
+   - Cache additive data for difference plots
+
+CACHING STRATEGY:
+────────────────
+
+1. Environment-based Caches
+   cache <- new.env(parent = emptyenv())
+   cache$key <- value
+
+2. Cache Key Generation
+   key <- create_cache_key(dataset, trait, chr)
+
+3. Cache Invalidation
+   - Clear on dataset change
+   - Preserve across interaction type changes
+
+NAMING CONVENTIONS:
+──────────────────
+
+Files:
+  - *Module.R: Shiny modules
+  - ggplot_*.R: ggplot2 functions
+  - ggplotly_*.R: plotly conversions
+  - *_helpers.R: Helper functions
+
+Functions:
+  - snake_case for all function names
+  - Prefix with module name where applicable
+  - Use *_rv suffix for reactive values
+
+Variables:
+  - snake_case throughout
+  - Suffix _rv for reactive values
+  - Suffix _dt for data.tables
+
+================================================================================
+11. TROUBLESHOOTING
+================================================================================
+
+COMMON ISSUES:
+─────────────
+
+1. Changes Not Reflected in App
+   Solution: Rebuild Docker with --no-cache
+   docker build --no-cache -t mini-viewer-image_v2 -f Dockerfile .
+
+2. Memory Errors
+   Solution: Increase Docker memory limit (-m flag)
+   docker run -m 60g ...
+
+3. File Not Found Errors
+   Check: Volume mounts in docker run command
+   Verify: /data/dev/miniViewer_3.0 contains required files
+
+4. Slow Performance
+   Check: FST row indices exist (_row.fst files)
+   Run: prepare_fst_data.R to regenerate indices
+
+5. Plot Not Rendering
+   Check: Browser console for JavaScript errors
+   Verify: Required packages installed in container
+
+DEBUGGING:
+─────────
+
+# View container logs
+docker logs -f mini-viewer-image_v2
+
+# Enter container for debugging
+docker exec -it mini-viewer-image_v2 /bin/bash
+
+# Test R packages
+R -e "library(qtl2); library(shiny)"
+
+# Check file permissions
+ls -la /data/dev/miniViewer_3.0/
+
+================================================================================
+12. DEPENDENCIES
+================================================================================
+
+R PACKAGES (Core):
+─────────────────
+shiny         - Web application framework
+bslib         - Bootstrap styling
+dplyr         - Data manipulation
+ggplot2       - Static plotting
+plotly        - Interactive plots
+data.table    - Fast data operations
+DT            - Interactive tables
+
+R PACKAGES (Specialized):
+────────────────────────
+qtl2          - QTL analysis (Bioconductor)
+qtl2fst       - FST support for qtl2
+fst           - Fast file serialization
+ggiraph       - Interactive ggplot
+shinycssloaders - Loading spinners
+shinyjs       - JavaScript utilities
+
+SYSTEM REQUIREMENTS:
+───────────────────
+R >= 4.2.0
+Modern web browser (Chrome, Firefox, Safari)
+Docker (for containerized deployment)
+30+ GB RAM (recommended for large datasets)
+
+================================================================================
+13. CONTACT AND SUPPORT
+================================================================================
+
+Authors:
+  - Brian S Yandell <brian.yandell@wisc.edu>
+  - Chris Emfinger <emfinger@wisc.edu>
+  - Kalynn Willis <khwillis@wisc.edu>
+
+Repository: AttieLab-Systems-Genetics/qtlApp
+Institution: University of Wisconsin-Madison, Attie Lab
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
