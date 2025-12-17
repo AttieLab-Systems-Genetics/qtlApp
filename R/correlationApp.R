@@ -974,6 +974,16 @@ correlationServer <- function(id, import_reactives, main_par) {
                 }
             }
 
+            # Map isoform transcript IDs -> transcript symbols when the result traits are isoforms.
+            # This is needed for cross-dataset correlations like clinical_traits vs liver_isoforms,
+            # where the correlation file contains isoform IDs (often "liver_<transcript_id>").
+            other_token <- if (row$source[1] == side_token) row$target[1] else row$source[1]
+            if (identical(other_token, "liver_isoforms") &&
+                "trait" %in% names(out) &&
+                nrow(out) > 0L) {
+                out$trait <- map_isoform_ids_to_symbols(out$trait, import_reactives())
+            }
+
             # Remove any rows with NA correlation values
             if ("correlation_value" %in% names(out)) {
                 out <- out[!is.na(correlation_value)]
