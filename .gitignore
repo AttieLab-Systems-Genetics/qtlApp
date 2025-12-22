@@ -57,6 +57,6 @@ cross_DO1200_grcm39.rds
 
 
 man/
-
+data/
 #correlation data
 correlations/
