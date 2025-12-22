@@ -40,6 +40,7 @@ fi
 
 # Change to the repo root directory (where app.R and R/ live)
 cd "$(dirname "$0")/../.." || exit 1
+repo_root="$(pwd)"
 
 # Stop only the target container (so prod/dev can run simultaneously)
 docker rm -f "${container_name}" >/dev/null 2>&1 || true
@@ -53,5 +54,5 @@ docker run -m 30g -d -p "${host_port}:3838" \
   -v /data/dev/miniViewer_3.0:/data/dev/miniViewer_3.0:ro \
   -v /data/prod/miniViewer_3.0:/data/prod/miniViewer_3.0:ro \
   -v /data/dev/DO_mapping_files:/data/dev/DO_mapping_files:ro \
-  -v /home/khwillis@ad.wisc.edu/qtlApp/data/correlations:/data/correlations:ro \
+  -v "${repo_root}/data/correlations:/data/correlations:ro" \
   --name "${container_name}" "${image_name}"

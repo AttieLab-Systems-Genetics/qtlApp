@@ -1,4 +1,51 @@
 
+# Running prod + dev simultaneously (recommended: `git worktree`)
+#
+# Goal:
+# - Keep production running from `main` on port 51175
+# - Run a dev/test instance from `develop` on port 51176
+#
+# Standard layout A (simplest): your main clone stays on `develop`, and you add only a `main` worktree
+#
+# This matches your current setup:
+# - `/home/.../qtlApp`      -> branch `develop`
+# - `/home/.../qtlApp-main` -> branch `main`
+#
+# One-time setup (from the `develop` clone):
+#
+#   cd /path/to/qtlApp
+#   git fetch origin
+#   git worktree add ../qtlApp-main main
+#
+# Run prod (port 51175) from the `main` worktree:
+#
+#   cd ../qtlApp-main/kalynn_R/latest_app_kalynn
+#   ./launch_Rshiny.sh prod
+#
+# Run dev (port 51176) from the `develop` clone (no extra directory needed):
+#
+#   cd /path/to/qtlApp/kalynn_R/latest_app_kalynn
+#   ./launch_Rshiny.sh dev
+#
+# Standard layout B (two sibling worktrees): create both `main` and `develop` as separate directories
+#
+# This avoids confusion when you want `../qtlApp-develop` to exist. The trick is: keep the “root” checkout
+# on a detached HEAD so it doesn't “own” either branch.
+#
+#   git clone <repo> qtlApp-wt
+#   cd qtlApp-wt
+#   git checkout --detach
+#   git fetch origin
+#   git worktree add ../qtlApp-main main
+#   git worktree add ../qtlApp-develop develop
+#
+# Notes:
+# - The script refuses to deploy `prod` unless the current branch is `main`
+# - The script refuses to deploy `dev` unless the current branch is `develop` (or `dev`)
+# - Containers are separate (`mini-viewer-prod` and `mini-viewer-dev`) so both can run at once
+# - If port 51175 is already in use (e.g., an older prod container), stop it first:
+#     `docker rm -f mini-viewer-image_v2`  (or whichever container owns `0.0.0.0:51175->3838/tcp`)
+#
 
 
 
