@@ -2,14 +2,15 @@
 set -euo pipefail
 
 # Usage:
-#   ./kalynn_R/latest_app_kalynn/launch_Rshiny.sh prod
-#   ./kalynn_R/latest_app_kalynn/launch_Rshiny.sh dev
+#   ./kalynn_R/latest_app_kalynn/launch_Rshiny.sh prod [host_port]
+#   ./kalynn_R/latest_app_kalynn/launch_Rshiny.sh dev  [host_port]
 #
 # Defaults:
 # - prod: http://attie.diabetes.wisc.edu:51175/
 # - dev:  http://attie.diabetes.wisc.edu:51176/
 
 target="${1:-prod}"
+override_port="${2:-}"
 
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 
@@ -21,7 +22,7 @@ if [[ "${target}" == "prod" ]]; then
   fi
   container_name="mini-viewer-prod"
   image_name="mini-viewer:prod"
-  host_port="51175"
+  host_port="${override_port:-51175}"
   data_root="/data/prod/miniViewer_3.0"
 elif [[ "${target}" == "dev" ]]; then
   if [[ "${current_branch}" != "develop" && "${current_branch}" != "dev" ]]; then
@@ -31,7 +32,7 @@ elif [[ "${target}" == "dev" ]]; then
   fi
   container_name="mini-viewer-dev"
   image_name="mini-viewer:dev"
-  host_port="51176"
+  host_port="${override_port:-51176}"
   data_root="/data/dev/miniViewer_3.0"
 else
   echo "Unknown target '${target}'. Use 'prod' or 'dev'."
