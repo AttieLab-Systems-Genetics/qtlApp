@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Defaults:
 # - prod: http://attie.diabetes.wisc.edu:51175/
-# - dev:  http://attie.diabetes.wisc.edu:51176/
+# - dev:  http://attie.diabetes.wisc.edu:51173/
 
 target="${1:-prod}"
 override_port="${2:-}"
@@ -32,7 +32,7 @@ elif [[ "${target}" == "dev" ]]; then
   fi
   container_name="mini-viewer-dev"
   image_name="mini-viewer:dev"
-  host_port="${override_port:-51176}"
+  host_port="${override_port:-51173}"
   data_root="/data/dev/miniViewer_3.0"
 else
   echo "Unknown target '${target}'. Use 'prod' or 'dev'."
@@ -49,11 +49,15 @@ docker rm -f "${container_name}" >/dev/null 2>&1 || true
 # Build using the repo root as context
 docker build -t "${image_name}" -f kalynn_R/latest_app_kalynn/Dockerfile .
 
-# Run the container
-docker run -m 30g -d -p "${host_port}:3838" \
+# Run the container (cap RAM at 35GB to simulate heavy caching use; set swap equal to RAM to avoid extra swap headroom)
+docker run --memory=35g --memory-swap=35g -d -p "${host_port}:3838" \
   -e MINIVIEWER_DATA_ROOT="${data_root}" \
   -v /data/dev/miniViewer_3.0:/data/dev/miniViewer_3.0:ro \
   -v /data/prod/miniViewer_3.0:/data/prod/miniViewer_3.0:ro \
   -v /data/dev/DO_mapping_files:/data/dev/DO_mapping_files:ro \
   -v "${repo_root}/data/correlations:/data/correlations:ro" \
   --name "${container_name}" "${image_name}"
+
+echo "Container: ${container_name}"
+echo "Port: ${host_port}"
+echo "Observe memory: docker stats --no-stream ${container_name}"
