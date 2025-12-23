@@ -9,6 +9,50 @@
 
 isoform_corr_env <- new.env(parent = emptyenv())
 
+# Map isoform transcript IDs (optionally "liver_" prefixed) to transcript symbols when available.
+# Falls back to the transcript ID if no symbol is available.
+map_isoform_ids_to_symbols <- function(isoform_ids, import) {
+  if (is.null(isoform_ids)) {
+    return(isoform_ids)
+  }
+  x <- as.character(isoform_ids)
+  tid <- sub("^liver_", "", x)
+
+  ann <- if (!is.null(import) && !is.null(import$annotation_list)) {
+    import$annotation_list
+  } else {
+    NULL
+  }
+
+  if (is.null(ann) || is.null(ann$isoforms)) {
+    return(tid)
+  }
+
+  iso_dt <- ann$isoforms
+
+  get_col_chr <- function(df, nms) {
+    for (nm in nms) {
+      if (nm %in% colnames(df)) {
+        return(as.character(df[[nm]]))
+      }
+    }
+    return(NULL)
+  }
+
+  # Different builds have used different column names; try a few common ones.
+  sym_vec <- get_col_chr(iso_dt, c("transcript_symbol", "transcript.symbol", "symbol", "gene.symbol"))
+  tid_vec <- get_col_chr(iso_dt, c("transcript_id", "transcript.id"))
+
+  if (is.null(sym_vec) || is.null(tid_vec)) {
+    return(tid)
+  }
+
+  sym_lookup <- stats::setNames(sym_vec, tid_vec)
+  sym_match <- sym_lookup[tid]
+
+  ifelse(!is.na(sym_match) & nzchar(sym_match), sym_match, tid)
+}
+
 # Load and cache the liver isoform phenotype matrix from the DO cross.
 # This is equivalent to the data used by the batch correlation script,
 # restricted to dataset "liver_isoforms".
@@ -32,11 +76,12 @@ load_isoform_pheno_matrix <- function() {
     return(invisible(NULL))
   }
 
-  traits_iso <- subset(cross$phenocovar,
-    dataset %in% "liver_isoforms",
-    phenotype,
-    drop = TRUE
-  )
+  if (!all(c("dataset", "phenotype") %in% colnames(cross$phenocovar))) {
+    warning("load_isoform_pheno_matrix: cross$phenocovar missing required columns 'dataset' and/or 'phenotype'.")
+    return(invisible(NULL))
+  }
+
+  traits_iso <- cross$phenocovar[cross$phenocovar$dataset %in% "liver_isoforms", "phenotype", drop = TRUE]
 
   if (length(traits_iso) == 0) {
     warning("load_isoform_pheno_matrix: No traits found for dataset 'liver_isoforms' in cross$phenocovar.")
@@ -91,7 +136,8 @@ ensure_isoform_adjusted_matrix <- function() {
     if (all(is.na(y)) || length(unique(y[!is.na(y)])) <= 1) {
       next
     }
-    fit <- stats::lm(y ~ GenLit + Sex, na.action = stats::na.exclude)
+    fit_df <- data.frame(y = y, GenLit = GenLit, Sex = Sex)
+    fit <- stats::lm(y ~ GenLit + Sex, data = fit_df, na.action = stats::na.exclude)
     pheno_adj[, j] <- stats::resid(fit)
   }
 
@@ -306,37 +352,7 @@ compute_isoform_cor_top_n <- function(trait_string, import, top_n = 500, use_adj
   }
 
   # Map partner matrix column names back to isoform symbols when possible
-  ann <- if (!is.null(import) && !is.null(import$annotation_list)) {
-    import$annotation_list
-  } else {
-    NULL
-  }
-  display_traits <- partners
-
-  if (!is.null(ann) && !is.null(ann$isoforms)) {
-    iso_dt <- ann$isoforms
-
-    get_col_chr <- function(df, nms) {
-      for (nm in nms) {
-        if (nm %in% colnames(df)) {
-          return(as.character(df[[nm]]))
-        }
-      }
-      return(NULL)
-    }
-
-    sym_vec <- get_col_chr(iso_dt, c("symbol", "gene.symbol"))
-    tid_vec <- get_col_chr(iso_dt, c("transcript_id", "transcript.id"))
-
-    if (!is.null(sym_vec) && !is.null(tid_vec)) {
-      partner_tid <- sub("^liver_", "", partners)
-      # Build a named lookup: transcript_id -> symbol
-      sym_lookup <- stats::setNames(sym_vec, tid_vec)
-      sym_match <- sym_lookup[partner_tid]
-      # Prefer symbol when available; otherwise use transcript_id
-      display_traits <- ifelse(!is.na(sym_match) & nzchar(sym_match), sym_match, partner_tid)
-    }
-  }
+  display_traits <- map_isoform_ids_to_symbols(partners, import)
 
   # Defensive logging before constructing the data frame
   message(

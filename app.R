@@ -1480,7 +1480,10 @@ server <- function(input, output, session) {
             if (!is.na(preferred_first_base) && nzchar(first_tok) && !startsWith(tolower(first_tok), tolower(preferred_first_base))) {
                 new_first_tok <- sub("^(liver_genes|liver_isoforms|liver_lipids|clinical_traits|plasma_metabolites)", preferred_first_base, first_tok)
                 candidate_name <- paste0(new_first_tok, "_additive_", second_tok, "_mediator_all_mediators.csv")
-                candidate_dirs <- c("/data/dev/miniViewer_3.0", file.path(getwd(), "data"))
+                candidate_dirs <- c(
+                    Sys.getenv("MINIVIEWER_DATA_ROOT", unset = "/data/dev/miniViewer_3.0"),
+                    file.path(getwd(), "data")
+                )
                 found <- NULL
                 for (d in candidate_dirs) {
                     p1 <- file.path(d, candidate_name)
@@ -3144,7 +3147,10 @@ server <- function(input, output, session) {
 
         # Always use additive peaks for allele-effects visualization
         suffix <- "additive_peaks.csv"
-        chosen <- file.path("/data/dev/miniViewer_3.0", paste0(prefix, "_", subgroup, "_", suffix))
+        chosen <- file.path(
+            Sys.getenv("MINIVIEWER_DATA_ROOT", unset = "/data/dev/miniViewer_3.0"),
+            paste0(prefix, "_", subgroup, "_", suffix)
+        )
         message(sprintf("Mediator AE: peaks file selection -> prefix=%s subgroup=%s file=%s", prefix, subgroup, basename(chosen)))
         chosen
     }

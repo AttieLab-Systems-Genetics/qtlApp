@@ -11,7 +11,7 @@ library(parallel)
 
 # Define input and output directories
 # Allow override via env var INPUT_DIR or first command-line argument
-INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_isoforms/liver_isoforms_male_mice_additive/output"
+INPUT_DIR <- "/mnt/rdrive/mkeller3/General/main_directory/scans/liver_isoforms/liver_isoforms_HC_mice_additive/output"
 OUTPUT_DIR <- "/data/prod/miniViewer_3.0"
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -33,7 +33,7 @@ input_dirname <- basename(dirname(INPUT_DIR))
 
 # Define all chromosomes
 
-CHROMOSOMES <- c(13:19, "X", "Y", "M")
+CHROMOSOMES <- c(1:10, "X", "Y", "M")
 # Load marker information
 message("Loading marker information...")
 markers_file <- "/data/dev/miniViewer_3.0/CHTC_dietDO_markers_RDSgrcm39.rds"
