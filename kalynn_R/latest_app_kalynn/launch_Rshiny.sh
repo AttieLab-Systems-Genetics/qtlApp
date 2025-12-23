@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Defaults:
 # - prod: http://attie.diabetes.wisc.edu:51175/
-# - dev:  http://attie.diabetes.wisc.edu:51176/
+# - dev:  http://attie.diabetes.wisc.edu:51173/
 
 target="${1:-prod}"
 override_port="${2:-}"
@@ -50,7 +50,7 @@ docker rm -f "${container_name}" >/dev/null 2>&1 || true
 docker build -t "${image_name}" -f kalynn_R/latest_app_kalynn/Dockerfile .
 
 # Run the container
-docker run -m 30g -d -p "${host_port}:3838" \
+docker run -m 35g -d -p "${host_port}:3838" \
   -e MINIVIEWER_DATA_ROOT="${data_root}" \
   -v /data/dev/miniViewer_3.0:/data/dev/miniViewer_3.0:ro \
   -v /data/prod/miniViewer_3.0:/data/prod/miniViewer_3.0:ro \
