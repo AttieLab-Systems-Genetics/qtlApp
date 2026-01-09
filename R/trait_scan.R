@@ -109,7 +109,7 @@ correct_file_path <- function(original_path, trait_type) {
 
   corrected_path <- original_path
 
-  if (processed_trait_type == "clinical" || processed_trait_type == "liver_lipids") {
+  if (processed_trait_type == "clinical" || processed_trait_type == "liver_lipids" || processed_trait_type == "liver_metabolite") {
     if (grepl("_with_symbols\\.fst$", original_path)) {
       corrected_path <- sub("_with_symbols\\.fst$", "_processed.fst", original_path)
     } else if (!grepl("_processed\\.fst$", original_path)) {

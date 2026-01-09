@@ -180,6 +180,9 @@ correlationServer <- function(id, import_reactives, main_par) {
             if (grepl("splice.*junc", trait_type_char, ignore.case = TRUE)) {
                 return("liver_splice_juncs")
             }
+            if (grepl("liver.*metabol", trait_type_char, ignore.case = TRUE)) {
+                return("liver_metabolites")
+            }
             return(NULL)
         }
 
@@ -191,6 +194,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 plasma_metabolites = "Plasma Metabolites",
                 clinical_traits = "Clinical Traits",
                 liver_splice_juncs = "Liver Splice Junctions",
+                liver_metabolites = "Liver Metabolites",
                 token
             )
         }
@@ -346,14 +350,6 @@ correlationServer <- function(id, import_reactives, main_par) {
                         !(source == "liver_isoforms" &
                             target == "liver_isoforms" &
                             grepl("(genlitsex|sexbydiet)", basename(file), ignore.case = TRUE)),
-                    ]
-
-                    # Remove any options that point to the legacy liver_isoforms_genlitsex_adj dataset.
-                    # These adjusted isoform matrices are no longer exposed through the correlation UI;
-                    # isoform self-correlations are handled on-the-fly instead.
-                    subset_dt <- subset_dt[
-                        !(source == "liver_isoforms_genlitsex_adj" |
-                            target == "liver_isoforms_genlitsex_adj"),
                     ]
 
                     # If nothing remains after filtering, bail out early

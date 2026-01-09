@@ -97,6 +97,7 @@ mediation_tab_ui <- function(current_category = NULL) {
             "Liver Lipids" = c("liver_lipids_", "liver_genes_", "liver_isoforms_"),
             "Clinical Traits" = c("clinical_traits_", "liver_genes_", "liver_isoforms_"),
             "Plasma Metabolites" = c("plasma_metabolites_", "liver_genes_", "liver_isoforms_"),
+            "Liver Metabolites" = c("liver_metabolites_", "liver_genes_", "liver_isoforms_"),
             NULL
         )
         if (!is.null(allowed_prefixes)) {
@@ -129,7 +130,8 @@ mediation_tab_ui <- function(current_category = NULL) {
             liver_isoforms = "Liver Isoforms",
             liver_lipids = "Liver Lipids",
             clinical_traits = "Clinical Traits",
-            plasma_metabolites = "Plasma Metabolites"
+            plasma_metabolites = "Plasma Metabolites",
+            liver_metabolites = "Liver Metabolites"
         )
         out <- labs[tolower(x)]
         ifelse(is.na(out), x, out)
@@ -249,6 +251,7 @@ mediation_tab_ui <- function(current_category = NULL) {
             "Liver Lipids" = "liver_lipids_",
             "Clinical Traits" = "clinical_traits_",
             "Plasma Metabolites" = "plasma_metabolites_",
+            "Liver Metabolites" = "liver_metabolites_",
             NULL
         )
     }

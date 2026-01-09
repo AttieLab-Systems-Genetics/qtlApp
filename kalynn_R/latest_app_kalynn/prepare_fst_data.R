@@ -178,6 +178,9 @@ process_fst_file <- function(fst_path, gene_id_to_symbol_map, transcript_id_to_s
             } else if (file_type == "plasma_metabolites") {
                 message("Plasma 2H Metabolites trait file, Phenotype column will be used as is for ", basename(fst_path))
                 new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
+            } else if (file_type == "liver_metabolites") {
+                message("Liver metabolites trait file, Phenotype column will be used as is for ", basename(fst_path))
+                new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
             } else if (file_type == "splice_juncs") {
                 message("Liver Splice Junctions trait file, Phenotype column will be used as is for ", basename(fst_path))
                 new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
@@ -222,7 +225,9 @@ main <- function() {
 
     file_processing_configs <- list(
         # Enable isoform processing: chromosome{chr}_liver_isoforms_*_data.fst
-        list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\\.fst$")
+        list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\\.fst$"),
+        # Liver metabolites: chromosome{chr}_liver_metabolites_*_data.fst
+        list(type = "liver_metabolites", pattern = "chromosome[0-9XYM]+_liver_metabolites_.*_data\\.fst$")
     )
     all_processed_paths <- character(0)
 

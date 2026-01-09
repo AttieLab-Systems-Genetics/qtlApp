@@ -159,6 +159,8 @@ peaksTableServer <- function(
                 dataset_component <- "clinical_traits"
             } else if (grepl("Plasma.*Metabol|plasma.*metabolite", base_name, ignore.case = TRUE)) {
                 dataset_component <- "plasma_metabolites"
+            } else if (grepl("Liver.*Metabol|liver.*metabolite", base_name, ignore.case = TRUE)) {
+                dataset_component <- "liver_metabolites"
             } else if (grepl("Liver.*Splice.*Junction", base_name, ignore.case = TRUE)) {
                 dataset_component <- "liver_splice_juncs"
             } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {

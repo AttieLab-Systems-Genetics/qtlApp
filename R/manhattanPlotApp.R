@@ -11,6 +11,8 @@ get_qtlxcovar_file_path_manhattan <- function(base_dataset, interaction_type) {
     file_prefix <- "DO1200_liver_lipids_all_mice"
   } else if (grepl("Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
     file_prefix <- "DO1200_plasma_metabolites_all_mice"
+  } else if (grepl("Liver.*Metabol", base_dataset, ignore.case = TRUE)) {
+    file_prefix <- "DO1200_liver_metabolites_all_mice"
   } else {
     message("get_qtlxcovar_file_path_manhattan: Unknown dataset category for:", base_dataset)
     return(NULL)
@@ -258,7 +260,8 @@ manhattanPlotServer <- function(id, import_reactives, main_par, sidebar_interact
       target_phenotype_class_values <- switch(current_dataset_category,
         "Clinical Traits" = "clinical_trait",
         "Liver Lipids" = "liver_lipid",
-        "Plasma Metabolites" = c("plasma_13C_metabolite", "plasma_2H_metabolite"),
+        "Plasma Metabolites" = "plasma_metabolite",
+        "Liver Metabolites" = "liver_metabolite",
         NULL
       )
 

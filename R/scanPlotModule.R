@@ -93,6 +93,16 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                     return("HC_HF Plasma plasma_metabolite, interactive (Sex_Diet)")
                 }
             }
+            # HC_HF Liver Metabolites (supports Sex, Diet, and Sex x Diet interactions)
+            else if (grepl("HC_HF.*Liver.*Metabol", base_dataset, ignore.case = TRUE)) {
+                if (interaction_type == "sex") {
+                    return("HC_HF Liver liver_metabolite, interactive (Sex)")
+                } else if (interaction_type == "diet") {
+                    return("HC_HF Liver liver_metabolite, interactive (Diet)")
+                } else if (interaction_type == "sex_diet") {
+                    return("HC_HF Liver liver_metabolite, interactive (Sex_Diet)")
+                }
+            }
             # HC_HF Liver Splice Junctions (supports Diet interaction)
             else if (grepl("HC_HF.*Liver.*Splice.*Junction", base_dataset, ignore.case = TRUE)) {
                 if (interaction_type == "diet") {
@@ -129,6 +139,8 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
                 dataset_component <- "clinical_traits"
             } else if (grepl("Plasma Metabolites", base_name, ignore.case = TRUE)) {
                 dataset_component <- "plasma_metabolites"
+            } else if (grepl("Liver Metabolites", base_name, ignore.case = TRUE)) {
+                dataset_component <- "liver_metabolites"
             } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
                 dataset_component <- "liver_isoforms"
             } else {
