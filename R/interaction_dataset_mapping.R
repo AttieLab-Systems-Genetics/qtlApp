@@ -62,6 +62,16 @@ get_interactive_dataset_name <- function(base_dataset, interaction_type) {
             return("HC_HF Liver Splice Junctions, interactive (Diet)")
         }
     }
+    # HC_HF Liver Metabolites (supports Sex, Diet, and Sex x Diet interactions)
+    else if (grepl("HC_HF.*Liver.*Metabol", base_dataset, ignore.case = TRUE)) {
+        if (interaction_type == "sex") {
+            return("HC_HF Liver liver_metabolite, interactive (Sex)")
+        } else if (interaction_type == "diet") {
+            return("HC_HF Liver liver_metabolite, interactive (Diet)")
+        } else if (interaction_type == "sex_diet") {
+            return("HC_HF Liver liver_metabolite, interactive (Sex_Diet)")
+        }
+    }
 
     # Fallback to original dataset if no mapping found
     return(base_dataset)

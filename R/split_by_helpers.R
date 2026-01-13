@@ -30,6 +30,8 @@ get_split_by_filepaths <- function(dataset_group, interaction_type) {
         dataset_component <- "liver_splice_juncs"
     } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
         dataset_component <- "liver_isoforms"
+    } else if (grepl("Liver.*Metabol", base_name, ignore.case = TRUE)) {
+        dataset_component <- "liver_metabolites"
     } else {
         return(NULL)
     }
@@ -73,6 +75,9 @@ get_dataset_component <- function(base_name) {
     }
     if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
         return("liver_isoforms")
+    }
+    if (grepl("Liver.*Metabol", base_name, ignore.case = TRUE)) {
+        return("liver_metabolites")
     }
     return(NULL)
 }

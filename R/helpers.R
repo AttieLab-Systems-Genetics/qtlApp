@@ -385,6 +385,9 @@ get_trait_type <- function(import_data, selected_dataset = NULL) {
   if (grepl("plasma.*metabolite", trait_type_raw, ignore.case = TRUE)) {
     return("plasma_metabolite")
   }
+  if (grepl("liver.*metabolite", trait_type_raw, ignore.case = TRUE)) {
+    return("liver_metabolite")
+  }
   if (grepl("splice", trait_type_raw, ignore.case = TRUE)) {
     return("splice_junctions")
   }
@@ -442,6 +445,39 @@ get_trait_list <- function(import_data, trait_type) {
     return(data.frame(data_name = phenos, stringsAsFactors = FALSE))
   }
 
+  # Special handling: Liver Metabolites
+  # Prefer a direct 'liver_metabolite' table; otherwise derive from row index files
+  if (!is.null(trait_type) && identical(trait_type, "liver_metabolite")) {
+    if ("liver_metabolite" %in% names(annotation_list)) {
+      return(annotation_list[["liver_metabolite"]])
+    }
+    # Fallback: derive liver metabolite names directly from processed row index files
+    base_path <- "/data/prod/miniViewer_3.0"
+    row_files <- tryCatch(
+      list.files(path = base_path, pattern = "chromosome[0-9XYM]+_liver_metabolites_labeled_all_mice_additive_data_processed_rows\\.fst$", full.names = TRUE),
+      error = function(e) character(0)
+    )
+    phenos <- character(0)
+    if (length(row_files) > 0) {
+      for (fp in row_files) {
+        vals <- tryCatch(
+          {
+            dt <- fst::read_fst(fp, columns = "Phenotype", as.data.table = TRUE)
+            if ("Phenotype" %in% names(dt)) unique(dt$Phenotype) else character(0)
+          },
+          error = function(e) character(0)
+        )
+        if (length(vals) > 0) phenos <- c(phenos, vals)
+      }
+    }
+    phenos <- sort(unique(phenos))
+    if (length(phenos) == 0) {
+      warning("Trait type liver_metabolite not found in annotation list and row index files are unavailable.")
+      return(NULL)
+    }
+    return(data.frame(data_name = phenos, stringsAsFactors = FALSE))
+  }
+
   # Check if requested trait type exists in annotations
   if (is.null(trait_type) || !(trait_type %in% names(annotation_list))) {
     warning("Trait type ", trait_type, " not found in annotation list.")
@@ -482,6 +518,8 @@ get_phenotype_class_from_category <- function(dataset_category) {
     return("liver_lipid")
   } else if (dataset_category == "Plasma Metabolites") {
     return(c("plasma_13C_metabolite", "plasma_2H_metabolite"))
+  } else if (dataset_category == "Liver Metabolites") {
+    return("liver_metabolite")
   }
   return(NULL)
 }
