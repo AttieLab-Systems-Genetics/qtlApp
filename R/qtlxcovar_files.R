@@ -35,7 +35,7 @@ get_qtlxcovar_file_path_manhattan <- function(base_dataset, interaction_type) {
     } else if (grepl("Plasma.*Metabol", base_dataset, ignore.case = TRUE)) {
         file_prefix <- "DO1200_plasma_metabolites_all_mice"
     } else if (grepl("Liver.*Metabol", base_dataset, ignore.case = TRUE)) {
-        file_prefix <- "DO1200_liver_metabolites_all_mice"
+        file_prefix <- "DO1200_liver_metabolites_labeled_all_mice"
     } else {
         return(NULL)
     }
