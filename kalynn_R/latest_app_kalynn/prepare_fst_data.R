@@ -169,20 +169,8 @@ process_fst_file <- function(fst_path, gene_id_to_symbol_map, transcript_id_to_s
                     message("Skipping transcript symbol mapping for ", basename(fst_path), " (Phenotype column missing or no transcript annotations).")
                     new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst") # Still save as processed
                 }
-            } else if (file_type == "clinical") {
-                message("Clinical trait file, Phenotype column will be used as is for ", basename(fst_path))
-                new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
-            } else if (file_type == "liver_lipids") {
-                message("Liver lipid trait file, Phenotype column will be used as is for ", basename(fst_path))
-                new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
-            } else if (file_type == "plasma_metabolites") {
-                message("Plasma 2H Metabolites trait file, Phenotype column will be used as is for ", basename(fst_path))
-                new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
-            } else if (file_type == "liver_metabolites") {
-                message("Liver metabolites trait file, Phenotype column will be used as is for ", basename(fst_path))
-                new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
-            } else if (file_type == "splice_juncs") {
-                message("Liver Splice Junctions trait file, Phenotype column will be used as is for ", basename(fst_path))
+            } else if (file_type %in% c("clinical_traits", "liver_lipids", "plasma_metabolites", "liver_metabolites", "liver_splice_juncs")) {
+                message(paste(file_type, "file, Phenotype column will be used as is for", basename(fst_path)))
                 new_fst_path <- paste0(tools::file_path_sans_ext(fst_path), "_processed.fst")
             } else {
                 warning("Unknown file type: ", file_type, " for file: ", basename(fst_path))
@@ -218,26 +206,20 @@ main <- function() {
     transcript_anno_file <- "/data/dev/miniViewer_3.0/annotation_list.rds"
     transcript_data <- read_transcript_annotations(transcript_anno_file)
 
-    input_dir <- "/data/prod/miniViewer_3.0"
+    input_dir <- "/data/dev/miniViewer_3.0"
     if (!dir.exists(input_dir)) {
         stop("Input directory not found: ", input_dir)
     }
 
     file_processing_configs <- list(
-        # Enable isoform processing: chromosome{chr}_liver_isoforms_*_data.fst
-        list(type = "isoforms", pattern = "chromosome[0-9XYM]+_liver_isoforms_.*_data\\.fst$"),
-        # Liver metabolites: chromosome{chr}_liver_metabolites_*_data.fst
-        list(type = "liver_metabolites", pattern = "chromosome[0-9XYM]+_liver_metabolites_.*_data\\.fst$")
+        list(type = "liver_splice_juncs", pattern = "chromosome[0-9XYM]+_liver_splice_juncs_.*_data.fst$")
     )
     all_processed_paths <- character(0)
 
     for (config in file_processing_configs) {
-        message(paste("\\nProcessing type:", config$type, "with pattern:", config$pattern))
+        message(paste("\nProcessing type:", config$type, "with pattern:", config$pattern))
 
         fst_files <- list.files(input_dir, pattern = config$pattern, full.names = TRUE)
-        fst_files <- fst_files[!grepl("_with_symbols\\.fst$", fst_files) &
-            !grepl("_with_transcript_symbols\\.fst$", fst_files) &
-            !grepl("_processed\\.fst$", fst_files)]
 
         # Skip raws that already have a processed output (or where output is newer)
         if (identical(config$type, "isoforms") && length(fst_files) > 0) {
