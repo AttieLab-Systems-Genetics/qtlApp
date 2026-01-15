@@ -140,7 +140,7 @@ scanServer <- function(id, trait_to_scan, selected_dataset_group, import_reactiv
             } else if (grepl("Plasma Metabolites", base_name, ignore.case = TRUE)) {
                 dataset_component <- "plasma_metabolites"
             } else if (grepl("Liver Metabolites", base_name, ignore.case = TRUE)) {
-                dataset_component <- "liver_metabolites"
+                dataset_component <- "liver_metabolites_labeled"
             } else if (grepl("Liver Isoforms", base_name, ignore.case = TRUE)) {
                 dataset_component <- "liver_isoforms"
             } else {
