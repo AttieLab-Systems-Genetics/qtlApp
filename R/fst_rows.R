@@ -11,25 +11,6 @@
 library(fst)
 library(data.table)
 
-fst_rows <- function(fst_path) {
-  row_path <- stringr::str_replace(fst_path, "\\.fst$", "_row.fst")
-  if (!file.exists(row_path)) {
-    # Read FST file and create row indices
-    rows <- fst::read_fst(fst_path) |>
-      # Select only Phenotype column
-      dplyr::select(Phenotype) |>
-      # Add row numbers
-      dplyr::mutate(rown = dplyr::row_number()) |>
-      dplyr::group_by(Phenotype) |>
-      dplyr::slice(c(1, dplyr::n())) |>
-      dplyr::mutate(set = c("from", "to")) |>
-      tidyr::pivot_wider(names_from = "set", values_from = "rown")
-
-    fst::write_fst(rows, row_path)
-  }
-  return(row_path)
-}
-
 create_fst_rows_index <- function(fst_file_path) {
   # Create index for fst files for faster reading by trait
   if (!file.exists(fst_file_path)) {

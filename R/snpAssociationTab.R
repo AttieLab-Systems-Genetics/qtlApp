@@ -208,18 +208,19 @@ rankz <- function(x) {
     # so we must point to the real schema for this database.
     if (is.null(.snp_assoc_cache[[vkey]])) {
         .snp_assoc_cache[[vkey]] <- qtl2::create_variant_query_func(
-            dbfile,
+            dbfile = dbfile,
             table_name = "variants",
             chr_field = "chr",
             pos_field = "pos",
             id_field = "variant_id",
-            sdp_field = "sdp_num"
+            sdp_field = "sdp_num",
+            filter = "sdp_num IS NOT NULL AND n_hiqual >= 6"
         )
     }
 
     if (is.null(.snp_assoc_cache[[gkey]])) {
         .snp_assoc_cache[[gkey]] <- qtl2::create_gene_query_func(
-            dbfile,
+            dbfile = dbfile,
             table_name = "genes",
             chr_field = "gene_chr",
             start_field = "gene_start",
@@ -476,11 +477,11 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
 
             # Set up variant query function
             data_dir <- "/data/dev/DO_mapping_files"
-            dbfile <- file.path(data_dir, "variants_db_by_chr", paste0("founder_variants_chr", chr, ".sqlite"))
+            dbfile <- file.path(data_dir, "founder_variants.sqlite")
 
             if (!file.exists(dbfile)) {
                 warning(paste("Variant database file not found:", dbfile))
-                return(list(error = paste0("Variant database not found for chromosome ", chr)))
+                return(list(error = "Variant database not found"))
             }
 
             qfuncs <- .get_query_funcs_for_chr(chr, dbfile)
@@ -567,7 +568,7 @@ perform_snp_association <- function(cross, genoprobs, phenotype, chr, pos,
 #' @export
 get_genes_for_snp_plot <- function(chr, pos, window = 0.5) {
     data_dir <- "/data/dev/DO_mapping_files"
-    dbfile <- file.path(data_dir, "variants_db_by_chr", paste0("founder_variants_chr", chr, ".sqlite"))
+    dbfile <- file.path(data_dir, "founder_variants.sqlite")
 
     if (!file.exists(dbfile)) {
         warning(paste("Variant database file not found:", dbfile))
