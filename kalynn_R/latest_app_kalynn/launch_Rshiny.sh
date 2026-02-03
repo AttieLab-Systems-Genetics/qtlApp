@@ -70,8 +70,9 @@ docker rm -f "${container_name}" >/dev/null 2>&1 || true
 # Build using the repo root as context
 docker build -t "${image_name}" -f kalynn_R/latest_app_kalynn/Dockerfile .
 
-# Run the container (cap RAM at 35GB to simulate heavy caching use; set swap equal to RAM to avoid extra swap headroom)
-docker run --memory=35g --memory-swap=35g -d -p "${host_port}:3838" \
+# Run the container (cap RAM at 35GB to simulate heavy caching use; set swap equal to RAM to avoid extra swap headroom; use restart policy set to always to restart the container if it stops (i.e. when it runs out of memory))
+docker run --memory=35g --memory-swap=35g --restart always -d \
+  -p "${host_port}:3838" \
   -e MINIVIEWER_DATA_ROOT="${data_root}" \
   -v /data/dev/miniViewer_3.0:/data/dev/miniViewer_3.0:ro \
   -v /data/prod/miniViewer_3.0:/data/prod/miniViewer_3.0:ro \
