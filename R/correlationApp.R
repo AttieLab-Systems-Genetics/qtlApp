@@ -181,7 +181,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 return("liver_splice_juncs")
             }
             if (grepl("liver.*metabol", trait_type_char, ignore.case = TRUE)) {
-                return("liver_metabolites")
+                return("liver_metabolites_labeled")
             }
             return(NULL)
         }
@@ -194,7 +194,7 @@ correlationServer <- function(id, import_reactives, main_par) {
                 plasma_metabolites = "Plasma Metabolites",
                 clinical_traits = "Clinical Traits",
                 liver_splice_juncs = "Liver Splice Junctions",
-                liver_metabolites = "Liver Metabolites",
+                liver_metabolites_labeled = "Liver Metabolites",
                 token
             )
         }
@@ -204,20 +204,25 @@ correlationServer <- function(id, import_reactives, main_par) {
             # Expected/fallback files to show even if directory scan fails
             expected_files <- c(
                 file.path(correlations_dir, "clinical_traits_vs_clinical_traits_corr.csv"),
-                file.path(correlations_dir, "liver_genes_vs_clinical_traits_corr.csv"),
-                file.path(correlations_dir, "liver_genes_vs_liver_genes_corr.csv"),
-                file.path(correlations_dir, "liver_isoforms_vs_liver_isoforms_corr.csv"),
-                file.path(correlations_dir, "liver_genes_vs_liver_lipids_corr.csv"),
-                file.path(correlations_dir, "liver_genes_vs_plasma_metabolites_corr.csv"),
-                file.path(correlations_dir, "liver_lipids_vs_liver_lipids_corr.csv"),
-                file.path(correlations_dir, "plasma_metabolites_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "clinical_traits_vs_liver_genes_corr.csv"),
+                file.path(correlations_dir, "clinical_traits_vs_liver_isoforms_corr.csv"),
+                file.path(correlations_dir, "liver_isoforms_vs_clinical_traits_corr.csv"),
                 file.path(correlations_dir, "clinical_traits_vs_liver_lipids_corr.csv"),
                 file.path(correlations_dir, "clinical_traits_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "liver_genes_vs_liver_genes_corr.csv"),
+                file.path(correlations_dir, "liver_genes_vs_liver_lipids_corr.csv"),
+                file.path(correlations_dir, "liver_genes_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "liver_lipids_vs_liver_isoforms_corr.csv"),
+                file.path(correlations_dir, "liver_isoforms_vs_liver_lipids_corr.csv"),
+                file.path(correlations_dir, "liver_isoforms_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "liver_lipids_vs_liver_lipids_corr.csv"),
                 file.path(correlations_dir, "liver_lipids_vs_plasma_metabolites_corr.csv"),
+                file.path(correlations_dir, "plasma_metabolites_vs_plasma_metabolites_corr.csv"),
                 # Add adjusted-only files that don't have base versions
-                file.path(correlations_dir, "clinical_traits_vs_liver_genes_genlitsexbydiet_adj_corr.csv"),
-                file.path(correlations_dir, "liver_lipids_vs_liver_genes_genlitsexbydiet_adj_corr.csv"),
-                file.path(correlations_dir, "plasma_metabolites_vs_liver_genes_genlitsexbydiet_adj_corr.csv")
+                file.path(correlations_dir, "liver_metabolites_labeled_vs_clinical_traits_genlitsexbydiet_adj_corr.csv"),
+                file.path(correlations_dir, "liver_metabolites_labeled_vs_liver_genes_genlitsexbydiet_adj_corr.csv"),
+                file.path(correlations_dir, "liver_metabolites_labeled_vs_liver_lipids_genlitsexbydiet_adj_corr.csv"),
+                file.path(correlations_dir, "liver_metabolites_labeled_vs_plasma_metabolites_genlitsexbydiet_adj_corr.csv")
             )
 
             files <- character(0)
@@ -417,7 +422,7 @@ correlationServer <- function(id, import_reactives, main_par) {
         # Resolve the proper column or row key for the current trait in a given file
         # For gene traits, correlation files typically use columns like "liver_<gene_id>"
         resolve_trait_keys <- function(trait_string, token_side, corr_file, import) {
-            # token_side is one of c("liver_genes", "liver_isoforms", "liver_lipids", "plasma_metabolites", "clinical_traits")
+            # token_side is one of c("liver_genes", "liver_isoforms", "liver_lipids_labeled", "plasma_metabolites", "clinical_traits")
             # Return list(mode = "column"|"row", key = <name>)
             header_only <- tryCatch(data.table::fread(corr_file, nrows = 0), error = function(e) NULL)
             if (is.null(header_only)) {
