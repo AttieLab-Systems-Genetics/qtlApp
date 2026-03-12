@@ -44,22 +44,14 @@ cd "$(dirname "$0")/../.." || exit 1
 repo_root="$(pwd)"
 
 # Determine where correlation CSVs live on the host.
-# Prefer an explicit override, otherwise try the current worktree, then fall back
-# to a sibling main worktree (common on the server), and finally warn.
+# Prefer an explicit override
 correlations_src="${MINIVIEWER_CORRELATIONS_SRC:-}"
 if [[ -z "${correlations_src}" ]]; then
-  if compgen -G "${repo_root}/data/correlations/*_corr.csv" > /dev/null; then
-    correlations_src="${repo_root}/data/correlations"
-  elif compgen -G "${repo_root}/../qtlApp-main/data/correlations/*_corr.csv" > /dev/null; then
-    correlations_src="$(readlink -f "${repo_root}/../qtlApp-main/data/correlations" 2>/dev/null || echo "${repo_root}/../qtlApp-main/data/correlations")"
-  elif compgen -G "/home/*/qtlApp-main/data/correlations/*_corr.csv" > /dev/null; then
-    # Support deployments where dev/prod are launched from different users' worktrees.
-    # Pick the first matching qtlApp-main correlations directory under /home.
-    candidate_dir="$(ls -d /home/*/qtlApp-main/data/correlations 2>/dev/null | head -n 1)"
-    correlations_src="$(readlink -f "${candidate_dir}" 2>/dev/null || echo "${candidate_dir}")"
+  if compgen -G "${data_root}/*_corr.csv" > /dev/null; then
+    correlations_src="${data_root}"
   else
-    correlations_src="${repo_root}/data/correlations"
-    echo "WARNING: No '*_corr.csv' files found under '${repo_root}/data/correlations' (or sibling 'qtlApp-main')." >&2
+    correlations_src="${data_root}"
+    echo "WARNING: No '*_corr.csv' files found under '${data_root}" >&2
     echo "WARNING: Correlation tab may appear empty unless you set MINIVIEWER_CORRELATIONS_SRC to a directory containing the CSVs." >&2
   fi
 fi
