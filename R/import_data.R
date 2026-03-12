@@ -1,7 +1,7 @@
 #' Import data from files
 #'
-#' This function imports data from files specified in the `import.csv` file
-#' located in the package's `data` directory. The function reads files with
+#' This function imports data from files specified in the `file_index.csv` file
+#' located in the package's `data_root`. The function reads files with
 #' extensions `.csv`, `.rds`, or `.xlsx` and returns a list of data frames.
 #'
 #' @importFrom readxl read_excel
