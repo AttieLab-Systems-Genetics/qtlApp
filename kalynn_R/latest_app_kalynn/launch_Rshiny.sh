@@ -43,19 +43,6 @@ fi
 cd "$(dirname "$0")/../.." || exit 1
 repo_root="$(pwd)"
 
-# Determine where correlation CSVs live on the host.
-# Prefer an explicit override
-correlations_src="${MINIVIEWER_CORRELATIONS_SRC:-}"
-if [[ -z "${correlations_src}" ]]; then
-  if compgen -G "${data_root}/*_corr.csv" > /dev/null; then
-    correlations_src="${data_root}"
-  else
-    correlations_src="${data_root}"
-    echo "WARNING: No '*_corr.csv' files found under '${data_root}" >&2
-    echo "WARNING: Correlation tab may appear empty unless you set MINIVIEWER_CORRELATIONS_SRC to a directory containing the CSVs." >&2
-  fi
-fi
-
 # Stop only the target container (so prod/dev can run simultaneously)
 docker rm -f "${container_name}" >/dev/null 2>&1 || true
 
@@ -69,10 +56,9 @@ docker run --memory=35g --memory-swap=35g --restart always -d \
   -v /data/dev/miniViewer_3.0:/data/dev/miniViewer_3.0:ro \
   -v /data/prod/miniViewer_3.0:/data/prod/miniViewer_3.0:ro \
   -v /data/dev/DO_mapping_files:/data/dev/DO_mapping_files:ro \
-  -v "${correlations_src}:/data/correlations:ro" \
+  -v /data/dev/miniViewer_3.0:/data/correlations:ro \
   --name "${container_name}" "${image_name}"
 
 echo "Container: ${container_name}"
 echo "Port: ${host_port}"
-echo "Correlations mount: ${correlations_src} -> /data/correlations (ro)"
 echo "Observe memory: docker stats --no-stream ${container_name}"
